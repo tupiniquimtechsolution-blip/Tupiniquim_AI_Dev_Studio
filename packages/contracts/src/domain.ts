@@ -55,6 +55,35 @@ export const planSchema = z.object({
 })
 export type Plan = z.infer<typeof planSchema>
 
+export const executionSchema = z.object({
+  id: z.string().uuid(),
+  planId: z.string().uuid(),
+  mode: modeSchema,
+  state: jobStateSchema,
+  permissionProfile: permissionProfileSchema,
+  workspaceRoot: z.string().min(3),
+  activeStepId: z.string().uuid().nullable(),
+  threadId: z.string().nullable(),
+  approvalIds: z.array(z.string().uuid()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+})
+export type Execution = z.infer<typeof executionSchema>
+
+export const approvalDecisionSchema = z.object({
+  id: z.string().uuid(),
+  executionId: z.string().uuid(),
+  stepId: z.string().uuid(),
+  action: z.string().min(1).max(500),
+  target: z.string().min(1).max(4096),
+  risk: riskLevelSchema,
+  effectsHash: z.string().regex(/^[a-f0-9]{64}$/),
+  scope: approvalScopeSchema,
+  decision: z.enum(['APPROVED', 'DENIED']),
+  decidedAt: z.string().datetime()
+})
+export type ApprovalDecision = z.infer<typeof approvalDecisionSchema>
+
 export interface FlightRecorderEvent {
   id: string
   at: string

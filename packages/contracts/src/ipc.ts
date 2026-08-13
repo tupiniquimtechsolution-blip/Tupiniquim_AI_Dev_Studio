@@ -1,5 +1,11 @@
 import { z } from 'zod'
 import type { Result } from './result'
+import type { AIEvent, AIStatus, AgentTurnReference, agentInterruptInputSchema, agentSendInputSchema } from './ai'
+import { approvalScopeSchema, modeSchema, planSchema, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan } from './domain'
+import type { researchCollectInputSchema, researchSearchInputSchema, technologyResolveInputSchema, ResearchResult, ResearchSource, TechnologyResolution } from './research'
+import type { promptCompareInputSchema, promptCompileInputSchema, promptIdInputSchema, promptLintInputSchema, promptSaveInputSchema, CompiledPrompt, PromptComparison, PromptLintIssue, PromptTemplate } from './prompt'
+import type { visualAssetAddInputSchema, visualAssetUseInputSchema, visualProviderOpenInputSchema, VisualAsset, VisualProviderStatus } from './visual'
+import type { uiProfileImportInputSchema, uiProfileSaveInputSchema, UIProfile } from './settings'
 
 export const ipcChannels = {
   systemInfo: 'studio:system:info',
@@ -15,7 +21,35 @@ export const ipcChannels = {
   terminalWrite: 'studio:terminal:write',
   terminalResize: 'studio:terminal:resize',
   terminalKill: 'studio:terminal:kill',
-  terminalData: 'studio:terminal:data'
+  terminalData: 'studio:terminal:data',
+  agentStatus: 'studio:agent:status',
+  agentSend: 'studio:agent:send',
+  agentInterrupt: 'studio:agent:interrupt',
+  agentEvent: 'studio:agent:event',
+  planCreate: 'studio:plan:create',
+  planUpdate: 'studio:plan:update',
+  executionRead: 'studio:execution:read',
+  executionStart: 'studio:execution:start',
+  executionEvents: 'studio:execution:events',
+  approvalDecide: 'studio:approval:decide',
+  researchSearch: 'studio:research:search',
+  researchCollect: 'studio:research:collect',
+  technologyResolve: 'studio:technology:resolve',
+  promptSave: 'studio:prompt:save',
+  promptList: 'studio:prompt:list',
+  promptCompile: 'studio:prompt:compile',
+  promptCompare: 'studio:prompt:compare',
+  promptLint: 'studio:prompt:lint',
+  promptExport: 'studio:prompt:export',
+  visualStatus: 'studio:visual:status',
+  visualAssetAdd: 'studio:visual:asset:add',
+  visualAssetList: 'studio:visual:asset:list',
+  visualAssetUse: 'studio:visual:asset:use',
+  visualProviderOpen: 'studio:visual:provider:open',
+  settingsGet: 'studio:settings:get',
+  settingsSave: 'studio:settings:save',
+  settingsExport: 'studio:settings:export',
+  settingsImport: 'studio:settings:import'
 } as const
 
 export const workspacePathSchema = z.string().max(4096).refine((value) => !value.includes('\0'), 'Caminho inválido')
@@ -32,6 +66,10 @@ export const terminalCreateInputSchema = z.object({ cwd: workspacePathSchema.def
 export const terminalWriteInputSchema = z.object({ terminalId: z.string().uuid(), data: z.string().max(65_536) })
 export const terminalResizeInputSchema = z.object({ terminalId: z.string().uuid(), cols: z.number().int().min(20).max(500), rows: z.number().int().min(5).max(200) })
 export const terminalKillInputSchema = z.object({ terminalId: z.string().uuid() })
+export const planCreateInputSchema = z.object({ objective: z.string().trim().min(3).max(100_000), mode: modeSchema })
+export const planUpdateInputSchema = z.object({ plan: planSchema })
+export const executionIdInputSchema = z.object({ executionId: z.string().uuid() })
+export const approvalDecideInputSchema = z.object({ executionId: z.string().uuid(), stepId: z.string().uuid(), decision: z.enum(['APPROVED', 'DENIED']), scope: approvalScopeSchema })
 
 export interface FileEntry {
   name: string
@@ -77,6 +115,11 @@ export interface TerminalDataEvent {
   exitCode?: number
 }
 
+export interface PlannedExecution {
+  plan: Plan
+  execution: Execution
+}
+
 export interface StudioApi {
   system: { info(): Promise<Result<SystemInfo>> }
   workspace: {
@@ -97,5 +140,45 @@ export interface StudioApi {
     resize(input: z.input<typeof terminalResizeInputSchema>): Promise<Result<void>>
     kill(input: z.input<typeof terminalKillInputSchema>): Promise<Result<void>>
     onData(listener: (event: TerminalDataEvent) => void): () => void
+  }
+  agent: {
+    status(): Promise<Result<AIStatus>>
+    send(input: z.input<typeof agentSendInputSchema>): Promise<Result<AgentTurnReference>>
+    interrupt(input: z.input<typeof agentInterruptInputSchema>): Promise<Result<void>>
+    onEvent(listener: (event: AIEvent) => void): () => void
+  }
+  planning: {
+    create(input: z.input<typeof planCreateInputSchema>): Promise<Result<PlannedExecution>>
+    update(input: z.input<typeof planUpdateInputSchema>): Promise<Result<Plan>>
+    read(input: z.input<typeof executionIdInputSchema>): Promise<Result<PlannedExecution>>
+    decide(input: z.input<typeof approvalDecideInputSchema>): Promise<Result<ApprovalDecision>>
+    start(input: z.input<typeof executionIdInputSchema>): Promise<Result<Execution>>
+    events(input: z.input<typeof executionIdInputSchema>): Promise<Result<FlightRecorderEvent[]>>
+  }
+  research: {
+    search(input: z.input<typeof researchSearchInputSchema>): Promise<Result<ResearchResult>>
+    collect(input: z.input<typeof researchCollectInputSchema>): Promise<Result<ResearchSource>>
+    resolve(input: z.input<typeof technologyResolveInputSchema>): Promise<Result<TechnologyResolution>>
+  }
+  prompt: {
+    save(input: z.input<typeof promptSaveInputSchema>): Promise<Result<PromptTemplate>>
+    list(): Promise<Result<PromptTemplate[]>>
+    compile(input: z.input<typeof promptCompileInputSchema>): Promise<Result<CompiledPrompt>>
+    compare(input: z.input<typeof promptCompareInputSchema>): Promise<Result<PromptComparison>>
+    lint(input: z.input<typeof promptLintInputSchema>): Promise<Result<PromptLintIssue[]>>
+    export(input: z.input<typeof promptIdInputSchema>): Promise<Result<string>>
+  }
+  visual: {
+    statuses(): Promise<Result<VisualProviderStatus[]>>
+    add(input: z.input<typeof visualAssetAddInputSchema>): Promise<Result<VisualAsset>>
+    list(): Promise<Result<VisualAsset[]>>
+    use(input: z.input<typeof visualAssetUseInputSchema>): Promise<Result<VisualAsset>>
+    open(input: z.input<typeof visualProviderOpenInputSchema>): Promise<Result<void>>
+  }
+  settings: {
+    get(): Promise<Result<UIProfile>>
+    save(input: z.input<typeof uiProfileSaveInputSchema>): Promise<Result<UIProfile>>
+    export(): Promise<Result<string>>
+    import(input: z.input<typeof uiProfileImportInputSchema>): Promise<Result<UIProfile>>
   }
 }

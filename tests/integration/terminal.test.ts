@@ -9,7 +9,7 @@ afterEach(async () => { if (fixture !== '') await rm(fixture, { recursive: true,
 describe('TerminalAdapter', () => {
   it('executa uma sessão ConPTY real', async () => {
     const temp = process.env.TEMP
-    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'E:\\') throw new Error('TEMP de testes precisa estar em E:.')
+    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de testes precisa estar em F:.')
     fixture = await mkdtemp(path.join(temp, 'tupiniquim-pty-'))
     const events: TerminalEvent[] = []
     let resolveOutput: (() => void) | undefined

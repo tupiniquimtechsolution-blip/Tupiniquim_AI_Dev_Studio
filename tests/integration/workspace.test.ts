@@ -7,7 +7,7 @@ let fixture = ''
 
 beforeEach(async () => {
   const temp = process.env.TEMP
-  if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'E:\\') throw new Error('TEMP de testes precisa estar em E:.')
+  if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de testes precisa estar em F:.')
   fixture = await mkdtemp(path.join(temp, 'tupiniquim-workspace-'))
   await mkdir(path.join(fixture, 'src'))
   await writeFile(path.join(fixture, 'src', 'index.ts'), 'export const value = 1\n', 'utf8')

@@ -1,6 +1,5 @@
-# ADR 0008 — Packaging e dados em E
+# ADR 0008 — Packaging e dados em disco dedicado (histórico)
 
-Status: Aceito
+Status: Substituído pelo ADR 0010
 
-Bootstrap valida drive E e redireciona stores/caches. `app.setPath` aponta userData, logs, sessionData e temp para `E:\Tupiniquim-AI-Dev-Studio.data`. Entrega inicial é portátil e unsigned.
-
+Registro histórico da decisão original de localização. A localização antiga foi revogada; a política ativa está no ADR 0010.

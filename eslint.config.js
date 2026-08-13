@@ -4,7 +4,18 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 
 export default tseslint.config(
-  { ignores: ['out/**', 'dist/**', 'coverage/**', '.pnpm/**', 'eslint.config.js'] },
+  {
+    ignores: [
+      'out/**',
+      'dist/**',
+      'coverage/**',
+      '.pnpm/**',
+      'playwright-report/**',
+      'test-results/**',
+      'packages/contracts/schemas/**',
+      'eslint.config.js'
+    ]
+  },
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {

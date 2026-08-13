@@ -25,3 +25,10 @@ export const assertRealPathInside = async (root: string, candidate: string): Pro
   const realExisting = await realpath(existing)
   if (!isInside(realRoot, realExisting)) throw new PathSecurityError('Symlink ou junction escapa do workspace.')
 }
+
+export const resolveExistingInside = async (root: string, relativePath: string): Promise<string> => {
+  const candidate = resolveLexicalPath(root, relativePath)
+  await lstat(candidate)
+  await assertRealPathInside(root, candidate)
+  return candidate
+}
