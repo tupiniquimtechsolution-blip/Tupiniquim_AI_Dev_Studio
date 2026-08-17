@@ -1,6 +1,6 @@
 # Próxima ação
 
-1. Criar uma proposta de manifesto de `workspace.write` produzida pelo runtime, contendo somente metadados persistíveis e payload mantido em memória até a decisão humana; qualquer conteúdo do workspace segue não confiável.
-2. Permitir revisão explícita de alvo, operação, risco e hash no painel antes da aprovação, sem expor nem registrar o conteúdo proposto fora da execução efetiva.
-3. Vincular a proposta ao thread/turn de origem e invalidá-la em caso de nova proposta, troca de workspace, mudança de alvo ou reinício do aplicativo.
-4. Cobrir propostas ausentes/obsoletas, conteúdo divergente, `.env*` e persistência sem payload; então executar gates e checkpoint antes de ampliar terminal ou Git.
+1. Adicionar consumo da proposta efêmera ao executor de `workspace.write`, transferindo o payload somente no processo principal após o manifesto ser aprovado; o renderer envia apenas o id da proposta.
+2. Conferir novamente thread/turn, workspace, efeito e hash durante o consumo; proposta ausente, obsoleta ou reiniciada retorna estado explícito sem escrita.
+3. Refletir no painel que o manifesto veio de uma proposta vinculada ao turn, sem exibir conteúdo nem liberar terminal ou Git.
+4. Cobrir consumo aprovado, ausência, substituição, workspace divergente e payload nunca persistido; então executar gates e checkpoint.

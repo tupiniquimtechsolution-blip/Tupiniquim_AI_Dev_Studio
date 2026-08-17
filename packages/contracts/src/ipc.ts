@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { Result } from './result'
 import type { AIEvent, AIStatus, AIThreadHistory, AgentTurnReference, LocalModel, agentInterruptInputSchema, agentLocalModelSelectInputSchema, agentProviderSelectInputSchema, agentSendInputSchema, agentThreadIdInputSchema } from './ai'
-import { approvalScopeSchema, modeSchema, planSchema, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan } from './domain'
+import { approvalScopeSchema, modeSchema, planSchema, type ActionManifest, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan } from './domain'
 import type { researchCollectInputSchema, researchSearchInputSchema, technologyResolveInputSchema, ResearchResult, ResearchSource, TechnologyResolution } from './research'
 import type { promptCompareInputSchema, promptCompileInputSchema, promptIdInputSchema, promptLintInputSchema, promptSaveInputSchema, CompiledPrompt, PromptComparison, PromptLintIssue, PromptTemplate } from './prompt'
 import type { visualAssetAddInputSchema, visualAssetUseInputSchema, visualProviderOpenInputSchema, VisualAsset, VisualProviderStatus } from './visual'
@@ -37,6 +37,7 @@ export const ipcChannels = {
   executionStart: 'studio:execution:start',
   executionEvents: 'studio:execution:events',
   executionApplyWorkspaceWrite: 'studio:execution:workspace:write',
+  executionProposeWorkspaceWrite: 'studio:execution:workspace:propose',
   approvalDecide: 'studio:approval:decide',
   researchSearch: 'studio:research:search',
   researchCollect: 'studio:research:collect',
@@ -83,6 +84,15 @@ export const executionWorkspaceWriteInputSchema = z.object({
   content: z.string().max(10_000_000),
   expectedHash: z.string().regex(/^[a-f0-9]{64}$/).optional()
 })
+export const executionWorkspaceWriteProposalInputSchema = z.object({
+  executionId: z.string().uuid(),
+  stepId: z.string().uuid(),
+  threadId: z.string().min(1).max(200),
+  turnId: z.string().min(1).max(200),
+  relativePath: workspacePathSchema,
+  content: z.string().max(10_000_000),
+  operation: z.enum(['CREATE', 'REPLACE'])
+})
 export const approvalDecideInputSchema = z.object({ executionId: z.string().uuid(), stepId: z.string().uuid(), decision: z.enum(['APPROVED', 'DENIED']), scope: approvalScopeSchema })
 
 export interface FileEntry {
@@ -105,6 +115,16 @@ export interface AppliedWorkspaceEffect {
   relativePath: string
   hash: string
   modifiedAt: string
+}
+
+export interface WorkspaceWriteProposal {
+  id: string
+  executionId: string
+  stepId: string
+  threadId: string
+  turnId: string
+  effect: ActionManifest
+  createdAt: string
 }
 
 export interface SearchMatch {
@@ -194,6 +214,7 @@ export interface StudioApi {
     start(input: z.input<typeof executionIdInputSchema>): Promise<Result<Execution>>
     events(input: z.input<typeof executionIdInputSchema>): Promise<Result<FlightRecorderEvent[]>>
     applyWorkspaceWrite(input: z.input<typeof executionWorkspaceWriteInputSchema>): Promise<Result<AppliedWorkspaceEffect>>
+    proposeWorkspaceWrite(input: z.input<typeof executionWorkspaceWriteProposalInputSchema>): Promise<Result<WorkspaceWriteProposal>>
   }
   research: {
     search(input: z.input<typeof researchSearchInputSchema>): Promise<Result<ResearchResult>>

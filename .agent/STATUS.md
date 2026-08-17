@@ -5,7 +5,7 @@ Atualizado em: 2026-08-17
 ## Estado atual
 
 - Current wave: Wave 1 do Plano Mestre — runtime local entregue; agente/contexto em andamento.
-- Current checkpoint: checkpoint/wave-11 (retomada legada de efeitos).
+- Current checkpoint: checkpoint/wave-12 (propostas efêmeras de escrita).
 - Current branch: codex/wip-waves-04-10-20260813.
 - Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d.
 - Repositório operacional: D:\CODEX\Tupiniquim-AI-Dev-Studio.
@@ -27,8 +27,8 @@ Atualizado em: 2026-08-17
     powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 validate
     powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 test:e2e
 
-- validate: PASS — validação D:, lint, typecheck, 17 unitários, 14 integrações (2 opt-in ignorados), 4 testes de segurança e build.
-- test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita, bloqueio de git reset --hard, Ollama local, contexto, baseline, manifesto aprovado e workspace.write atômico.
+- validate: PASS — validação D:, lint, typecheck, 17 unitários, 15 integrações (2 opt-in ignorados), 4 testes de segurança e build.
+- test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita, bloqueio de git reset --hard, Ollama local, contexto, baseline, manifesto aprovado, workspace.write e runtime de propostas.
 
 ## Concluído na Wave 1
 
@@ -46,10 +46,11 @@ Atualizado em: 2026-08-17
 - A primeira ação mutável real é `workspace.write` por um canal de execução próprio. Ela reserva um efeito aprovado uma única vez, confere capacidade/operação, alvo exato e SHA-256 do conteúdo, reavalia a PolicyEngine, usa a escrita atômica do adapter e registra somente alvo redigido e prefixo do hash no AuditLog/Flight Recorder.
 - O executor recusa `.env*`, `DELETE`, terminal e Git mutável; uma falha de alvo/hash libera a reserva sem escrever, e um efeito concluído não pode ser repetido.
 - Execuções SQLite legadas, criadas antes de `completedEffectIds`, são normalizadas pelo schema na leitura e podem retomar sem erro de propriedade ausente.
+- O runtime pode propor `workspace.write` com vínculo obrigatório a thread/turn existentes, persistindo somente o manifesto; o conteúdo permanece no processo principal, é substituído por proposta mais nova para o mesmo passo e some no reinício.
 
 ## Próximo
 
-Permitir que o runtime proponha manifestos de escrita revisáveis sem persistir o payload bruto, mantendo a decisão humana e o canal executável limitado já entregues. Terminal e Git mutável permanecem indisponíveis.
+Consumir uma proposta de escrita somente após a aprovação correspondente, sem reenviar o conteúdo pelo renderer. Terminal e Git mutável permanecem indisponíveis.
 
 ## Bloqueios externos
 

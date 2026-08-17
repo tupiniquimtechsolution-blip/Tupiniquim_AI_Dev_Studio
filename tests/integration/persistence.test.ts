@@ -3,7 +3,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LocalDatabase } from '@tupiniquim/adapters'
 import type { Execution } from '@tupiniquim/contracts'
-import { PlanApprovalService } from '@tupiniquim/core'
+import { PlanApprovalService, WorkspaceWriteProposalService } from '@tupiniquim/core'
 
 let fixture = ''
 let database: LocalDatabase
@@ -111,6 +111,26 @@ describe('persistência Plan/Approval/Execute', () => {
     delete legacy.completedEffectIds
     await database.putExecution(legacy as unknown as Execution)
     expect((await service.read(planned.execution.id)).execution.completedEffectIds).toEqual([])
+  })
+
+  it('mantém proposta de escrita somente em memória e a vincula ao turn de origem', async () => {
+    const now = new Date().toISOString()
+    const thread = { id: 'thread-proposta', provider: 'ollama' as const, workspaceRoot: fixture, model: 'modelo-teste', createdAt: now, updatedAt: now }
+    const turn = { id: 'turn-proposta', threadId: thread.id, mode: 'PLAN' as const, inputHash: 'b'.repeat(64), createdAt: now }
+    await database.putAIThread(thread)
+    await database.putAITurn(turn)
+    const planning = new PlanApprovalService(database)
+    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture)
+    const planned = await planning.create('Propor escrita com proveniência', fixture, 'PLAN')
+    const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
+    if (step === undefined) throw new Error('Fixture sem passo aprovável.')
+    const first = await proposals.propose({ executionId: planned.execution.id, stepId: step.id, threadId: thread.id, turnId: turn.id, relativePath: 'src/proposta.ts', content: 'conteúdo privado da proposta', operation: 'CREATE' })
+    expect(JSON.stringify(first)).not.toContain('conteúdo privado')
+    expect(first).toMatchObject({ threadId: thread.id, turnId: turn.id, effect: { target: 'src/proposta.ts', capability: 'workspace.write' } })
+    expect((await planning.read(planned.execution.id)).plan.steps.find((candidate) => candidate.id === step.id)?.effects).toHaveLength(1)
+    const second = await proposals.propose({ executionId: planned.execution.id, stepId: step.id, threadId: thread.id, turnId: turn.id, relativePath: 'src/substituida.ts', content: 'novo conteúdo privado', operation: 'REPLACE' })
+    await expect(proposals.consume(first.id)).rejects.toThrow('não está disponível')
+    await expect(proposals.consume(second.id)).resolves.toMatchObject({ proposal: { id: second.id, effect: { target: 'src/substituida.ts' } }, content: 'novo conteúdo privado' })
   })
 
   it('persiste threads, turns e eventos de IA sem armazenar o conteúdo da entrada', async () => {

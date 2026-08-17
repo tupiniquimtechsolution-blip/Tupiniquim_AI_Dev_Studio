@@ -1,5 +1,10 @@
 # Changelog do Agente
 
+## 2026-08-17 — Wave Mestre 1, propostas efêmeras de escrita
+
+- Adicionado serviço de runtime que valida a proveniência da proposta contra thread/turn persistidos, cria manifesto `workspace.write` de alto risco e mantém o conteúdo exclusivamente em memória.
+- Nova proposta para o mesmo passo substitui e invalida a anterior; alteração de workspace ou manifesto invalida o consumo. IPC/preload retornam somente metadados da proposta.
+
 ## 2026-08-17 — Wave Mestre 1, retomada legada de efeitos
 
 - Normalizada a leitura de plano e execução persistidos pelo schema atual, aplicando o valor padrão de `completedEffectIds` a registros anteriores à Wave 10.

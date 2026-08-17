@@ -17,6 +17,7 @@ import {
   ipcChannels,
   executionIdInputSchema,
   executionWorkspaceWriteInputSchema,
+  executionWorkspaceWriteProposalInputSchema,
   listFilesInputSchema,
   ok,
   readFileInputSchema,
@@ -49,7 +50,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService, type ToolIntent } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService, WorkspaceWriteProposalService, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataRoot = 'D:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
@@ -67,6 +68,7 @@ const git = new GitAdapter(() => workspace.getRoot())
 const audit = new AuditLog(dataRoot)
 const database = new LocalDatabase(dataRoot)
 const planning = new PlanApprovalService(database)
+const writeProposals = new WorkspaceWriteProposalService(planning, database, () => workspace.getRoot())
 const research = new HttpResearchProvider(dataRoot)
 const technology = new TechnologyResolutionEngine()
 const promptArchitect = new PromptArchitect(database)
@@ -288,6 +290,7 @@ const registerIpc = (): void => {
     return execution
   })
   register(ipcChannels.executionEvents, executionIdInputSchema, 'execution.events', ({ executionId }) => planning.events(executionId))
+  register(ipcChannels.executionProposeWorkspaceWrite, executionWorkspaceWriteProposalInputSchema, 'execution.workspace.propose', (input) => writeProposals.propose(input))
   register(ipcChannels.researchSearch, researchSearchInputSchema, 'research.search', ({ query, maxResults }) => research.search(query, maxResults))
   register(ipcChannels.researchCollect, researchCollectInputSchema, 'research.collect', ({ url }) => research.collect(url))
   register(ipcChannels.technologyResolve, technologyResolveInputSchema, 'technology.resolve', ({ requirements, platforms, availableTools }) => technology.resolve(requirements, platforms, availableTools))

@@ -1,7 +1,7 @@
 # SESSION HANDOFF
 
 Wave: Mestre 0 concluída; Wave 1 em andamento
-Checkpoint: checkpoint/wave-11 (retomada legada de efeitos)
+Checkpoint: checkpoint/wave-12 (propostas efêmeras de escrita)
 Branch: codex/wip-waves-04-10-20260813
 Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 
@@ -18,6 +18,7 @@ Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 - Manifestos de efeitos tipados e sem payload bruto vinculam aprovações ao hash canônico; mudança de alvo/efeito invalida a decisão e o renderer não pode reduzir os controles do plano.
 - `workspace.write` é a primeira materialização real: alvo e SHA-256 conferidos contra manifesto aprovado, escrita atômica, reserva única, AuditLog/Flight Recorder redigidos e E2E em fixture Git D:.
 - A leitura de execuções legadas normaliza `completedEffectIds` ausente, preservando a retomada após a atualização do schema.
+- Propostas de escrita vinculam-se a thread/turn e mantêm o payload em memória; IPC/persistência recebem somente manifesto e metadados.
 
 ## Pending
 
@@ -29,4 +30,4 @@ Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 
 ## Exact next action
 
-Permitir proposta de manifesto de escrita revisável pelo runtime, sem persistir o payload bruto, conforme NEXT_ACTION.md.
+Consumir a proposta efêmera após aprovação sem reenviar conteúdo pelo renderer, conforme NEXT_ACTION.md.
