@@ -1,5 +1,10 @@
 # Changelog do Agente
 
+## 2026-08-17 — Wave Mestre 1, retomada legada de efeitos
+
+- Normalizada a leitura de plano e execução persistidos pelo schema atual, aplicando o valor padrão de `completedEffectIds` a registros anteriores à Wave 10.
+- A conclusão de efeito usa a mesma normalização; integração cobre retomada de payload legado sem alterar nem remover dados existentes.
+
 ## 2026-08-17 — Wave Mestre 1, workspace.write aprovado
 
 - Adicionado canal de execução tipado para `workspace.write`, separado do salvamento genérico: exige execução/passo/efeito aprovados, compara alvo e SHA-256 antes da escrita atômica e retorna somente metadados.

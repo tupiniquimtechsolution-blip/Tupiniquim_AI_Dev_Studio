@@ -1,5 +1,16 @@
 # Resultados de testes
 
+## 2026-08-17 — Wave 1, retomada legada de efeitos
+
+| Comando | Resultado |
+|---|---|
+| scripts\pnpm-d.ps1 validate | PASS: validação D:, lint, typecheck, 17 unitários, 14 integrações (2 opt-in ignorados), 4 segurança e build |
+| scripts\pnpm-d.ps1 test:integration | PASS: 14 integrações (2 opt-in ignorados) |
+| scripts\pnpm-d.ps1 typecheck | PASS |
+| scripts\pnpm-d.ps1 test:e2e | PASS: 1 cenário Electron real |
+
+- A integração persiste um payload de execução anterior, sem `completedEffectIds`, e confirma que a leitura o normaliza para uma lista vazia sem migração destrutiva.
+
 ## 2026-08-17 — Wave 1, workspace.write aprovado
 
 | Comando | Resultado |

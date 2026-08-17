@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LocalDatabase } from '@tupiniquim/adapters'
+import type { Execution } from '@tupiniquim/contracts'
 import { PlanApprovalService } from '@tupiniquim/core'
 
 let fixture = ''
@@ -101,6 +102,15 @@ describe('persistência Plan/Approval/Execute', () => {
     await service.completeEffect(planned.execution.id, effect.id)
     expect((await service.read(planned.execution.id)).execution.completedEffectIds).toContain(effect.id)
     await expect(service.claimEffect(planned.execution.id, step.id, effect.id)).rejects.toThrow('já foi materializado')
+  })
+
+  it('normaliza execuções legadas sem completedEffectIds ao retomar o plano', async () => {
+    const service = new PlanApprovalService(database)
+    const planned = await service.create('Retomar execução legada', fixture, 'PLAN')
+    const legacy = { ...planned.execution } as Record<string, unknown>
+    delete legacy.completedEffectIds
+    await database.putExecution(legacy as unknown as Execution)
+    expect((await service.read(planned.execution.id)).execution.completedEffectIds).toEqual([])
   })
 
   it('persiste threads, turns e eventos de IA sem armazenar o conteúdo da entrada', async () => {

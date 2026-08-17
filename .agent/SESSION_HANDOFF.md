@@ -1,7 +1,7 @@
 # SESSION HANDOFF
 
 Wave: Mestre 0 concluída; Wave 1 em andamento
-Checkpoint: checkpoint/wave-10 (workspace.write aprovado)
+Checkpoint: checkpoint/wave-11 (retomada legada de efeitos)
 Branch: codex/wip-waves-04-10-20260813
 Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 
@@ -17,6 +17,7 @@ Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 - Histórico de IA recuperável via IPC e Caixa-preta; migration SQLite v4 repara tabelas de IA ausentes.
 - Manifestos de efeitos tipados e sem payload bruto vinculam aprovações ao hash canônico; mudança de alvo/efeito invalida a decisão e o renderer não pode reduzir os controles do plano.
 - `workspace.write` é a primeira materialização real: alvo e SHA-256 conferidos contra manifesto aprovado, escrita atômica, reserva única, AuditLog/Flight Recorder redigidos e E2E em fixture Git D:.
+- A leitura de execuções legadas normaliza `completedEffectIds` ausente, preservando a retomada após a atualização do schema.
 
 ## Pending
 

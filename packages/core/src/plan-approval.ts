@@ -115,11 +115,12 @@ export class PlanApprovalService {
   }
 
   public async read(executionId: string): Promise<PlannedExecution> {
-    const execution = await this.repository.getExecution(executionId)
-    if (execution === null) throw new Error('Execução não encontrada.')
-    const plan = await this.repository.getPlan(execution.planId)
-    if (plan === null) throw new Error('Plano associado não encontrado.')
-    return { plan, execution }
+    const storedExecution = await this.repository.getExecution(executionId)
+    if (storedExecution === null) throw new Error('Execução não encontrada.')
+    const execution = executionSchema.parse(storedExecution)
+    const storedPlan = await this.repository.getPlan(execution.planId)
+    if (storedPlan === null) throw new Error('Plano associado não encontrado.')
+    return { plan: planSchema.parse(storedPlan), execution }
   }
 
   public async decide(executionId: string, stepId: string, decision: 'APPROVED' | 'DENIED', scope: ApprovalScope): Promise<ApprovalDecision> {
@@ -204,8 +205,10 @@ export class PlanApprovalService {
     const key = `${executionId}:${effectId}`
     if (!this.activeEffects.has(key)) throw new Error('Efeito não foi reservado para materialização.')
     try {
-      const execution = await this.repository.getExecution(executionId)
-      if (execution === null || execution.state !== 'EXECUTION') throw new Error('Execução não está disponível para concluir o efeito.')
+      const storedExecution = await this.repository.getExecution(executionId)
+      if (storedExecution === null) throw new Error('Execução não está disponível para concluir o efeito.')
+      const execution = executionSchema.parse(storedExecution)
+      if (execution.state !== 'EXECUTION') throw new Error('Execução não está disponível para concluir o efeito.')
       if (execution.completedEffectIds.includes(effectId)) throw new Error('Efeito já foi materializado.')
       await this.repository.putExecution(executionSchema.parse({ ...execution, completedEffectIds: [...execution.completedEffectIds, effectId], updatedAt: new Date().toISOString() }))
     } finally {
