@@ -50,6 +50,8 @@ const assertManifest = (step: PlanStep): void => {
 }
 
 export class PlanApprovalService {
+  private readonly activeEffects = new Set<string>()
+
   public constructor(private readonly repository: PlanRepository) {}
 
   public async create(objective: string, workspaceRoot: string, mode: Mode): Promise<PlannedExecution> {
@@ -77,6 +79,7 @@ export class PlanApprovalService {
       activeStepId: plan.steps.find((candidate) => candidate.requiresApproval)?.id ?? null,
       threadId: null,
       approvalIds: [],
+      completedEffectIds: [],
       createdAt: now,
       updatedAt: now
     })
@@ -172,6 +175,47 @@ export class PlanApprovalService {
   }
 
   public async events(executionId: string): Promise<FlightRecorderEvent[]> { return await this.repository.listEvents(executionId) }
+
+  public async claimEffect(executionId: string, stepId: string, effectId: string): Promise<ActionManifest> {
+    const key = `${executionId}:${effectId}`
+    if (this.activeEffects.has(key)) throw new Error('Efeito já está em execução.')
+    this.activeEffects.add(key)
+    try {
+      const { execution, plan } = await this.read(executionId)
+      if (execution.state !== 'EXECUTION') throw new Error('Efeito só pode ser materializado durante execução autorizada.')
+      if (execution.completedEffectIds.includes(effectId)) throw new Error('Efeito já foi materializado.')
+      const step = plan.steps.find((candidate) => candidate.id === stepId)
+      if (step === undefined || !step.requiresApproval) throw new Error('Passo não pode materializar efeitos.')
+      assertManifest(step)
+      const effect = step.effects.find((candidate) => candidate.id === effectId)
+      if (effect === undefined) throw new Error('Efeito não pertence ao passo aprovado.')
+      const approvals = (await Promise.all(execution.approvalIds.map(async (id) => await this.repository.getApproval(id)))).filter((candidate): candidate is ApprovalDecision => candidate !== null)
+      const relevant = approvals.filter((approval) => approval.stepId === step.id && approval.effectsHash === manifestEffectsHash(step.effects))
+      if (relevant.some((approval) => approval.decision === 'DENIED')) throw new Error(`Passo negado: ${step.title}`)
+      if (!relevant.some((approval) => approval.decision === 'APPROVED')) throw new Error(`Aprovação pendente: ${step.title}`)
+      return effect
+    } catch (cause) {
+      this.activeEffects.delete(key)
+      throw cause
+    }
+  }
+
+  public async completeEffect(executionId: string, effectId: string): Promise<void> {
+    const key = `${executionId}:${effectId}`
+    if (!this.activeEffects.has(key)) throw new Error('Efeito não foi reservado para materialização.')
+    try {
+      const execution = await this.repository.getExecution(executionId)
+      if (execution === null || execution.state !== 'EXECUTION') throw new Error('Execução não está disponível para concluir o efeito.')
+      if (execution.completedEffectIds.includes(effectId)) throw new Error('Efeito já foi materializado.')
+      await this.repository.putExecution(executionSchema.parse({ ...execution, completedEffectIds: [...execution.completedEffectIds, effectId], updatedAt: new Date().toISOString() }))
+    } finally {
+      this.activeEffects.delete(key)
+    }
+  }
+
+  public abandonEffect(executionId: string, effectId: string): void {
+    this.activeEffects.delete(`${executionId}:${effectId}`)
+  }
 
   private async record(executionId: string, category: FlightRecorderEvent['category'], title: string, detail: string, severity: FlightRecorderEvent['severity']): Promise<void> {
     const execution = await this.repository.getExecution(executionId)

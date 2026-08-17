@@ -36,6 +36,7 @@ export const ipcChannels = {
   executionRead: 'studio:execution:read',
   executionStart: 'studio:execution:start',
   executionEvents: 'studio:execution:events',
+  executionApplyWorkspaceWrite: 'studio:execution:workspace:write',
   approvalDecide: 'studio:approval:decide',
   researchSearch: 'studio:research:search',
   researchCollect: 'studio:research:collect',
@@ -74,6 +75,14 @@ export const terminalKillInputSchema = z.object({ terminalId: z.string().uuid() 
 export const planCreateInputSchema = z.object({ objective: z.string().trim().min(3).max(100_000), mode: modeSchema })
 export const planUpdateInputSchema = z.object({ executionId: z.string().uuid(), plan: planSchema })
 export const executionIdInputSchema = z.object({ executionId: z.string().uuid() })
+export const executionWorkspaceWriteInputSchema = z.object({
+  executionId: z.string().uuid(),
+  stepId: z.string().uuid(),
+  effectId: z.string().uuid(),
+  relativePath: workspacePathSchema,
+  content: z.string().max(10_000_000),
+  expectedHash: z.string().regex(/^[a-f0-9]{64}$/).optional()
+})
 export const approvalDecideInputSchema = z.object({ executionId: z.string().uuid(), stepId: z.string().uuid(), decision: z.enum(['APPROVED', 'DENIED']), scope: approvalScopeSchema })
 
 export interface FileEntry {
@@ -87,6 +96,13 @@ export interface FileEntry {
 export interface FileDocument {
   relativePath: string
   content: string
+  hash: string
+  modifiedAt: string
+}
+
+export interface AppliedWorkspaceEffect {
+  effectId: string
+  relativePath: string
   hash: string
   modifiedAt: string
 }
@@ -177,6 +193,7 @@ export interface StudioApi {
     decide(input: z.input<typeof approvalDecideInputSchema>): Promise<Result<ApprovalDecision>>
     start(input: z.input<typeof executionIdInputSchema>): Promise<Result<Execution>>
     events(input: z.input<typeof executionIdInputSchema>): Promise<Result<FlightRecorderEvent[]>>
+    applyWorkspaceWrite(input: z.input<typeof executionWorkspaceWriteInputSchema>): Promise<Result<AppliedWorkspaceEffect>>
   }
   research: {
     search(input: z.input<typeof researchSearchInputSchema>): Promise<Result<ResearchResult>>

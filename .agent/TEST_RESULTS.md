@@ -1,5 +1,17 @@
 # Resultados de testes
 
+## 2026-08-17 — Wave 1, workspace.write aprovado
+
+| Comando | Resultado |
+|---|---|
+| scripts\pnpm-d.ps1 validate | PASS: validação D:, lint, typecheck, 17 unitários, 13 integrações (2 opt-in ignorados), 4 segurança e build |
+| scripts\pnpm-d.ps1 typecheck | PASS |
+| scripts\pnpm-d.ps1 test:integration | PASS: 13 integrações (2 opt-in ignorados) |
+| scripts\pnpm-d.ps1 build | PASS: Electron production build |
+| scripts\pnpm-d.ps1 test:e2e | PASS: 1 cenário Electron real |
+
+- O E2E cria e remove uma fixture Git temporária no disco D:, sem tocar no workspace do repositório, e verifica recusa por alvo/hash, escrita aprovada, repetição bloqueada e conteúdo resultante.
+
 ## 2026-08-17 — Wave 1, manifestos imutáveis de efeitos
 
 | Comando | Resultado |

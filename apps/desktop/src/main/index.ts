@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,6 +16,7 @@ import {
   err,
   ipcChannels,
   executionIdInputSchema,
+  executionWorkspaceWriteInputSchema,
   listFilesInputSchema,
   ok,
   readFileInputSchema,
@@ -43,6 +44,7 @@ import {
   writeFileInputSchema,
   type AIProvider,
   type AIProviderKind,
+  type AppliedWorkspaceEffect,
   type WorkspaceContext,
   type Result
 } from '@tupiniquim/contracts'
@@ -143,6 +145,8 @@ const isIpcValue = (value: unknown): boolean => {
 }
 
 const ipcOutputSchema = z.custom<unknown>(isIpcValue, 'Resposta IPC deve conter somente dados serializáveis.')
+const contentHash = (content: string): string => createHash('sha256').update(content).digest('hex')
+const isPrivateEnvironmentPath = (relativePath: string): boolean => relativePath.split(/[\\/]/u).some((segment) => segment.toLowerCase().startsWith('.env'))
 
 const policyIntent = (capability: string, input: unknown): ToolIntent => {
   const values = input as Record<string, unknown>
@@ -190,6 +194,40 @@ const register = <I, O>(
   })
 }
 
+const registerApprovedWorkspaceWrite = (): void => {
+  ipcMain.handle(ipcChannels.executionApplyWorkspaceWrite, async (event, raw: unknown): Promise<Result<AppliedWorkspaceEffect>> => {
+    const requestId = randomUUID()
+    const started = Date.now()
+    let claimed: { executionId: string; effectId: string } | undefined
+    if (!trustedSender(event.sender.id)) {
+      await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.write', outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'UNTRUSTED_SENDER' })
+      return err('UNTRUSTED_SENDER', 'Origem IPC não autorizada.')
+    }
+    try {
+      const input = executionWorkspaceWriteInputSchema.parse(raw)
+      if (isPrivateEnvironmentPath(input.relativePath)) throw new Error('Arquivos .env não podem ser materializados pelo executor.')
+      const effect = await planning.claimEffect(input.executionId, input.stepId, input.effectId)
+      claimed = { executionId: input.executionId, effectId: input.effectId }
+      if (effect.capability !== 'workspace.write' || (effect.operation !== 'CREATE' && effect.operation !== 'REPLACE')) throw new Error('Manifesto não autoriza escrita de workspace.')
+      if (effect.target !== input.relativePath) throw new Error('Alvo solicitado diverge do manifesto aprovado.')
+      if (effect.payloadHash !== contentHash(input.content)) throw new Error('Hash do conteúdo diverge do manifesto aprovado.')
+      const decision = policy.evaluate({ capability: effect.capability, target: effect.target, risk: effect.risk, destructive: true, requiresNetwork: false })
+      if (!decision.allowed) throw new Error(decision.reason)
+      const document = await workspace.write(input.relativePath, input.content, input.expectedHash)
+      await planning.completeEffect(input.executionId, input.effectId)
+      claimed = undefined
+      await planning.recordEvidence(input.executionId, 'TOOL', 'Arquivo materializado', `workspace.write · ${redactContextMetadata(effect.target)} · hash ${effect.payloadHash.slice(0, 12)}…`, 'SUCCESS')
+      await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.write', target: redactContextMetadata(effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
+      return ok({ effectId: effect.id, relativePath: document.relativePath, hash: document.hash, modifiedAt: document.modifiedAt })
+    } catch (cause) {
+      if (claimed !== undefined) planning.abandonEffect(claimed.executionId, claimed.effectId)
+      const error = toAppError(cause, 'EXECUTION_EFFECT_ERROR')
+      await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.write', outcome: 'ERROR', durationMs: Date.now() - started, errorCode: error.code })
+      return { ok: false, error }
+    }
+  })
+}
+
 const registerIpc = (): void => {
   register(ipcChannels.systemInfo, z.undefined(), 'system.info', () => ({
     platform: process.platform,
@@ -206,6 +244,7 @@ const registerIpc = (): void => {
   register(ipcChannels.workspaceList, listFilesInputSchema, 'workspace.list', ({ relativePath, depth }) => workspace.list(relativePath, depth))
   register(ipcChannels.workspaceRead, readFileInputSchema, 'workspace.read', ({ relativePath }) => workspace.read(relativePath))
   register(ipcChannels.workspaceWrite, writeFileInputSchema, 'workspace.write', ({ relativePath, content, expectedHash }) => workspace.write(relativePath, content, expectedHash))
+  registerApprovedWorkspaceWrite()
   register(ipcChannels.workspaceSearch, searchInputSchema, 'workspace.search', ({ query, limit }) => workspace.search(query, limit))
   register(ipcChannels.workspaceContext, z.undefined(), 'workspace.context', () => workspace.context())
   register(ipcChannels.gitStatus, z.undefined(), 'git.status', () => git.status())

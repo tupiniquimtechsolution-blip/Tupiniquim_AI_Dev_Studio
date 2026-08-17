@@ -85,6 +85,24 @@ describe('persistência Plan/Approval/Execute', () => {
     await expect(service.start(planned.execution.id)).rejects.toThrow('Aprovação pendente')
   })
 
+  it('reserva um único efeito aprovado e impede materialização duplicada', async () => {
+    const service = new PlanApprovalService(database)
+    const planned = await service.create('Materializar somente um efeito aprovado', fixture, 'PLAN')
+    const plan = await service.update(planned.execution.id, materializeEffects(planned.plan))
+    for (const step of plan.steps.filter((candidate) => candidate.requiresApproval)) {
+      await service.decide(planned.execution.id, step.id, 'APPROVED', 'TASK')
+    }
+    await service.start(planned.execution.id)
+    const step = plan.steps.find((candidate) => candidate.requiresApproval)
+    const effect = step?.effects[0]
+    if (step === undefined || effect === undefined) throw new Error('Fixture sem efeito aprovável.')
+    await expect(service.claimEffect(planned.execution.id, step.id, effect.id)).resolves.toMatchObject({ id: effect.id, target: effect.target })
+    await expect(service.claimEffect(planned.execution.id, step.id, effect.id)).rejects.toThrow('já está em execução')
+    await service.completeEffect(planned.execution.id, effect.id)
+    expect((await service.read(planned.execution.id)).execution.completedEffectIds).toContain(effect.id)
+    await expect(service.claimEffect(planned.execution.id, step.id, effect.id)).rejects.toThrow('já foi materializado')
+  })
+
   it('persiste threads, turns e eventos de IA sem armazenar o conteúdo da entrada', async () => {
     const now = new Date().toISOString()
     const thread = { id: 'thread-persistida', provider: 'codex-app-server' as const, workspaceRoot: fixture, model: 'gpt-test', createdAt: now, updatedAt: now }

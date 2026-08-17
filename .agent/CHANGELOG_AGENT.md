@@ -1,5 +1,11 @@
 # Changelog do Agente
 
+## 2026-08-17 — Wave Mestre 1, workspace.write aprovado
+
+- Adicionado canal de execução tipado para `workspace.write`, separado do salvamento genérico: exige execução/passo/efeito aprovados, compara alvo e SHA-256 antes da escrita atômica e retorna somente metadados.
+- Efeito é reservado em memória, concluído uma única vez na persistência e deixa evidência redigida no Flight Recorder e AuditLog. `.env*`, `DELETE`, terminal e Git mutável não são materializáveis por esse canal.
+- E2E usa repositório Git temporário em D: e cobre hash/alvo divergentes, sucesso, repetição recusada e as fronteiras Electron existentes.
+
 ## 2026-08-17 — Wave Mestre 1, manifestos de efeitos
 
 - Substituída a aprovação baseada em título genérico por manifesto canônico e tipado: capacidade, operação, alvo, risco e hash de payload, sem persistir o conteúdo do payload.

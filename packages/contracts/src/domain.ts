@@ -96,6 +96,7 @@ export const executionSchema = z.object({
   activeStepId: z.string().uuid().nullable(),
   threadId: z.string().nullable(),
   approvalIds: z.array(z.string().uuid()),
+  completedEffectIds: z.array(z.string().uuid()).default([]),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 })

@@ -47,7 +47,8 @@ const api: StudioApi = {
     read: (input) => ipcRenderer.invoke(ipcChannels.executionRead, input),
     decide: (input) => ipcRenderer.invoke(ipcChannels.approvalDecide, input),
     start: (input) => ipcRenderer.invoke(ipcChannels.executionStart, input),
-    events: (input) => ipcRenderer.invoke(ipcChannels.executionEvents, input)
+    events: (input) => ipcRenderer.invoke(ipcChannels.executionEvents, input),
+    applyWorkspaceWrite: (input) => ipcRenderer.invoke(ipcChannels.executionApplyWorkspaceWrite, input)
   },
   research: {
     search: (input) => ipcRenderer.invoke(ipcChannels.researchSearch, input),
