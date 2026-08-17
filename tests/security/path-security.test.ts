@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { PathSecurityError, isInside, resolveLexicalPath } from '@tupiniquim/adapters'
 
 describe('segurança de caminhos', () => {
-  const root = 'F:\\CODEX\\workspace'
+  const root = 'D:\\CODEX\\workspace'
 
   it('rejeita traversal e caminhos absolutos', () => {
     expect(() => resolveLexicalPath(root, '..\\segredo.txt')).toThrow(PathSecurityError)

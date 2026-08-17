@@ -9,7 +9,7 @@ let database: LocalDatabase
 
 beforeEach(async () => {
   const temp = process.env.TEMP
-  if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de testes precisa estar em F:.')
+  if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'D:\\') throw new Error('TEMP de testes precisa estar em D:.')
   fixture = await mkdtemp(path.join(temp, 'tupiniquim-sqlite-'))
   database = new LocalDatabase(fixture)
 })
@@ -40,5 +40,18 @@ describe('persistência Plan/Approval/Execute', () => {
     await service.decide(planned.execution.id, targetStep.id, 'APPROVED', 'TASK')
     await service.decide(planned.execution.id, targetStep.id, 'DENIED', 'TASK')
     await expect(service.start(planned.execution.id)).rejects.toThrow('bloqueada')
+  })
+
+  it('persiste threads, turns e eventos de IA sem armazenar o conteúdo da entrada', async () => {
+    const now = new Date().toISOString()
+    const thread = { id: 'thread-persistida', provider: 'codex-app-server' as const, workspaceRoot: fixture, model: 'gpt-test', createdAt: now, updatedAt: now }
+    const turn = { id: 'turn-persistido', threadId: thread.id, mode: 'CHAT' as const, inputHash: 'a'.repeat(64), createdAt: now }
+    const event = { id: crypto.randomUUID(), at: now, kind: 'TURN_STARTED' as const, threadId: thread.id, turnId: turn.id }
+    await database.putAIThread(thread)
+    await database.putAITurn(turn)
+    await database.appendAIEvent(event)
+    expect(await database.getAIThread(thread.id)).toMatchObject({ id: thread.id, model: 'gpt-test' })
+    expect(await database.listAITurns(thread.id)).toEqual([turn])
+    expect(await database.listAIEvents(thread.id)).toEqual([event])
   })
 })

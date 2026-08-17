@@ -4,8 +4,8 @@ Leia primeiro `.agent/STATUS.md`, `.agent/EXECUTION_PLAN.md`, `.agent/SECURITY.m
 
 ## Regras invariantes
 
-- Todo artefato controlável do projeto vive em `F:\CODEX`. Não grave código, cache, dados, logs ou builds em outros discos.
-- A raiz oficial é `F:\CODEX\Tupiniquim-AI-Dev-Studio`; preserve os demais projetos irmãos em `F:\CODEX`.
+- Todo artefato controlável do projeto vive em `D:\CODEX`. Não grave código, cache, dados, logs ou builds em outros discos.
+- A raiz oficial desta máquina é `D:\CODEX\Tupiniquim-AI-Dev-Studio`; preserve os demais projetos irmãos em `D:\CODEX`.
 - Nunca leia, imprima, registre ou versione valores de `.env*`. Use apenas verificações silenciosas de presença.
 - Renderer Electron não acessa Node. Toda capacidade privilegiada passa por preload mínimo, IPC tipado, PolicyEngine e AuditLog.
 - Nunca simule filesystem, terminal, Git, agentes, pesquisa ou preview. Uma capacidade indisponível deve retornar estado explícito.

@@ -14,7 +14,7 @@ packages/adapters/src/git.ts           status/diff Git real
 packages/adapters/src/terminal.ts      PTYs ConPTY reais
 packages/adapters/src/audit-log.ts     trilha JSONL redigida
 packages/ui/src/index.ts               tokens Carbono/Floresta
-scripts/                               bootstrap e validação F:\CODEX-only
+scripts/                               bootstrap e validação D:\CODEX-only
 tests/                                 integração, segurança e E2E
 fixtures/dogfood/                      projetos descartáveis das ondas finais
 ```

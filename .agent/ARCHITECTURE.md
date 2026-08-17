@@ -29,7 +29,7 @@ XState governa a máquina de trabalho. SQLite persiste snapshots e uma linha de 
 
 ## Persistência
 
-`node:sqlite` roda em worker dedicado. Banco em `F:\CODEX\Tupiniquim-AI-Dev-Studio.data\studio.sqlite`, WAL, foreign keys, migrations numeradas e backup em `...\backups`. Writes são serializados.
+`node:sqlite` roda em worker dedicado. Banco em `D:\CODEX\Tupiniquim-AI-Dev-Studio.data\studio.sqlite`, WAL, foreign keys, migrations numeradas e backup em `...\backups`. Writes são serializados.
 
 Entidades: UserSettings, Project, Workspace, Session, AgentThread, Task, Plan, PlanStep, Approval, ToolCall, ToolResult, ResearchSource, KnowledgeEntry, Prompt, PromptVersion, Theme, LayoutProfile, Asset, AssetSource, GitCheckpoint, Execution, TestRun e AuditLog.
 

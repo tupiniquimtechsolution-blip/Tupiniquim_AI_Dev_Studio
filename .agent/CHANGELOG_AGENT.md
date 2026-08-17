@@ -1,5 +1,18 @@
 # Changelog do Agente
 
+## 2026-08-17 — Wave Mestre 0 consolidada
+
+- Corrigido o início ESM do Electron, o encerramento ConPTY e todos os caminhos ativos F: → D:.
+- Consolidado o adapter Codex: handshake seguro, degradação de autenticação, streaming, interrupção, persistência de metadados e retomada de thread.
+- Aplicados PolicyEngine e validação estrutural de outputs ao IPC; o E2E cobre os bloqueios de escrita e de comando destrutivo.
+- Gate final aprovado: lint, typecheck, 11 testes unitários, 8 integrações, 4 de segurança, build e E2E.
+
+## 2026-08-17 — Migração operacional para D:\CODEX
+
+- Atualizada a raiz operacional desta máquina para `D:\CODEX\Tupiniquim-AI-Dev-Studio` e os dados para `D:\CODEX\Tupiniquim-AI-Dev-Studio.data`.
+- Criados wrappers `bootstrap-d.ps1`, `pnpm-d.ps1` e `validate-d-drive.ps1`; o iniciador de desenvolvimento corrompido foi reparado.
+- O histórico da migração anterior para F: foi preservado; o ADR 0011 passa a prevalecer nesta máquina.
+
 ## 2026-08-12 — Migração do workspace para F:\CODEX
 
 - Tornada oficial a raiz `F:\CODEX\Tupiniquim-AI-Dev-Studio` e a raiz de dados `F:\CODEX\Tupiniquim-AI-Dev-Studio.data`.

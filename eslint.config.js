@@ -12,6 +12,7 @@ export default tseslint.config(
       '.pnpm/**',
       'playwright-report/**',
       'test-results/**',
+      'tests/fixtures/**',
       'packages/contracts/schemas/**',
       'eslint.config.js'
     ]

@@ -21,8 +21,8 @@
     "test:security": "vitest run --project security",
     "test:e2e": "playwright test",
     "test:dogfood": "vitest run --project dogfood",
-    "validate:f-drive": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/validate-f-drive.ps1",
-    "validate": "pnpm validate:f-drive && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm test:security && pnpm build"
+    "validate:d-drive": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/validate-d-drive.ps1",
+    "validate": "pnpm validate:d-drive && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm test:security && pnpm build"
   },
   "build": {
     "appId": "br.com.tupiniquim.devstudio",

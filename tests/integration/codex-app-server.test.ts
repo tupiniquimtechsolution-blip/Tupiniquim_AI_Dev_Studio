@@ -1,13 +1,23 @@
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
-import { CodexAppServerAdapter, findCodexExecutable } from '@tupiniquim/adapters'
-import type { AIEvent } from '@tupiniquim/contracts'
+import { CodexAppServerAdapter, findCodexExecutable, type AIHistoryRepository } from '@tupiniquim/adapters'
+import type { AIEvent, AIThread, AITurn } from '@tupiniquim/contracts'
 
 const projectRoot = process.cwd()
-const dataRoot = path.join('F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data', 'tests', 'codex-app-server')
+const dataRoot = path.join('D:\\CODEX\\Tupiniquim-AI-Dev-Studio.data', 'tests', 'codex-app-server')
 let adapter: CodexAppServerAdapter | null = null
 const events: AIEvent[] = []
+
+class MemoryAIHistory implements AIHistoryRepository {
+  public readonly threads: AIThread[] = []
+  public readonly turns: AITurn[] = []
+  public readonly recordedEvents: AIEvent[] = []
+
+  public putAIThread(thread: AIThread): Promise<void> { this.threads.push(thread); return Promise.resolve() }
+  public putAITurn(turn: AITurn): Promise<void> { this.turns.push(turn); return Promise.resolve() }
+  public appendAIEvent(event: AIEvent): Promise<void> { this.recordedEvents.push(event); return Promise.resolve() }
+}
 
 afterAll(async () => {
   await adapter?.close()
@@ -21,7 +31,8 @@ describe('CodexAppServerAdapter', () => {
       projectRoot,
       getWorkspaceRoot: () => projectRoot,
       onEvent: (event) => events.push(event),
-      codexPath: await findCodexExecutable()
+      codexPath: await findCodexExecutable(),
+      skipApiKeyLogin: true
     })
     const status = await adapter.connect()
     expect(['READY', 'AUTH_REQUIRED']).toContain(status.state)
@@ -51,4 +62,42 @@ describe('CodexAppServerAdapter', () => {
       expect(evidence.some((event) => event.status === 'FAILED' && event.detail === 'OpenAI API sem créditos disponíveis para este projeto.')).toBe(true)
     } else expect(text).toContain('TUPINIQUIM_CODEX_OK')
   }, 120_000)
+
+  it('persiste o ciclo JSONL controlado e retoma uma thread sem conteúdo bruto', async () => {
+    const history = new MemoryAIHistory()
+    const controlled = new CodexAppServerAdapter({
+      dataRoot,
+      projectRoot,
+      getWorkspaceRoot: () => projectRoot,
+      onEvent: (event) => events.push(event),
+      codexPath: process.execPath,
+      serverArgs: [path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs')],
+      skipApiKeyLogin: true,
+      history
+    })
+    await controlled.connect()
+    const reference = await controlled.send({ message: 'entrada confidencial que não deve persistir', mode: 'CHAT' })
+    await controlled.interrupt(reference)
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(history.threads).toMatchObject([{ id: reference.threadId, model: 'codex-test-model' }])
+    expect(history.turns).toMatchObject([{ id: reference.turnId, threadId: reference.threadId, mode: 'CHAT' }])
+    expect(history.recordedEvents.some((event) => event.kind === 'MESSAGE_DELTA' && event.text === 'CONTROLLED_STREAM_OK')).toBe(true)
+    expect(JSON.stringify(history)).not.toContain('entrada confidencial')
+    await controlled.close()
+
+    const resumed = new CodexAppServerAdapter({
+      dataRoot,
+      projectRoot,
+      getWorkspaceRoot: () => projectRoot,
+      onEvent: (event) => events.push(event),
+      codexPath: process.execPath,
+      serverArgs: [path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs')],
+      skipApiKeyLogin: true,
+      history
+    })
+    await resumed.connect()
+    const resumedReference = await resumed.send({ message: 'retomar', mode: 'CHAT', threadId: reference.threadId })
+    expect(resumedReference.threadId).toBe(reference.threadId)
+    await resumed.close()
+  }, 30_000)
 })

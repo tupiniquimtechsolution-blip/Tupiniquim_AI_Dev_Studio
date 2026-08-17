@@ -11,14 +11,14 @@ class MemoryVisuals implements VisualRepository {
 
 describe('VisualIntelligenceService', () => {
   it('mantém APIs sem credencial em NOT_CONFIGURED', () => {
-    const service = new VisualIntelligenceService(new MemoryVisuals(), 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data')
+    const service = new VisualIntelligenceService(new MemoryVisuals(), 'D:\\CODEX\\Tupiniquim-AI-Dev-Studio.data')
     expect(service.statuses({}).filter((provider) => provider.kind === 'API').every((provider) => provider.state === 'NOT_CONFIGURED')).toBe(true)
   })
 
   it('bloqueia uso de asset sem licença conhecida', async () => {
     const repository = new MemoryVisuals()
-    const service = new VisualIntelligenceService(repository, 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data')
-    const asset = await service.add({ name: 'Referência', localPath: 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data\\assets\\ref.png', sourceUrl: 'https://example.com/ref', provider: 'STILLS', license: 'UNKNOWN', licenseName: null, attribution: null, rightsNote: 'Licença ainda não comprovada.' })
+    const service = new VisualIntelligenceService(repository, 'D:\\CODEX\\Tupiniquim-AI-Dev-Studio.data')
+    const asset = await service.add({ name: 'Referência', localPath: 'D:\\CODEX\\Tupiniquim-AI-Dev-Studio.data\\assets\\ref.png', sourceUrl: 'https://example.com/ref', provider: 'STILLS', license: 'UNKNOWN', licenseName: null, attribution: null, rightsNote: 'Licença ainda não comprovada.' })
     await expect(service.assertUsable(asset.id)).rejects.toThrow('licença')
   })
 })

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
-import type { ApprovalDecision, Execution, FlightRecorderEvent, Plan, PromptTemplate, UIProfile, VisualAsset } from '@tupiniquim/contracts'
+import type { AIEvent, AIThread, AITurn, ApprovalDecision, Execution, FlightRecorderEvent, Plan, PromptTemplate, UIProfile, VisualAsset } from '@tupiniquim/contracts'
 
 type DatabaseOperation =
   | { type: 'initialize' }
@@ -14,6 +14,12 @@ type DatabaseOperation =
   | { type: 'getApproval'; id: string }
   | { type: 'appendEvent'; executionId: string; event: FlightRecorderEvent }
   | { type: 'listEvents'; executionId: string }
+  | { type: 'putAIThread'; thread: AIThread }
+  | { type: 'getAIThread'; id: string }
+  | { type: 'putAITurn'; turn: AITurn }
+  | { type: 'listAITurns'; threadId: string }
+  | { type: 'appendAIEvent'; event: AIEvent }
+  | { type: 'listAIEvents'; threadId: string }
   | { type: 'putPrompt'; template: PromptTemplate }
   | { type: 'getPrompt'; id: string }
   | { type: 'listPrompts' }
@@ -77,7 +83,19 @@ const initialize = () => {
       'COMMIT;'
     ].join('\n'))
   }
-  return { version: 2 }
+  if (version < 3) {
+    db.exec([
+      'BEGIN IMMEDIATE;',
+      'CREATE TABLE IF NOT EXISTS ai_threads (id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL);',
+      'CREATE TABLE IF NOT EXISTS ai_turns (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL);',
+      'CREATE INDEX IF NOT EXISTS ai_turns_thread_created ON ai_turns(thread_id, created_at);',
+      'CREATE TABLE IF NOT EXISTS ai_events (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, turn_id TEXT, at TEXT NOT NULL, payload TEXT NOT NULL);',
+      'CREATE INDEX IF NOT EXISTS ai_events_thread_at ON ai_events(thread_id, at);',
+      'PRAGMA user_version=3;',
+      'COMMIT;'
+    ].join('\n'))
+  }
+  return { version: 3 }
 }
 
 const execute = (operation) => {
@@ -112,6 +130,24 @@ const execute = (operation) => {
     return undefined
   }
   if (operation.type === 'listEvents') return db.prepare('SELECT payload FROM flight_events WHERE execution_id=? ORDER BY at,id').all(operation.executionId).map((row) => JSON.parse(row.payload))
+  if (operation.type === 'putAIThread') {
+    db.prepare('INSERT INTO ai_threads(id,payload,updated_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at').run(operation.thread.id, JSON.stringify(operation.thread), operation.thread.updatedAt)
+    return undefined
+  }
+  if (operation.type === 'getAIThread') {
+    const row = db.prepare('SELECT payload FROM ai_threads WHERE id=?').get(operation.id)
+    return row ? JSON.parse(row.payload) : null
+  }
+  if (operation.type === 'putAITurn') {
+    db.prepare('INSERT INTO ai_turns(id,thread_id,payload,created_at) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload').run(operation.turn.id, operation.turn.threadId, JSON.stringify(operation.turn), operation.turn.createdAt)
+    return undefined
+  }
+  if (operation.type === 'listAITurns') return db.prepare('SELECT payload FROM ai_turns WHERE thread_id=? ORDER BY created_at,id').all(operation.threadId).map((row) => JSON.parse(row.payload))
+  if (operation.type === 'appendAIEvent') {
+    db.prepare('INSERT INTO ai_events(id,thread_id,turn_id,at,payload) VALUES(?,?,?,?,?)').run(operation.event.id, operation.event.threadId, operation.event.turnId ?? null, operation.event.at, JSON.stringify(operation.event))
+    return undefined
+  }
+  if (operation.type === 'listAIEvents') return db.prepare('SELECT payload FROM ai_events WHERE thread_id=? ORDER BY at,id').all(operation.threadId).map((row) => JSON.parse(row.payload))
   if (operation.type === 'putPrompt') {
     db.prepare('INSERT INTO prompt_templates(id,payload,updated_at) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at').run(operation.template.id, JSON.stringify(operation.template), operation.template.updatedAt)
     return undefined
@@ -178,6 +214,12 @@ export class LocalDatabase {
   public async getApproval(id: string): Promise<ApprovalDecision | null> { await this.ready; return await this.requestRaw({ type: 'getApproval', id }) as ApprovalDecision | null }
   public async appendEvent(executionId: string, event: FlightRecorderEvent): Promise<void> { await this.ready; await this.requestRaw({ type: 'appendEvent', executionId, event }) }
   public async listEvents(executionId: string): Promise<FlightRecorderEvent[]> { await this.ready; return await this.requestRaw({ type: 'listEvents', executionId }) as FlightRecorderEvent[] }
+  public async putAIThread(thread: AIThread): Promise<void> { await this.ready; await this.requestRaw({ type: 'putAIThread', thread }) }
+  public async getAIThread(id: string): Promise<AIThread | null> { await this.ready; return await this.requestRaw({ type: 'getAIThread', id }) as AIThread | null }
+  public async putAITurn(turn: AITurn): Promise<void> { await this.ready; await this.requestRaw({ type: 'putAITurn', turn }) }
+  public async listAITurns(threadId: string): Promise<AITurn[]> { await this.ready; return await this.requestRaw({ type: 'listAITurns', threadId }) as AITurn[] }
+  public async appendAIEvent(event: AIEvent): Promise<void> { await this.ready; await this.requestRaw({ type: 'appendAIEvent', event }) }
+  public async listAIEvents(threadId: string): Promise<AIEvent[]> { await this.ready; return await this.requestRaw({ type: 'listAIEvents', threadId }) as AIEvent[] }
   public async putPrompt(template: PromptTemplate): Promise<void> { await this.ready; await this.requestRaw({ type: 'putPrompt', template }) }
   public async getPrompt(id: string): Promise<PromptTemplate | null> { await this.ready; return await this.requestRaw({ type: 'getPrompt', id }) as PromptTemplate | null }
   public async listPrompts(): Promise<PromptTemplate[]> { await this.ready; return await this.requestRaw({ type: 'listPrompts' }) as PromptTemplate[] }

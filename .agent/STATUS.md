@@ -1,51 +1,40 @@
 # Status
 
-Atualizado em: 2026-08-12
+Atualizado em: 2026-08-17
 
 ## Estado atual
 
-- Sprint: Mestre único
-- Ondas concluídas: 0–3
-- Próxima onda: 4 — AIProvider e Codex App Server
-- Estado: ONDAS 1–3 VALIDADAS; CHECKPOINT EM PREPARAÇÃO
-- Repositório alvo: `F:\CODEX\Tupiniquim-AI-Dev-Studio`
-- Dados: `F:\CODEX\Tupiniquim-AI-Dev-Studio.data`
-- Toolchain no SSD: Node.js `F:\CODEX\programas\nodejs`; pnpm/Corepack `F:\CODEX\programas`; SDK .NET/Visual Basic `F:\CODEX\programas\dotnet`.
+- Current wave: Wave 0 do Plano Mestre — concluída, checkpoint em preparação.
+- Current checkpoint: checkpoint/wave-03 (2f77db6); o próximo será checkpoint/wave-04.
+- Current branch: codex/wip-waves-04-10-20260813.
+- HEAD base: 66f94a7618b3aee4288e1cd28f9461d9fed4a589.
+- Repositório operacional: D:\CODEX\Tupiniquim-AI-Dev-Studio.
+- Dados: D:\CODEX\Tupiniquim-AI-Dev-Studio.data.
+- Toolchain: D:\CODEX\programas.
 
-## Entregue
+## Concluído na Wave 0
 
-- Fundação Electron/React/TypeScript com sandbox, isolamento de contexto, CSP e preload mínimo.
-- HUD desktop inicial em português, com Monaco, árvore de arquivos, painel agêntico e área inferior operacional.
-- Contratos IPC Zod validados nos dois lados e auditoria JSONL redigida.
-- Workspace real: configuração, árvore, leitura, busca e escrita atômica com hash otimista.
-- Proteções contra traversal, fuga por symlink e arquivos acima do limite.
-- Git real: status porcelain v2 e diff.
-- Terminal real multiprocessos com `node-pty`/ConPTY, resize, entrada, encerramento e timeout.
-- Bootstrap, toolchain, store, cache, temporários, dados, logs, builds e testes direcionados a `F:\CODEX`.
+- Migração operacional F: → D: com ADR 0011, scripts D:, validação de localização e reparo do iniciador corrompido.
+- Correção do início Electron ESM por fileURLToPath; a janela real abre no E2E.
+- CodexAppServerAdapter com handshake, autenticação degradável sem segredo, JSONL controlado, streaming, interrupção, encerramento e thread/resume.
+- Persistência SQLite de threads, turns (somente hash da entrada) e eventos normalizados.
+- PolicyEngine aplicado no registrador IPC; comandos absolutamente bloqueados e operações que exigem aprovação são recusados antes do adapter.
+- Respostas IPC são verificadas como dados serializáveis antes de cruzar o preload.
+- Encerramento de ConPTY aguarda a saída do processo, eliminando a corrida de limpeza.
 
-## Evidência da última validação
+## Gates atuais
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-f.ps1 validate
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-f.ps1 test:e2e
-```
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 validate
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 test:e2e
 
-Resultado anterior à migração: regra de disco, lint, typecheck, 5 testes unitários, 3 de integração, 2 de segurança, build Electron e 1 cenário E2E aprovados. O E2E abriu a aplicação real, acessou o workspace pela ponte preload e confirmou `nodeIntegration=false`, `contextIsolation=true` e `sandbox=true`.
-
-## Migração para F:\CODEX
-
-- `scripts\bootstrap-f.ps1` recriou 457 pacotes em `F:\CODEX` usando pnpm 11.16.0 e concluiu o pós-install nativo de `node-pty`.
-- `scripts\validate-f-drive.ps1` aprovou a raiz, os componentes locais e a ausência de diretórios de dados padrão do aplicativo fora do SSD.
-- O gate completo chegou ao lint e parou em 19 erros pertencentes às mudanças funcionais já abertas da onda 4; a migração de disco não introduziu erro de lint identificado.
+- validate: PASS — validação D:, lint, typecheck, 11 unitários, 8 integrações (2 opt-in ignorados), 4 testes de segurança e build.
+- test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita e bloqueio de git reset --hard.
 
 ## Próximo
 
-1. Gerar e versionar os schemas estáveis da versão instalada do Codex App Server.
-2. Implementar `AIProvider` e adapter stdio JSONL com inicialização, autenticação, threads, streaming e cancelamento.
-3. Persistir histórico e eventos normalizados sem registrar segredos.
-4. Conectar a UI ao provider real e validar retomada/erros.
+Iniciar Wave 1: separar o contrato de provider do Codex e avaliar o runtime Ollama local sem instalar modelos ou serviços pagos automaticamente.
 
 ## Bloqueios externos
 
-- `OPENAI_API_NO_CREDITS`: handshake, login por API key, thread, turno, streaming de eventos, retries e erro final foram exercitados contra o Codex App Server real. A inferência não retornou conteúdo porque o projeto OpenAI selecionado não possui créditos. As demais ondas continuam; o aceite live final exige adicionar créditos.
-- Provedores visuais pagos permanecem `NOT_CONFIGURED`, conforme planejado.
+- OPENAI_API_NO_CREDITS bloqueia somente inferência live paga; não invalida o transporte controlado.
+- Provedores visuais pagos permanecem NOT_CONFIGURED.

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron'
 import { z } from 'zod'
 import {
@@ -39,9 +40,10 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService, type ToolIntent } from '@tupiniquim/core'
 
-const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const dataRoot = 'D:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
 const requiredDataDirectories = ['logs', 'tmp', 'session', 'user-data', 'crash-dumps', 'backups', 'assets', 'research', 'database', 'codex-home']
 for (const directory of requiredDataDirectories) mkdirSync(path.join(dataRoot, directory), { recursive: true })
 
@@ -61,6 +63,7 @@ const technology = new TechnologyResolutionEngine()
 const promptArchitect = new PromptArchitect(database)
 const visual = new VisualIntelligenceService(database, dataRoot)
 const preferences = new PreferenceService(database)
+const policy = new PolicyEngine('ASSISTED')
 let mainWindow: BrowserWindow | null = null
 
 const terminal = new TerminalAdapter(
@@ -71,16 +74,38 @@ const agent = new CodexAppServerAdapter({
   dataRoot,
   projectRoot: process.cwd(),
   getWorkspaceRoot: () => workspace.getRoot(),
+  history: database,
   onEvent: (event) => mainWindow?.webContents.send(ipcChannels.agentEvent, event)
 })
 
 const trustedSender = (senderId: number): boolean => mainWindow !== null && mainWindow.webContents.id === senderId
 
+const isIpcValue = (value: unknown): boolean => {
+  if (value === undefined || value === null || typeof value === 'string' || typeof value === 'boolean') return true
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(isIpcValue)
+  if (typeof value !== 'object') return false
+  return Object.values(value).every(isIpcValue)
+}
+
+const ipcOutputSchema = z.custom<unknown>(isIpcValue, 'Resposta IPC deve conter somente dados serializáveis.')
+
+const policyIntent = (capability: string, input: unknown): ToolIntent => {
+  const values = input as Record<string, unknown>
+  if (capability === 'workspace.write') return { capability, target: String(values.relativePath), risk: 'HIGH', destructive: true, requiresNetwork: false }
+  if (capability === 'terminal.write') return { capability: 'terminal.command', target: String(values.data), risk: 'MEDIUM', destructive: false, requiresNetwork: false }
+  if (capability === 'research.search' || capability === 'research.collect' || capability === 'visual.provider.open') return { capability, target: String(values.url ?? values.query ?? values.provider), risk: 'MEDIUM', destructive: false, requiresNetwork: true }
+  if (capability === 'agent.send') return { capability, target: String(values.mode), risk: 'MEDIUM', destructive: false, requiresNetwork: false }
+  if (capability === 'prompt.save' || capability === 'visual.asset.add') return { capability, target: String(values.name ?? values.localPath), risk: 'HIGH', destructive: true, requiresNetwork: false }
+  return { capability, target: capability, risk: 'LOW', destructive: false, requiresNetwork: false }
+}
+
 const register = <I, O>(
   channel: string,
   schema: z.ZodType<I>,
   capability: string,
-  handler: (input: I) => Promise<O> | O
+  handler: (input: I) => Promise<O> | O,
+  outputSchema: z.ZodType<O> = ipcOutputSchema as z.ZodType<O>
 ): void => {
   ipcMain.handle(channel, async (event, raw: unknown): Promise<Result<O>> => {
     const requestId = randomUUID()
@@ -91,7 +116,16 @@ const register = <I, O>(
     }
     try {
       const input = schema.parse(raw)
-      const value = await handler(input)
+      const decision = policy.evaluate(policyIntent(capability, input))
+      if (!decision.allowed) {
+        await audit.write({ requestId, at: new Date().toISOString(), capability, outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'POLICY_DENIED' })
+        return err('POLICY_DENIED', decision.reason)
+      }
+      if (decision.requiresApproval) {
+        await audit.write({ requestId, at: new Date().toISOString(), capability, outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'APPROVAL_REQUIRED' })
+        return err('APPROVAL_REQUIRED', decision.reason, true)
+      }
+      const value = outputSchema.parse(await handler(input))
       await audit.write({ requestId, at: new Date().toISOString(), capability, outcome: 'SUCCESS', durationMs: Date.now() - started })
       return ok(value)
     } catch (cause) {

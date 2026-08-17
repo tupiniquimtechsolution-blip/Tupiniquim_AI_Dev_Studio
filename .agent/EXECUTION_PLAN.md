@@ -1,6 +1,6 @@
 # Plano de Execução
 
-Sprint Mestre único com 13 ondas internas. Cada onda fecha somente após teste, correção, revisão, atualização de status e checkpoint Git.
+Plano histórico de 13 ondas. O plano operacional vigente é `MASTER_PLAN.md`: a antiga Wave 4 corresponde à Wave Mestre 0. Cada wave fecha somente após teste, correção, revisão, atualização de status e checkpoint Git.
 
 | Onda | Entrega | Estado |
 |---:|---|---|

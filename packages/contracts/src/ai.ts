@@ -31,10 +31,30 @@ export const agentInterruptInputSchema = z.object({
   turnId: z.string().min(1).max(200)
 })
 
-export interface AgentTurnReference {
-  threadId: string
-  turnId: string
-}
+export const agentTurnReferenceSchema = z.object({
+  threadId: z.string().min(1).max(200),
+  turnId: z.string().min(1).max(200)
+})
+export type AgentTurnReference = z.infer<typeof agentTurnReferenceSchema>
+
+export const aiThreadSchema = z.object({
+  id: z.string().min(1).max(200),
+  provider: z.literal('codex-app-server'),
+  workspaceRoot: z.string().min(3).max(4096),
+  model: z.string().min(1).max(200).nullable(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+})
+export type AIThread = z.infer<typeof aiThreadSchema>
+
+export const aiTurnSchema = z.object({
+  id: z.string().min(1).max(200),
+  threadId: z.string().min(1).max(200),
+  mode: modeSchema,
+  inputHash: z.string().regex(/^[a-f0-9]{64}$/),
+  createdAt: z.string().datetime()
+})
+export type AITurn = z.infer<typeof aiTurnSchema>
 
 export const aiEventKinds = ['STATUS', 'THREAD_STARTED', 'TURN_STARTED', 'MESSAGE_DELTA', 'TURN_COMPLETED', 'APPROVAL_REQUIRED', 'WARNING', 'ERROR'] as const
 export const aiEventSchema = z.object({

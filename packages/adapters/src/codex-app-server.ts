@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { mkdir, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -7,9 +7,14 @@ import { z } from 'zod'
 import {
   agentInterruptInputSchema,
   agentSendInputSchema,
+  aiEventSchema,
   aiStatusSchema,
+  aiThreadSchema,
+  aiTurnSchema,
   type AIAccountKind,
   type AIEvent,
+  type AIThread,
+  type AITurn,
   type AIProvider,
   type AIStatus,
   type AgentTurnReference
@@ -21,6 +26,7 @@ const notificationEnvelopeSchema = z.object({ method: z.string(), params: z.unkn
 const initializeResponseSchema = z.object({ userAgent: z.string() })
 const accountResponseSchema = z.object({ account: z.object({ type: z.string() }).nullable(), requiresOpenaiAuth: z.boolean() })
 const threadStartResponseSchema = z.object({ thread: z.object({ id: z.string().min(1) }), model: z.string() })
+const threadResumeResponseSchema = z.object({ thread: z.object({ id: z.string().min(1) }) })
 const turnStartResponseSchema = z.object({ turn: z.object({ id: z.string().min(1) }) })
 const messageDeltaSchema = z.object({ threadId: z.string(), turnId: z.string(), itemId: z.string(), delta: z.string() })
 const itemCompletedSchema = z.object({ threadId: z.string(), turnId: z.string(), item: z.object({ type: z.string(), id: z.string(), text: z.string().optional() }).passthrough() })
@@ -34,12 +40,21 @@ interface PendingRequest {
   timer: NodeJS.Timeout
 }
 
+export interface AIHistoryRepository {
+  putAIThread(thread: AIThread): Promise<void>
+  putAITurn(turn: AITurn): Promise<void>
+  appendAIEvent(event: AIEvent): Promise<void>
+}
+
 export interface CodexAppServerOptions {
   dataRoot: string
   projectRoot: string
   getWorkspaceRoot: () => string
   onEvent: (event: AIEvent) => void
   codexPath?: string
+  serverArgs?: string[]
+  skipApiKeyLogin?: boolean
+  history?: AIHistoryRepository
 }
 
 const redact = (value: string): string => value
@@ -78,6 +93,7 @@ export class CodexAppServerAdapter implements AIProvider {
   private nextRequestId = 1
   private readonly pending = new Map<number | string, PendingRequest>()
   private readonly streamedItems = new Set<string>()
+  private readonly resumedThreads = new Set<string>()
   private currentStatus: AIStatus = aiStatusSchema.parse({ provider: 'codex-app-server', state: 'DISCONNECTED', account: 'NONE', version: null, activeThreadId: null, activeTurnId: null, detail: null })
   private connectPromise: Promise<AIStatus> | null = null
 
@@ -86,7 +102,7 @@ export class CodexAppServerAdapter implements AIProvider {
   public status(): AIStatus { return this.currentStatus }
 
   public connect(): Promise<AIStatus> {
-    if (this.currentStatus.state === 'READY' || this.currentStatus.state === 'BUSY') return Promise.resolve(this.currentStatus)
+    if (this.currentStatus.state === 'READY' || this.currentStatus.state === 'BUSY' || this.currentStatus.state === 'AUTH_REQUIRED') return Promise.resolve(this.currentStatus)
     if (this.connectPromise !== null) return this.connectPromise
     this.connectPromise = this.start().finally(() => { this.connectPromise = null })
     return this.connectPromise
@@ -99,7 +115,9 @@ export class CodexAppServerAdapter implements AIProvider {
     await mkdir(codexHome, { recursive: true })
     const environment = await loadPrivateEnvironment(this.options.projectRoot)
     environment.CODEX_HOME = codexHome
-    this.child = spawn(codexPath, ['app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="keyring"'], {
+    if (this.options.skipApiKeyLogin === true) delete environment.OPENAI_API_KEY
+    const serverArgs = this.options.serverArgs ?? ['app-server', '--listen', 'stdio://', '-c', 'cli_auth_credentials_store="keyring"']
+    this.child = spawn(codexPath, serverArgs, {
       cwd: this.options.projectRoot,
       env: environment,
       windowsHide: true,
@@ -119,7 +137,15 @@ export class CodexAppServerAdapter implements AIProvider {
     }))
     this.notify('initialized')
     const apiKey = environment.OPENAI_API_KEY
-    if (apiKey !== undefined && apiKey !== '') await this.request('account/login/start', { type: 'apiKey', apiKey })
+    if (apiKey !== undefined && apiKey !== '' && this.options.skipApiKeyLogin !== true) {
+      try {
+        await this.request('account/login/start', { type: 'apiKey', apiKey })
+      } catch {
+        const detail = 'A autenticação local do Codex não está disponível. Verifique o login do Codex e tente novamente.'
+        this.updateStatus({ state: 'AUTH_REQUIRED', account: 'NONE', version: initialized.userAgent, detail })
+        return this.currentStatus
+      }
+    }
     const account = accountResponseSchema.parse(await this.request('account/read', { refreshToken: false }))
     const accountKind = this.mapAccount(account.account?.type)
     this.updateStatus({ state: accountKind === 'NONE' && account.requiresOpenaiAuth ? 'AUTH_REQUIRED' : 'READY', account: accountKind, version: initialized.userAgent, detail: null })
@@ -141,14 +167,22 @@ export class CodexAppServerAdapter implements AIProvider {
         developerInstructions: `Modo do Tupiniquim: ${input.mode}. Não altere arquivos nesta etapa; produza orientação e aguarde o fluxo de aprovação da aplicação.`
       }))
       threadId = response.thread.id
+      this.resumedThreads.add(threadId)
+      const now = new Date().toISOString()
+      await this.options.history?.putAIThread(aiThreadSchema.parse({ id: threadId, provider: 'codex-app-server', workspaceRoot, model: response.model, createdAt: now, updatedAt: now }))
       this.currentStatus = { ...this.currentStatus, activeThreadId: threadId }
       this.emit({ kind: 'THREAD_STARTED', threadId, detail: `Modelo ${response.model}` })
+    } else if (!this.resumedThreads.has(threadId)) {
+      const resumed = threadResumeResponseSchema.parse(await this.request('thread/resume', { threadId }))
+      if (resumed.thread.id !== threadId) throw new Error('O Codex retornou uma thread diferente da solicitada.')
+      this.resumedThreads.add(threadId)
     }
     const response = turnStartResponseSchema.parse(await this.request('turn/start', {
       threadId,
       input: [{ type: 'text', text: input.message, text_elements: [] }]
     }))
     const reference = { threadId, turnId: response.turn.id }
+    await this.options.history?.putAITurn(aiTurnSchema.parse({ id: reference.turnId, threadId: reference.threadId, mode: input.mode, inputHash: createHash('sha256').update(input.message).digest('hex'), createdAt: new Date().toISOString() }))
     this.updateStatus({ state: 'BUSY', activeThreadId: threadId, activeTurnId: response.turn.id, detail: null })
     return reference
   }
@@ -161,6 +195,7 @@ export class CodexAppServerAdapter implements AIProvider {
   public async close(): Promise<void> {
     const child = this.child
     this.child = null
+    this.resumedThreads.clear()
     this.rejectPending(new Error('Codex App Server encerrado.'))
     this.updateStatus({ state: 'STOPPED', activeTurnId: null, detail: null })
     if (child !== null && !child.killed && child.exitCode === null) {
@@ -256,7 +291,18 @@ export class CodexAppServerAdapter implements AIProvider {
   private write(message: unknown): void { this.child?.stdin.write(`${JSON.stringify(message)}\n`, 'utf8') }
 
   private emit(event: Omit<AIEvent, 'id' | 'at'>): void {
-    this.options.onEvent({ id: randomUUID(), at: new Date().toISOString(), ...event })
+    const persisted = aiEventSchema.parse({
+      id: randomUUID(),
+      at: new Date().toISOString(),
+      kind: event.kind,
+      ...(event.threadId === undefined ? {} : { threadId: event.threadId }),
+      ...(event.turnId === undefined ? {} : { turnId: event.turnId }),
+      ...(event.text === undefined ? {} : { text: redact(event.text) }),
+      ...(event.status === undefined ? {} : { status: event.status }),
+      ...(event.detail === undefined ? {} : { detail: redact(event.detail) })
+    })
+    this.options.onEvent(persisted)
+    if (persisted.threadId !== undefined) void this.options.history?.appendAIEvent(persisted).catch(() => undefined)
   }
 
   private updateStatus(update: Partial<AIStatus>): void {
@@ -274,6 +320,7 @@ export class CodexAppServerAdapter implements AIProvider {
   private handleExit(code: number | null, signal: string | null): void {
     if (this.child === null) return
     this.child = null
+    this.resumedThreads.clear()
     const detail = `Codex App Server encerrou (code=${String(code)}, signal=${String(signal)}).`
     this.rejectPending(new Error(detail))
     this.updateStatus({ state: 'ERROR', activeTurnId: null, detail })

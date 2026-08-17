@@ -3,8 +3,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$ProjectRoot = 'F:CODEXTupiniquim-AI-Dev-Studio'
-$Runner = Join-Path $ProjectRoot 'scriptspnpm-f.ps1'
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$ExpectedRoot = 'D:\CODEX\Tupiniquim-AI-Dev-Studio'
+if (-not $ProjectRoot.Equals($ExpectedRoot, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Execução recusada fora de $ExpectedRoot." }
+$Runner = Join-Path $ProjectRoot 'scripts\pnpm-d.ps1'
 $LoopbackAddress = '127.0.0.1'
 $RendererPort = 5173
 $RendererUrl = 'http://{0}:{1}' -f $LoopbackAddress, $RendererPort
@@ -61,7 +63,7 @@ if (Test-RendererListening) {
   throw "A porta privada $RendererPort já está ocupada. Feche a instância anterior antes de iniciar outra."
 }
 
-$powerShell = Join-Path $env:SystemRoot 'System32WindowsPowerShell1.0powershell.exe'
+$powerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $arguments = @(
   '-NoProfile',
   '-ExecutionPolicy', 'Bypass',
