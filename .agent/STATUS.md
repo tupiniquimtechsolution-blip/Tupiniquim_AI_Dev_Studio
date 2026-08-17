@@ -5,7 +5,7 @@ Atualizado em: 2026-08-17
 ## Estado atual
 
 - Current wave: Wave 1 do Plano Mestre — runtime local entregue; agente/contexto em andamento.
-- Current checkpoint: checkpoint/wave-12 (propostas efêmeras de escrita).
+- Current checkpoint: checkpoint/wave-13 (consumo aprovado de propostas de escrita).
 - Current branch: codex/wip-waves-04-10-20260813.
 - Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d.
 - Repositório operacional: D:\CODEX\Tupiniquim-AI-Dev-Studio.
@@ -28,7 +28,7 @@ Atualizado em: 2026-08-17
     powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 test:e2e
 
 - validate: PASS — validação D:, lint, typecheck, 17 unitários, 15 integrações (2 opt-in ignorados), 4 testes de segurança e build.
-- test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita, bloqueio de git reset --hard, Ollama local, contexto, baseline, manifesto aprovado, workspace.write e runtime de propostas.
+- test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita, bloqueio de git reset --hard, Ollama local, contexto, baseline, manifesto aprovado e `workspace.write` atômico.
 
 ## Concluído na Wave 1
 
@@ -47,10 +47,11 @@ Atualizado em: 2026-08-17
 - O executor recusa `.env*`, `DELETE`, terminal e Git mutável; uma falha de alvo/hash libera a reserva sem escrever, e um efeito concluído não pode ser repetido.
 - Execuções SQLite legadas, criadas antes de `completedEffectIds`, são normalizadas pelo schema na leitura e podem retomar sem erro de propriedade ausente.
 - O runtime pode propor `workspace.write` com vínculo obrigatório a thread/turn existentes, persistindo somente o manifesto; o conteúdo permanece no processo principal, é substituído por proposta mais nova para o mesmo passo e some no reinício.
+- O consumo da proposta usa somente seu id no renderer, relê thread/turn, workspace e manifesto integral antes de reservar o efeito aprovado. A escrita recebe o payload exclusivamente no processo principal, reavalia a política, mantém auditoria/evidência redigidas e invalida a proposta após êxito ou incoerência.
 
 ## Próximo
 
-Consumir uma proposta de escrita somente após a aprovação correspondente, sem reenviar o conteúdo pelo renderer. Terminal e Git mutável permanecem indisponíveis.
+Integrar a origem de propostas ao protocolo de ferramentas do agente e exibir sua proveniência no painel sem expor conteúdo; continuar o browser QA. Terminal e Git mutável permanecem indisponíveis.
 
 ## Bloqueios externos
 

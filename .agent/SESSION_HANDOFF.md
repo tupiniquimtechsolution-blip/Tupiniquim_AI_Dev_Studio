@@ -1,7 +1,7 @@
 # SESSION HANDOFF
 
 Wave: Mestre 0 concluída; Wave 1 em andamento
-Checkpoint: checkpoint/wave-12 (propostas efêmeras de escrita)
+Checkpoint: checkpoint/wave-13 (consumo aprovado de propostas de escrita)
 Branch: codex/wip-waves-04-10-20260813
 Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 
@@ -19,6 +19,7 @@ Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 - `workspace.write` é a primeira materialização real: alvo e SHA-256 conferidos contra manifesto aprovado, escrita atômica, reserva única, AuditLog/Flight Recorder redigidos e E2E em fixture Git D:.
 - A leitura de execuções legadas normaliza `completedEffectIds` ausente, preservando a retomada após a atualização do schema.
 - Propostas de escrita vinculam-se a thread/turn e mantêm o payload em memória; IPC/persistência recebem somente manifesto e metadados.
+- Uma proposta aprovada é materializada por id no processo principal, após nova conferência de proveniência, workspace e manifesto integral; a escrita continua atômica, auditada e sem reenvio de conteúdo pelo renderer.
 
 ## Pending
 
@@ -30,4 +31,4 @@ Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 
 ## Exact next action
 
-Consumir a proposta efêmera após aprovação sem reenviar conteúdo pelo renderer, conforme NEXT_ACTION.md.
+Integrar a emissão da proposta ao protocolo de ferramentas do agente e exibir sua proveniência no painel, conforme NEXT_ACTION.md.

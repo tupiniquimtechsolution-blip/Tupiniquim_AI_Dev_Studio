@@ -1,5 +1,16 @@
 # Resultados de testes
 
+## 2026-08-17 — Wave 1, consumo aprovado de propostas
+
+| Comando | Resultado |
+|---|---|
+| scripts\pnpm-d.ps1 validate | PASS: validação D:, lint, typecheck, 17 unitários, 15 integrações (2 opt-in ignorados), 4 segurança e build |
+| scripts\pnpm-d.ps1 test:integration | PASS: 15 integrações (2 opt-in ignorados) |
+| scripts\pnpm-d.ps1 test:e2e | PASS: 1 cenário Electron real |
+
+- A integração cobre conteúdo somente em memória, proposta substituída, fonte thread/turn expirada e alteração de qualquer campo relevante do manifesto antes do consumo.
+- O E2E confirma o Electron seguro e o `workspace.write` aprovado; a proposta foi validada em integração sem depender de inferência externa.
+
 ## 2026-08-17 — Wave 1, propostas efêmeras de escrita
 
 | Comando | Resultado |

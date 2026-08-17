@@ -81,10 +81,20 @@ export class WorkspaceWriteProposalService {
   public async consume(id: string): Promise<{ proposal: WorkspaceWriteProposal; content: string }> {
     const proposal = this.proposals.get(id)
     if (proposal === undefined) throw new Error('Proposta não está disponível; ela pode ter expirado ou sido substituída.')
-    const { execution, plan } = await this.planning.read(proposal.executionId)
+    const [{ execution, plan }, thread, turns] = await Promise.all([
+      this.planning.read(proposal.executionId),
+      this.history.getAIThread(proposal.threadId),
+      this.history.listAITurns(proposal.threadId)
+    ])
     const step = plan.steps.find((candidate) => candidate.id === proposal.stepId)
     const current = step?.effects.find((effect) => effect.id === proposal.effect.id)
-    if (execution.workspaceRoot !== this.getWorkspaceRoot() || current === undefined || current.payloadHash !== proposal.effect.payloadHash || current.target !== proposal.effect.target) {
+    const manifestMatches = current !== undefined
+      && current.capability === proposal.effect.capability
+      && current.operation === proposal.effect.operation
+      && current.target === proposal.effect.target
+      && current.payloadHash === proposal.effect.payloadHash
+      && current.risk === proposal.effect.risk
+    if (execution.workspaceRoot !== this.getWorkspaceRoot() || thread?.workspaceRoot !== execution.workspaceRoot || !turns.some((turn) => turn.id === proposal.turnId) || !manifestMatches) {
       this.invalidate(id)
       throw new Error('Proposta obsoleta para o plano ou workspace atual.')
     }

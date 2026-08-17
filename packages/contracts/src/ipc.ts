@@ -38,6 +38,7 @@ export const ipcChannels = {
   executionEvents: 'studio:execution:events',
   executionApplyWorkspaceWrite: 'studio:execution:workspace:write',
   executionProposeWorkspaceWrite: 'studio:execution:workspace:propose',
+  executionApplyProposedWorkspaceWrite: 'studio:execution:workspace:apply-proposal',
   approvalDecide: 'studio:approval:decide',
   researchSearch: 'studio:research:search',
   researchCollect: 'studio:research:collect',
@@ -93,6 +94,7 @@ export const executionWorkspaceWriteProposalInputSchema = z.object({
   content: z.string().max(10_000_000),
   operation: z.enum(['CREATE', 'REPLACE'])
 })
+export const executionWorkspaceWriteProposalIdInputSchema = z.object({ proposalId: z.string().uuid() })
 export const approvalDecideInputSchema = z.object({ executionId: z.string().uuid(), stepId: z.string().uuid(), decision: z.enum(['APPROVED', 'DENIED']), scope: approvalScopeSchema })
 
 export interface FileEntry {
@@ -215,6 +217,7 @@ export interface StudioApi {
     events(input: z.input<typeof executionIdInputSchema>): Promise<Result<FlightRecorderEvent[]>>
     applyWorkspaceWrite(input: z.input<typeof executionWorkspaceWriteInputSchema>): Promise<Result<AppliedWorkspaceEffect>>
     proposeWorkspaceWrite(input: z.input<typeof executionWorkspaceWriteProposalInputSchema>): Promise<Result<WorkspaceWriteProposal>>
+    applyProposedWorkspaceWrite(input: z.input<typeof executionWorkspaceWriteProposalIdInputSchema>): Promise<Result<AppliedWorkspaceEffect>>
   }
   research: {
     search(input: z.input<typeof researchSearchInputSchema>): Promise<Result<ResearchResult>>

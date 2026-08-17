@@ -17,6 +17,7 @@ import {
   ipcChannels,
   executionIdInputSchema,
   executionWorkspaceWriteInputSchema,
+  executionWorkspaceWriteProposalIdInputSchema,
   executionWorkspaceWriteProposalInputSchema,
   listFilesInputSchema,
   ok,
@@ -230,6 +231,38 @@ const registerApprovedWorkspaceWrite = (): void => {
   })
 }
 
+const registerApprovedProposedWorkspaceWrite = (): void => {
+  ipcMain.handle(ipcChannels.executionApplyProposedWorkspaceWrite, async (event, raw: unknown): Promise<Result<AppliedWorkspaceEffect>> => {
+    const requestId = randomUUID()
+    const started = Date.now()
+    let claimed: { executionId: string; effectId: string } | undefined
+    if (!trustedSender(event.sender.id)) {
+      await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.apply-proposal', outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'UNTRUSTED_SENDER' })
+      return err('UNTRUSTED_SENDER', 'Origem IPC não autorizada.')
+    }
+    try {
+      const { proposal, content } = await writeProposals.consume(executionWorkspaceWriteProposalIdInputSchema.parse(raw).proposalId)
+      const effect = await planning.claimEffect(proposal.executionId, proposal.stepId, proposal.effect.id)
+      claimed = { executionId: proposal.executionId, effectId: effect.id }
+      if (effect.capability !== 'workspace.write' || (effect.operation !== 'CREATE' && effect.operation !== 'REPLACE') || effect.capability !== proposal.effect.capability || effect.operation !== proposal.effect.operation || effect.target !== proposal.effect.target || effect.payloadHash !== proposal.effect.payloadHash || effect.risk !== proposal.effect.risk || effect.payloadHash !== contentHash(content)) throw new Error('Proposta não corresponde ao manifesto aprovado.')
+      const decision = policy.evaluate({ capability: effect.capability, target: effect.target, risk: effect.risk, destructive: true, requiresNetwork: false })
+      if (!decision.allowed || isPrivateEnvironmentPath(effect.target)) throw new Error('Política não permite materializar esta proposta.')
+      const document = await workspace.write(effect.target, content)
+      await planning.completeEffect(proposal.executionId, effect.id)
+      claimed = undefined
+      writeProposals.invalidate(proposal.id)
+      await planning.recordEvidence(proposal.executionId, 'TOOL', 'Proposta materializada', `workspace.write · ${redactContextMetadata(effect.target)} · hash ${effect.payloadHash.slice(0, 12)}…`, 'SUCCESS')
+      await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.apply-proposal', target: redactContextMetadata(effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
+      return ok({ effectId: effect.id, relativePath: document.relativePath, hash: document.hash, modifiedAt: document.modifiedAt })
+    } catch (cause) {
+      if (claimed !== undefined) planning.abandonEffect(claimed.executionId, claimed.effectId)
+      const error = toAppError(cause, 'EXECUTION_PROPOSAL_ERROR')
+      await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.apply-proposal', outcome: 'ERROR', durationMs: Date.now() - started, errorCode: error.code })
+      return { ok: false, error }
+    }
+  })
+}
+
 const registerIpc = (): void => {
   register(ipcChannels.systemInfo, z.undefined(), 'system.info', () => ({
     platform: process.platform,
@@ -247,6 +280,7 @@ const registerIpc = (): void => {
   register(ipcChannels.workspaceRead, readFileInputSchema, 'workspace.read', ({ relativePath }) => workspace.read(relativePath))
   register(ipcChannels.workspaceWrite, writeFileInputSchema, 'workspace.write', ({ relativePath, content, expectedHash }) => workspace.write(relativePath, content, expectedHash))
   registerApprovedWorkspaceWrite()
+  registerApprovedProposedWorkspaceWrite()
   register(ipcChannels.workspaceSearch, searchInputSchema, 'workspace.search', ({ query, limit }) => workspace.search(query, limit))
   register(ipcChannels.workspaceContext, z.undefined(), 'workspace.context', () => workspace.context())
   register(ipcChannels.gitStatus, z.undefined(), 'git.status', () => git.status())

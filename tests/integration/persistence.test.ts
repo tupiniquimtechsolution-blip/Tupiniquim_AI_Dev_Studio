@@ -131,6 +131,24 @@ describe('persistência Plan/Approval/Execute', () => {
     const second = await proposals.propose({ executionId: planned.execution.id, stepId: step.id, threadId: thread.id, turnId: turn.id, relativePath: 'src/substituida.ts', content: 'novo conteúdo privado', operation: 'REPLACE' })
     await expect(proposals.consume(first.id)).rejects.toThrow('não está disponível')
     await expect(proposals.consume(second.id)).resolves.toMatchObject({ proposal: { id: second.id, effect: { target: 'src/substituida.ts' } }, content: 'novo conteúdo privado' })
+    const altered = await planning.read(planned.execution.id)
+    await planning.update(planned.execution.id, {
+      ...altered.plan,
+      steps: altered.plan.steps.map((candidate) => candidate.id === step.id ? {
+        ...candidate,
+        effects: candidate.effects.map((effect) => effect.id === second.effect.id ? { ...effect, operation: 'CREATE' } : effect)
+      } : candidate)
+    })
+    await expect(proposals.consume(second.id)).rejects.toThrow('obsoleta')
+    let sourceStillAvailable = true
+    const sourceBoundProposals = new WorkspaceWriteProposalService(planning, {
+      getAIThread: async (id) => sourceStillAvailable ? database.getAIThread(id) : null,
+      listAITurns: async (threadId) => sourceStillAvailable ? database.listAITurns(threadId) : []
+    }, () => fixture)
+    const expiring = await sourceBoundProposals.propose({ executionId: planned.execution.id, stepId: step.id, threadId: thread.id, turnId: turn.id, relativePath: 'src/origem-expirada.ts', content: 'conteúdo que não pode ser consumido', operation: 'CREATE' })
+    sourceStillAvailable = false
+    await expect(sourceBoundProposals.consume(expiring.id)).rejects.toThrow('obsoleta')
+    await expect(sourceBoundProposals.consume(expiring.id)).rejects.toThrow('não está disponível')
   })
 
   it('persiste threads, turns e eventos de IA sem armazenar o conteúdo da entrada', async () => {

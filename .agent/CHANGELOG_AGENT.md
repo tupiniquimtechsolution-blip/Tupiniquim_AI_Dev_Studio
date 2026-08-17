@@ -1,5 +1,11 @@
 # Changelog do Agente
 
+## 2026-08-17 — Wave Mestre 1, consumo aprovado de propostas
+
+- Adicionado canal IPC/preload tipado que recebe somente o id da proposta e materializa `workspace.write` apenas após a aprovação do manifesto, sem reenviar nem persistir o conteúdo pelo renderer.
+- Antes da escrita, o processo principal relê a proveniência thread/turn, workspace e todos os campos do manifesto, reserva o efeito uma única vez, reavalia PolicyEngine e registra AuditLog/Flight Recorder redigidos.
+- Propostas sem fonte, substituídas, alteradas ou obsoletas são invalidadas sem escrita; remetentes IPC não confiáveis também deixam auditoria de negação.
+
 ## 2026-08-17 — Wave Mestre 1, propostas efêmeras de escrita
 
 - Adicionado serviço de runtime que valida a proveniência da proposta contra thread/turn persistidos, cria manifesto `workspace.write` de alto risco e mantém o conteúdo exclusivamente em memória.
