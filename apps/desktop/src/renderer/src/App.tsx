@@ -1,7 +1,7 @@
 import Editor from '@monaco-editor/react'
 import { Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, Eye, FileSearch, GitBranch, History, LayoutDashboard, Palette, PanelBottom, Save, Search, Settings2, ShieldCheck, Sparkles, TerminalSquare } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AIEvent, AIStatus, FileDocument, FileEntry, GitStatus, Mode, PlannedExecution, SystemInfo, UIProfile } from '@tupiniquim/contracts'
+import type { AIEvent, AIProviderKind, AIStatus, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, SystemInfo, UIProfile } from '@tupiniquim/contracts'
 import { FileTree } from './components/FileTree'
 import { TerminalPane } from './components/TerminalPane'
 
@@ -36,6 +36,8 @@ export const App = (): React.JSX.Element => {
   const [deck, setDeck] = useState<'terminal' | 'tests' | 'review' | 'timeline'>('terminal')
   const [notice, setNotice] = useState('Abra um workspace para iniciar.')
   const [aiStatus, setAIStatus] = useState<AIStatus | null>(null)
+  const [localModels, setLocalModels] = useState<LocalModel[]>([])
+  const [selectedLocalModel, setSelectedLocalModel] = useState('')
   const [agentInput, setAgentInput] = useState('')
   const [conversation, setConversation] = useState<ConversationMessage[]>([])
   const [sending, setSending] = useState(false)
@@ -146,6 +148,26 @@ export const App = (): React.JSX.Element => {
     if (!result.ok) setNotice(result.error.message)
   }
 
+  const selectAgentProvider = async (provider: AIProviderKind): Promise<void> => {
+    if (sending || aiStatus?.state === 'BUSY') return
+    const result = await window.studio.agent.selectProvider({ provider })
+    if (!result.ok) { setNotice(result.error.message); return }
+    setAIStatus(result.value)
+    setConversation([])
+    setSelectedLocalModel('')
+    if (provider !== 'ollama') { setLocalModels([]); return }
+    const models = await window.studio.agent.listLocalModels()
+    if (models.ok) setLocalModels(models.value)
+    else setNotice(models.error.message)
+  }
+
+  const selectOllamaModel = async (model: string): Promise<void> => {
+    if (model === '') return
+    const result = await window.studio.agent.selectLocalModel({ model })
+    if (result.ok) { setSelectedLocalModel(model); setAIStatus(result.value) }
+    else setNotice(result.error.message)
+  }
+
   const editPlanStep = (stepId: string, title: string): void => {
     setPlanned((current) => current === null ? null : { ...current, plan: { ...current.plan, steps: current.plan.steps.map((step) => step.id === stepId ? { ...step, title } : step) } })
   }
@@ -250,12 +272,16 @@ export const App = (): React.JSX.Element => {
         <aside className="agent-panel panel">
           <div className="agent-heading"><div className="agent-orb"><Bot size={18} /></div><div><strong>Agente principal</strong><small>Modo {mode}</small></div><span className="availability">{aiStatus?.state ?? 'LOCAL'}</span></div>
           <div className="context-strip"><span>ESTADO</span><strong>{aiStatus?.state ?? 'DISCONNECTED'}</strong><span>POLÍTICA</span><strong>ASSISTED</strong></div>
+          <div className="provider-controls">
+            <label>PROVIDER<select aria-label="Provedor de IA" value={aiStatus?.provider ?? 'codex-app-server'} disabled={sending || aiStatus?.state === 'BUSY'} onChange={(event) => void selectAgentProvider(event.target.value as AIProviderKind)}><option value="codex-app-server">Codex App Server</option><option value="ollama">Ollama local</option></select></label>
+            {aiStatus?.provider === 'ollama' && <label>MODELO<select aria-label="Modelo Ollama local" value={selectedLocalModel} disabled={localModels.length === 0 || aiStatus.state !== 'READY'} onChange={(event) => void selectOllamaModel(event.target.value)}><option value="">Selecionar modelo</option>{localModels.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select></label>}
+          </div>
           <section className="agent-conversation">
-            <div className="agent-message"><span className="message-label">SISTEMA</span><p>Codex usa stdio JSONL, dados em D:\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.</p></div>
-            {conversation.map((message) => <div key={message.id} className={`agent-message ${message.role}`}><span className="message-label">{message.role === 'user' ? 'VOCÊ' : message.role === 'error' ? 'ERRO' : 'CODEX'}</span><p>{message.text}{!message.complete && <span className="stream-caret">▋</span>}</p></div>)}
+            <div className="agent-message"><span className="message-label">SISTEMA</span><p>{aiStatus?.provider === 'ollama' ? 'Ollama usa somente o loopback local; modelos são escolhidos explicitamente e não há downloads automáticos.' : 'Codex usa stdio JSONL, dados em D:\\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.'}</p></div>
+            {conversation.map((message) => <div key={message.id} className={`agent-message ${message.role}`}><span className="message-label">{message.role === 'user' ? 'VOCÊ' : message.role === 'error' ? 'ERRO' : aiStatus?.provider === 'ollama' ? 'OLLAMA' : 'CODEX'}</span><p>{message.text}{!message.complete && <span className="stream-caret">▋</span>}</p></div>)}
             {planned !== null ? <div className="live-plan-card"><header><div><CheckCircle2 size={15} /><strong>{planned.plan.title}</strong></div><span>{planned.execution.state}</span></header><ol>{planned.plan.steps.map((step, index) => <li key={step.id}><span className="step-number">{index + 1}</span><div><input value={step.title} onChange={(event) => editPlanStep(step.id, event.target.value)} /><small>{step.risk} · {step.requiresApproval ? 'aprovação obrigatória' : 'sem mutação'}</small></div>{step.requiresApproval && <div className="approval-actions"><button onClick={() => void decidePlanStep(step.id, 'APPROVED')}>Aprovar</button><button className="deny" onClick={() => void decidePlanStep(step.id, 'DENIED')}>Negar</button></div>}</li>)}</ol><footer><button onClick={() => void savePlan()}>Salvar plano</button><button className="primary" disabled={planned.execution.state === 'BLOCKED'} onClick={() => void startPlannedExecution()}>Iniciar execução</button></footer></div> : conversation.length === 0 && <div className="plan-card"><div><CheckCircle2 size={15} /><strong>Fluxo protegido</strong></div><ol><li><span>1</span>Entender objetivo</li><li><span>2</span>Produzir plano verificável</li><li><span>3</span>Solicitar aprovação material</li><li><span>4</span>Executar e validar</li></ol></div>}
           </section>
-          <div className="composer"><textarea aria-label="Mensagem ao agente" placeholder={workspaceRoot === null ? 'Abra um workspace primeiro…' : 'Descreva o que deseja construir…'} value={agentInput} onChange={(event) => setAgentInput(event.target.value)} onKeyDown={(event) => { if (event.ctrlKey && event.key === 'Enter') { event.preventDefault(); void sendToAgent() } }} /><div><span>{aiStatus?.account === 'API_KEY' ? 'API key local' : aiStatus?.account === 'CHATGPT' ? 'Conta Codex' : 'Ctrl + Enter para enviar'}</span>{aiStatus?.state === 'BUSY' ? <button onClick={() => void interruptAgent()}>Interromper</button> : <button disabled={workspaceRoot === null || agentInput.trim() === '' || sending} onClick={() => void sendToAgent()}><Sparkles size={15} />{sending ? 'Conectando…' : 'Enviar'}</button>}</div></div>
+          <div className="composer"><textarea aria-label="Mensagem ao agente" placeholder={workspaceRoot === null ? 'Abra um workspace primeiro…' : 'Descreva o que deseja construir…'} value={agentInput} onChange={(event) => setAgentInput(event.target.value)} onKeyDown={(event) => { if (event.ctrlKey && event.key === 'Enter') { event.preventDefault(); void sendToAgent() } }} /><div><span>{aiStatus?.provider === 'ollama' ? selectedLocalModel === '' ? 'Selecione um modelo local' : 'Ollama somente loopback' : aiStatus?.account === 'API_KEY' ? 'API key local' : aiStatus?.account === 'CHATGPT' ? 'Conta Codex' : 'Ctrl + Enter para enviar'}</span>{aiStatus?.state === 'BUSY' ? <button onClick={() => void interruptAgent()}>Interromper</button> : <button disabled={workspaceRoot === null || agentInput.trim() === '' || sending || (aiStatus?.provider === 'ollama' && (aiStatus.state !== 'READY' || selectedLocalModel === ''))} onClick={() => void sendToAgent()}><Sparkles size={15} />{sending ? 'Conectando…' : 'Enviar'}</button>}</div></div>
         </aside>
 
         <section className="bottom-deck">

@@ -6,6 +6,8 @@ import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron'
 import { z } from 'zod'
 import {
   agentInterruptInputSchema,
+  agentLocalModelSelectInputSchema,
+  agentProviderSelectInputSchema,
   agentSendInputSchema,
   approvalDecideInputSchema,
   configureWorkspaceInputSchema,
@@ -37,9 +39,11 @@ import {
   visualProviderOpenInputSchema,
   toAppError,
   writeFileInputSchema,
+  type AIProvider,
+  type AIProviderKind,
   type Result
 } from '@tupiniquim/contracts'
-import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
+import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
 import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -70,13 +74,25 @@ const terminal = new TerminalAdapter(
   () => workspace.getRoot(),
   (event) => mainWindow?.webContents.send(ipcChannels.terminalData, event)
 )
-const agent = new CodexAppServerAdapter({
+let selectedAgentProvider: AIProviderKind = 'codex-app-server'
+const codexAgent = new CodexAppServerAdapter({
   dataRoot,
   projectRoot: process.cwd(),
   getWorkspaceRoot: () => workspace.getRoot(),
   history: database,
-  onEvent: (event) => mainWindow?.webContents.send(ipcChannels.agentEvent, event)
+  onEvent: (event) => {
+    if (selectedAgentProvider === 'codex-app-server') mainWindow?.webContents.send(ipcChannels.agentEvent, event)
+  }
 })
+const ollamaAgent = new OllamaAdapter({
+  getWorkspaceRoot: () => workspace.getRoot(),
+  history: database,
+  onEvent: (event) => {
+    if (selectedAgentProvider === 'ollama') mainWindow?.webContents.send(ipcChannels.agentEvent, event)
+  }
+})
+const agents: Record<AIProviderKind, AIProvider> = { 'codex-app-server': codexAgent, ollama: ollamaAgent }
+const activeAgent = (): AIProvider => agents[selectedAgentProvider]
 
 const trustedSender = (senderId: number): boolean => mainWindow !== null && mainWindow.webContents.id === senderId
 
@@ -159,9 +175,23 @@ const registerIpc = (): void => {
   register(ipcChannels.terminalWrite, terminalWriteInputSchema, 'terminal.write', ({ terminalId, data }) => terminal.write(terminalId, data))
   register(ipcChannels.terminalResize, terminalResizeInputSchema, 'terminal.resize', ({ terminalId, cols, rows }) => terminal.resize(terminalId, cols, rows))
   register(ipcChannels.terminalKill, terminalKillInputSchema, 'terminal.kill', ({ terminalId }) => terminal.kill(terminalId))
-  register(ipcChannels.agentStatus, z.undefined(), 'agent.status', () => agent.status())
-  register(ipcChannels.agentSend, agentSendInputSchema, 'agent.send', (input) => agent.send(input))
-  register(ipcChannels.agentInterrupt, agentInterruptInputSchema, 'agent.interrupt', (input) => agent.interrupt(input))
+  register(ipcChannels.agentStatus, z.undefined(), 'agent.status', () => activeAgent().status())
+  register(ipcChannels.agentProviderSelect, agentProviderSelectInputSchema, 'agent.provider.select', async ({ provider }) => {
+    if (activeAgent().status().state === 'BUSY') throw new Error('Interrompa o turno em andamento antes de trocar de provider.')
+    selectedAgentProvider = provider
+    return activeAgent().connect()
+  })
+  register(ipcChannels.agentLocalModels, z.undefined(), 'agent.local-models', async () => {
+    if (selectedAgentProvider !== 'ollama') throw new Error('Selecione Ollama local antes de listar modelos.')
+    return ollamaAgent.listModels()
+  })
+  register(ipcChannels.agentLocalModelSelect, agentLocalModelSelectInputSchema, 'agent.local-model.select', ({ model }) => {
+    if (selectedAgentProvider !== 'ollama') throw new Error('Selecione Ollama local antes de escolher um modelo.')
+    ollamaAgent.selectModel(model)
+    return ollamaAgent.status()
+  })
+  register(ipcChannels.agentSend, agentSendInputSchema, 'agent.send', (input) => activeAgent().send(input))
+  register(ipcChannels.agentInterrupt, agentInterruptInputSchema, 'agent.interrupt', (input) => activeAgent().interrupt(input))
   register(ipcChannels.planCreate, planCreateInputSchema, 'plan.create', ({ objective, mode }) => planning.create(objective, workspace.getRoot(), mode))
   register(ipcChannels.planUpdate, planUpdateInputSchema, 'plan.update', ({ plan }) => planning.update(plan))
   register(ipcChannels.executionRead, executionIdInputSchema, 'execution.read', ({ executionId }) => planning.read(executionId))
@@ -242,5 +272,5 @@ else {
   })
 }
 
-app.on('before-quit', () => { void agent.close(); void database.close() })
+app.on('before-quit', () => { void codexAgent.close(); void ollamaAgent.close(); void database.close() })
 app.on('window-all-closed', () => { terminal.killAll(); app.quit() })

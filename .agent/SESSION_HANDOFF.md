@@ -1,7 +1,7 @@
 # SESSION HANDOFF
 
-Wave: Mestre 0 concluída; Wave 1 em preparação
-Checkpoint: checkpoint/wave-04 (8bab9fe)
+Wave: Mestre 0 concluída; Wave 1 em andamento
+Checkpoint: checkpoint/wave-05 (runtime local Ollama)
 Branch: codex/wip-waves-04-10-20260813
 Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 
@@ -11,10 +11,11 @@ Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 - AIProvider Codex consolidado com transporte controlado, persistência e retomada.
 - PolicyEngine no IPC, validação estrutural de outputs e E2E de bloqueios.
 - Gates da Wave 0 aprovados.
+- Provider Ollama local integrado ao contrato, persistência, IPC e UI; validate (17 unitários) e E2E aprovados.
 
 ## Pending
 
-- Wave 1: provider local/Ollama, runtime de agente, memória/contexto e browser QA.
+- Wave 1: runtime de agente, memória/contexto e browser QA.
 
 ## External blockers
 
@@ -22,4 +23,4 @@ Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 
 ## Exact next action
 
-Verificar o runtime Ollama local sem instalar modelos e seguir NEXT_ACTION.md.
+Revisar a execução de planos e introduzir a primeira ponte real, auditada e aprovada conforme NEXT_ACTION.md.

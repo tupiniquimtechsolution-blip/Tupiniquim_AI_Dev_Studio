@@ -13,3 +13,14 @@
 - O transporte JSONL controlado verificou criação, streaming, interrupção, persistência sanitizada e retomada de thread.
 - O E2E verificou que escrita de workspace sem aprovação retorna APPROVAL_REQUIRED e que git reset --hard é bloqueado por política.
 - Inferência live OpenAI continua opt-in e pode retornar OPENAI_API_NO_CREDITS; não foi usada como evidência de sucesso.
+
+## 2026-08-17 — Wave 1, runtime local Ollama
+
+| Comando | Resultado |
+|---|---|
+| scripts\pnpm-d.ps1 validate | PASS: validação D:, lint, typecheck, 17 unitários, 8 integrações (2 opt-in ignorados), 4 segurança e build |
+| scripts\pnpm-d.ps1 test:e2e | PASS: 1 cenário Electron real |
+
+- O adapter controlado cobre discovery de modelos, streaming NDJSON, seleção explícita, interrupção, persistência hash-only, redaction e bloqueio de hosts remotos.
+- Nesta máquina o runtime Ollama não foi encontrado; o estado NOT_INSTALLED foi retornado sem qualquer tentativa de instalação, download ou modelo.
+- O E2E usou o seletor real do painel para trocar para Ollama local, mantendo sandbox e bridge preload.

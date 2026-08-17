@@ -1,6 +1,7 @@
 export * from './audit-log'
 export * from './codex-app-server'
 export * from './git'
+export * from './ollama'
 export * from './path-security'
 export * from './persistence'
 export * from './preview'

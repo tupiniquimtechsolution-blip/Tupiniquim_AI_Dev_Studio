@@ -1,16 +1,20 @@
 import { z } from 'zod'
 import { modeSchema } from './domain'
 
-export const aiProviderStates = ['DISCONNECTED', 'STARTING', 'READY', 'BUSY', 'AUTH_REQUIRED', 'ERROR', 'STOPPED'] as const
+export const aiProviderStates = ['DISCONNECTED', 'STARTING', 'READY', 'BUSY', 'AUTH_REQUIRED', 'NOT_INSTALLED', 'ERROR', 'STOPPED'] as const
 export const aiProviderStateSchema = z.enum(aiProviderStates)
 export type AIProviderState = z.infer<typeof aiProviderStateSchema>
+
+export const aiProviderKinds = ['codex-app-server', 'ollama'] as const
+export const aiProviderKindSchema = z.enum(aiProviderKinds)
+export type AIProviderKind = z.infer<typeof aiProviderKindSchema>
 
 export const aiAccountKinds = ['API_KEY', 'CHATGPT', 'AMAZON_BEDROCK', 'NONE'] as const
 export const aiAccountKindSchema = z.enum(aiAccountKinds)
 export type AIAccountKind = z.infer<typeof aiAccountKindSchema>
 
 export const aiStatusSchema = z.object({
-  provider: z.literal('codex-app-server'),
+  provider: aiProviderKindSchema,
   state: aiProviderStateSchema,
   account: aiAccountKindSchema,
   version: z.string().nullable(),
@@ -19,6 +23,17 @@ export const aiStatusSchema = z.object({
   detail: z.string().nullable()
 })
 export type AIStatus = z.infer<typeof aiStatusSchema>
+
+export const localModelSchema = z.object({
+  name: z.string().min(1).max(300),
+  model: z.string().min(1).max(300),
+  modifiedAt: z.string().nullable(),
+  size: z.number().nonnegative().nullable()
+})
+export type LocalModel = z.infer<typeof localModelSchema>
+
+export const agentProviderSelectInputSchema = z.object({ provider: aiProviderKindSchema })
+export const agentLocalModelSelectInputSchema = z.object({ model: z.string().trim().min(1).max(300) })
 
 export const agentSendInputSchema = z.object({
   message: z.string().trim().min(1).max(100_000),
@@ -39,9 +54,9 @@ export type AgentTurnReference = z.infer<typeof agentTurnReferenceSchema>
 
 export const aiThreadSchema = z.object({
   id: z.string().min(1).max(200),
-  provider: z.literal('codex-app-server'),
+  provider: aiProviderKindSchema,
   workspaceRoot: z.string().min(3).max(4096),
-  model: z.string().min(1).max(200).nullable(),
+  model: z.string().min(1).max(300).nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime()
 })

@@ -23,6 +23,10 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
     await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
     await expect(page.locator('.studio'), `Renderer errors: ${rendererErrors.join(' | ')}`).toBeVisible({ timeout: 60_000 })
     await expect(page.getByText('Engenharia com')).toBeVisible()
+    await page.getByLabel('Provedor de IA').selectOption('ollama')
+    await expect(page.getByText('Ollama usa somente o loopback local')).toBeVisible()
+    const providerStatus = await page.evaluate(async () => window.studio.agent.status())
+    expect(providerStatus).toMatchObject({ ok: true, value: { provider: 'ollama' } })
 
     const configured = await page.evaluate(async (root) => window.studio.workspace.configure({ root }), projectRoot)
     expect(configured.ok).toBe(true)

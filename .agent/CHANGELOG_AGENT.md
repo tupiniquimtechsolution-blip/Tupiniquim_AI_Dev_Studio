@@ -1,5 +1,11 @@
 # Changelog do Agente
 
+## 2026-08-17 — Wave Mestre 1, runtime local Ollama
+
+- Adicionado provider Ollama local-first com loopback HTTP estrito, modelos explícitos, NDJSON, cancelamento, erros explícitos e redaction.
+- Integrados contrato, persistência hash-only, IPC tipado, preload mínimo e seletor do renderer; nenhum runtime, modelo ou serviço pago foi instalado.
+- Validate e E2E passaram com 17 testes unitários, 8 integrações, 4 segurança, build e a troca visual de provider.
+
 ## 2026-08-17 — Wave Mestre 0 consolidada
 
 - Corrigido o início ESM do Electron, o encerramento ConPTY e todos os caminhos ativos F: → D:.
