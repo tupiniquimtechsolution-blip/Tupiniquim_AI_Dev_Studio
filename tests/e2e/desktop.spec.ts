@@ -30,6 +30,12 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
 
     const configured = await page.evaluate(async (root) => window.studio.workspace.configure({ root }), projectRoot)
     expect(configured.ok).toBe(true)
+    const context = await page.evaluate(async () => window.studio.workspace.context())
+    expect(context).toMatchObject({ ok: true, value: { contentPolicy: 'METADATA_ONLY' } })
+    if (context.ok) {
+      expect(context.value.entries.length).toBeGreaterThan(0)
+      expect(JSON.stringify(context.value)).not.toContain('node_modules')
+    }
     const tree = await page.evaluate(async () => window.studio.workspace.list({ relativePath: '', depth: 2 }))
     expect(tree.ok).toBe(true)
     const blockedWrite = await page.evaluate(async () => window.studio.workspace.write({ relativePath: '.agent-policy-probe', content: 'não deve gravar' }))

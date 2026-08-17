@@ -1,7 +1,7 @@
 import Editor from '@monaco-editor/react'
 import { Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, Eye, FileSearch, GitBranch, History, LayoutDashboard, Palette, PanelBottom, Save, Search, Settings2, ShieldCheck, Sparkles, TerminalSquare } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AIEvent, AIProviderKind, AIStatus, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, SystemInfo, UIProfile } from '@tupiniquim/contracts'
+import type { AIEvent, AIProviderKind, AIStatus, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, SystemInfo, UIProfile, WorkspaceContext } from '@tupiniquim/contracts'
 import { FileTree } from './components/FileTree'
 import { TerminalPane } from './components/TerminalPane'
 
@@ -29,6 +29,7 @@ export const App = (): React.JSX.Element => {
   const [system, setSystem] = useState<SystemInfo | null>(null)
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
   const [files, setFiles] = useState<FileEntry[]>([])
+  const [workspaceContext, setWorkspaceContext] = useState<WorkspaceContext | null>(null)
   const [document, setDocument] = useState<FileDocument | null>(null)
   const [content, setContent] = useState('')
   const [git, setGit] = useState<GitStatus | null>(null)
@@ -60,13 +61,15 @@ export const App = (): React.JSX.Element => {
     const configured = await window.studio.workspace.configure({ root: selected.value })
     if (!configured.ok) { setNotice(configured.error.message); return }
     setWorkspaceRoot(configured.value)
-    const [tree, status] = await Promise.all([
+    const [tree, status, context] = await Promise.all([
       window.studio.workspace.list({ relativePath: '', depth: 4 }),
-      window.studio.git.status()
+      window.studio.git.status(),
+      window.studio.workspace.context()
     ])
     if (tree.ok) setFiles(tree.value)
     if (status.ok) setGit(status.value)
-    setNotice('Workspace autorizado e mapeado.')
+    if (context.ok) setWorkspaceContext(context.value)
+    setNotice(context.ok ? 'Workspace autorizado e contexto de metadados mapeado.' : 'Workspace autorizado e mapeado.')
   }
 
   const openFile = async (relativePath: string): Promise<void> => {
@@ -271,7 +274,7 @@ export const App = (): React.JSX.Element => {
 
         <aside className="agent-panel panel">
           <div className="agent-heading"><div className="agent-orb"><Bot size={18} /></div><div><strong>Agente principal</strong><small>Modo {mode}</small></div><span className="availability">{aiStatus?.state ?? 'LOCAL'}</span></div>
-          <div className="context-strip"><span>ESTADO</span><strong>{aiStatus?.state ?? 'DISCONNECTED'}</strong><span>POLÍTICA</span><strong>ASSISTED</strong></div>
+          <div className="context-strip"><span>ESTADO</span><strong>{aiStatus?.state ?? 'DISCONNECTED'}</strong><span>POLÍTICA</span><strong>ASSISTED</strong><span>CONTEXTO</span><strong>{workspaceContext === null ? 'NÃO MAPEADO' : String(workspaceContext.entries.length) + (workspaceContext.truncated ? '+' : '') + ' ITENS'}</strong></div>
           <div className="provider-controls">
             <label>PROVIDER<select aria-label="Provedor de IA" value={aiStatus?.provider ?? 'codex-app-server'} disabled={sending || aiStatus?.state === 'BUSY'} onChange={(event) => void selectAgentProvider(event.target.value as AIProviderKind)}><option value="codex-app-server">Codex App Server</option><option value="ollama">Ollama local</option></select></label>
             {aiStatus?.provider === 'ollama' && <label>MODELO<select aria-label="Modelo Ollama local" value={selectedLocalModel} disabled={localModels.length === 0 || aiStatus.state !== 'READY'} onChange={(event) => void selectOllamaModel(event.target.value)}><option value="">Selecionar modelo</option>{localModels.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select></label>}

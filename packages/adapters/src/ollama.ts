@@ -30,7 +30,7 @@ const chatChunkSchema = z.object({
   error: z.string().optional()
 })
 
-type LocalMessage = { role: 'user' | 'assistant'; content: string }
+type LocalMessage = { role: 'system' | 'user' | 'assistant'; content: string }
 
 export interface OllamaAdapterOptions {
   onEvent: (event: AIEvent) => void
@@ -133,6 +133,7 @@ export class OllamaAdapter implements AIProvider {
     const threadId = input.threadId ?? randomUUID()
     const isNewThread = !this.conversations.has(threadId)
     const conversation = this.conversations.get(threadId) ?? []
+    if (isNewThread && input.workspaceContext !== undefined) conversation.push({ role: 'system', content: input.workspaceContext })
     conversation.push({ role: 'user', content: input.message })
     this.conversations.set(threadId, conversation)
     const turnId = randomUUID()

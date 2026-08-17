@@ -38,7 +38,8 @@ export const agentLocalModelSelectInputSchema = z.object({ model: z.string().tri
 export const agentSendInputSchema = z.object({
   message: z.string().trim().min(1).max(100_000),
   mode: modeSchema,
-  threadId: z.string().min(1).max(200).optional()
+  threadId: z.string().min(1).max(200).optional(),
+  workspaceContext: z.string().max(20_000).optional()
 })
 
 export const agentInterruptInputSchema = z.object({

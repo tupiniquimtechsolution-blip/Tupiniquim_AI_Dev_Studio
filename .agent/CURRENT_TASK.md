@@ -6,7 +6,7 @@ Prosseguir a Wave 1 com runtime de agente e contexto seguro após a entrega do p
 
 ## Estado
 
-O checkpoint wave-05 entregou o adapter Ollama local com validate e E2E, sem instalação automática. A execução de planos ainda não aciona capacidades reais.
+O checkpoint wave-06 entregou o adapter Ollama e o contexto metadata-only do workspace com validate e E2E. A execução de planos ainda não aciona capacidades reais.
 
 ## Critérios de aceite da próxima unidade
 

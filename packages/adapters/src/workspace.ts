@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { FileDocument, FileEntry, SearchMatch } from '@tupiniquim/contracts'
+import type { FileDocument, FileEntry, SearchMatch, WorkspaceContext, WorkspaceContextEntry } from '@tupiniquim/contracts'
 import { assertRealPathInside, resolveLexicalPath } from './path-security'
 
 const ignoredDirectories = new Set(['.git', 'node_modules', '.pnpm', 'dist', 'out', 'coverage'])
 const maxFileBytes = 10_000_000
+const maxContextEntries = 256
 const hash = (content: string): string => createHash('sha256').update(content).digest('hex')
 
 export class WorkspaceAdapter {
@@ -46,6 +47,30 @@ export class WorkspaceAdapter {
       result.push(item)
     }
     return result
+  }
+
+  public async context(maxEntries = maxContextEntries, maxDepth = 4): Promise<WorkspaceContext> {
+    const limit = Math.min(Math.max(Math.trunc(maxEntries), 1), maxContextEntries)
+    const depth = Math.min(Math.max(Math.trunc(maxDepth), 1), 8)
+    const entries: WorkspaceContextEntry[] = []
+    let truncated = false
+    const visit = async (relativePath: string, remainingDepth: number): Promise<void> => {
+      if (entries.length >= limit) { truncated = true; return }
+      const absolute = await this.safePath(relativePath)
+      const children = await readdir(absolute, { withFileTypes: true })
+      for (const child of children.sort((left, right) => Number(right.isDirectory()) - Number(left.isDirectory()) || left.name.localeCompare(right.name))) {
+        if (entries.length >= limit) { truncated = true; return }
+        if (child.name.startsWith('.')) continue
+        if (child.isDirectory() && ignoredDirectories.has(child.name)) continue
+        const childRelative = path.posix.join(relativePath.split(path.sep).join('/'), child.name)
+        const childAbsolute = path.join(absolute, child.name)
+        const info = await stat(childAbsolute)
+        entries.push({ relativePath: childRelative.replace(/[\r\n\t]/gu, ' ').slice(0, 240), kind: child.isDirectory() ? 'directory' : 'file', size: info.size })
+        if (child.isDirectory() && remainingDepth > 1) await visit(childRelative, remainingDepth - 1)
+      }
+    }
+    await visit('', depth)
+    return { generatedAt: new Date().toISOString(), entries, truncated, contentPolicy: 'METADATA_ONLY' }
   }
 
   public async read(relativePath: string): Promise<FileDocument> {

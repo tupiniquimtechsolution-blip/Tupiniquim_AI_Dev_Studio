@@ -1,5 +1,11 @@
 # Changelog do Agente
 
+## 2026-08-17 — Wave Mestre 1, contexto seguro do workspace
+
+- Adicionado catálogo limitado e metadata-only do workspace ao IPC tipado, preload, painel e contexto dos providers.
+- O contexto não lê conteúdo de arquivo, não inclui .env/itens ocultos/dependências e limita nomes a dados não confiáveis redigidos.
+- Gates completos e E2E aprovados com 17 unitários, 9 integrações, 4 segurança e build.
+
 ## 2026-08-17 — Wave Mestre 1, runtime local Ollama
 
 - Adicionado provider Ollama local-first com loopback HTTP estrito, modelos explícitos, NDJSON, cancelamento, erros explícitos e redaction.

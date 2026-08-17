@@ -33,4 +33,14 @@ describe('WorkspaceAdapter', () => {
     await writeFile(path.join(fixture, 'src', 'index.ts'), 'mudança externa', 'utf8')
     await expect(adapter.write('src/index.ts', 'minha mudança', current.hash)).rejects.toThrow('alterado externamente')
   })
+
+  it('gera contexto limitado somente com metadados do workspace', async () => {
+    await writeFile(path.join(fixture, '.env'), '', 'utf8')
+    const adapter = new WorkspaceAdapter()
+    await adapter.configure(fixture)
+    const context = await adapter.context(1, 3)
+    expect(context).toMatchObject({ contentPolicy: 'METADATA_ONLY', truncated: true, entries: [{ relativePath: 'src', kind: 'directory' }] })
+    expect(JSON.stringify(context)).not.toContain('.env')
+    expect(JSON.stringify(context)).not.toContain('export const value')
+  })
 })

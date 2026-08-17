@@ -15,6 +15,7 @@ export const ipcChannels = {
   workspaceRead: 'studio:workspace:read',
   workspaceWrite: 'studio:workspace:write',
   workspaceSearch: 'studio:workspace:search',
+  workspaceContext: 'studio:workspace:context',
   gitStatus: 'studio:git:status',
   gitDiff: 'studio:git:diff',
   terminalCreate: 'studio:terminal:create',
@@ -95,6 +96,19 @@ export interface SearchMatch {
   preview: string
 }
 
+export interface WorkspaceContextEntry {
+  relativePath: string
+  kind: 'file' | 'directory'
+  size: number
+}
+
+export interface WorkspaceContext {
+  generatedAt: string
+  entries: WorkspaceContextEntry[]
+  truncated: boolean
+  contentPolicy: 'METADATA_ONLY'
+}
+
 export interface GitStatus {
   branch: string
   upstream?: string
@@ -132,6 +146,7 @@ export interface StudioApi {
     read(input: z.input<typeof readFileInputSchema>): Promise<Result<FileDocument>>
     write(input: z.input<typeof writeFileInputSchema>): Promise<Result<FileDocument>>
     search(input: z.input<typeof searchInputSchema>): Promise<Result<SearchMatch[]>>
+    context(): Promise<Result<WorkspaceContext>>
   }
   git: {
     status(): Promise<Result<GitStatus>>

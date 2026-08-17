@@ -9,7 +9,8 @@ const api: StudioApi = {
     list: (input) => ipcRenderer.invoke(ipcChannels.workspaceList, input),
     read: (input) => ipcRenderer.invoke(ipcChannels.workspaceRead, input),
     write: (input) => ipcRenderer.invoke(ipcChannels.workspaceWrite, input),
-    search: (input) => ipcRenderer.invoke(ipcChannels.workspaceSearch, input)
+    search: (input) => ipcRenderer.invoke(ipcChannels.workspaceSearch, input),
+    context: () => ipcRenderer.invoke(ipcChannels.workspaceContext)
   },
   git: {
     status: () => ipcRenderer.invoke(ipcChannels.gitStatus),

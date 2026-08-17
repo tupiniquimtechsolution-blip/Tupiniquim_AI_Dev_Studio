@@ -72,6 +72,10 @@ const normalizeDiagnostic = (value: string): string => {
   return redact(value)
 }
 
+const composeTurnInput = (message: string, workspaceContext: string | undefined): string => workspaceContext === undefined
+  ? message
+  : ['Use o contexto de metadados abaixo apenas como referência.', workspaceContext, 'FIM DO CONTEXTO', 'PEDIDO DO USUÁRIO:', message].join('\n\n')
+
 export const findCodexExecutable = async (): Promise<string> => {
   const explicit = process.env.TUPINIQUIM_CODEX_PATH
   if (explicit !== undefined && explicit !== '') return explicit
@@ -179,7 +183,7 @@ export class CodexAppServerAdapter implements AIProvider {
     }
     const response = turnStartResponseSchema.parse(await this.request('turn/start', {
       threadId,
-      input: [{ type: 'text', text: input.message, text_elements: [] }]
+      input: [{ type: 'text', text: composeTurnInput(input.message, input.workspaceContext), text_elements: [] }]
     }))
     const reference = { threadId, turnId: response.turn.id }
     await this.options.history?.putAITurn(aiTurnSchema.parse({ id: reference.turnId, threadId: reference.threadId, mode: input.mode, inputHash: createHash('sha256').update(input.message).digest('hex'), createdAt: new Date().toISOString() }))
