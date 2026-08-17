@@ -2,11 +2,11 @@
 
 ## Objetivo
 
-Fechar o checkpoint da Wave Mestre 0 e iniciar a Wave 1 com a avaliação técnica do runtime local Ollama.
+Iniciar a Wave 1 com a avaliação técnica do runtime local Ollama.
 
 ## Estado
 
-Todos os gates da Wave 0 passaram. O diff foi revisado e o checkpoint wave-04 está em preparação.
+O checkpoint wave-04 foi criado após todos os gates da Wave 0 passarem.
 
 ## Critérios de aceite da próxima unidade
 

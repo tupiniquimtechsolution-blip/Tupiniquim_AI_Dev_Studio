@@ -10,7 +10,7 @@ O ambiente desta máquina usa `D:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0011 su
 
 | Wave Mestre | Escopo | Estado |
 |---:|---|---|
-| 0 | Fundação confiável: migração D:, AIProvider, persistência, IPC/PolicyEngine, E2E e redaction | CONCLUÍDA; checkpoint em preparação |
+| 0 | Fundação confiável: migração D:, AIProvider, persistência, IPC/PolicyEngine, E2E e redaction | CONCLUÍDA; checkpoint/wave-04 |
 | 1 | Dev AI local autônomo: runtime local, agente, workspace, memória, contexto e browser QA | PENDENTE |
 | 2 | Research, Knowledge, Technology/Tool/MCP/Skill Registries | PENDENTE |
 | 3 | Dev Studio completo, hardening e dogfood controlado | PENDENTE |

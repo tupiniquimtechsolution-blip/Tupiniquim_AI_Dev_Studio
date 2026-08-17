@@ -1,6 +1,6 @@
 # Resultados de testes
 
-## 2026-08-17 — Wave 0, antes do checkpoint
+## 2026-08-17 — Wave 0, checkpoint 8bab9fe
 
 | Comando | Resultado |
 |---|---|

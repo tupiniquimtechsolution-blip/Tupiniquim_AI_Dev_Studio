@@ -4,10 +4,10 @@ Atualizado em: 2026-08-17
 
 ## Estado atual
 
-- Current wave: Wave 0 do Plano Mestre — concluída, checkpoint em preparação.
-- Current checkpoint: checkpoint/wave-03 (2f77db6); o próximo será checkpoint/wave-04.
+- Current wave: Wave 1 do Plano Mestre — runtime local, em preparação.
+- Current checkpoint: checkpoint/wave-04 (8bab9fe).
 - Current branch: codex/wip-waves-04-10-20260813.
-- HEAD base: 66f94a7618b3aee4288e1cd28f9461d9fed4a589.
+- Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d.
 - Repositório operacional: D:\CODEX\Tupiniquim-AI-Dev-Studio.
 - Dados: D:\CODEX\Tupiniquim-AI-Dev-Studio.data.
 - Toolchain: D:\CODEX\programas.
