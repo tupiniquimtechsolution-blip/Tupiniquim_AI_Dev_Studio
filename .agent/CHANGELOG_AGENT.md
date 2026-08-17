@@ -1,5 +1,11 @@
 # Changelog do Agente
 
+## 2026-08-17 — Wave Mestre 1, histórico recuperável
+
+- Adicionada consulta IPC tipada de thread, turns e eventos persistidos, exibida na Caixa-preta sem conteúdo bruto de entrada.
+- Adicionada migração SQLite v4 idempotente para criar tabelas de IA ausentes em bancos legados v3.
+- Gate completo e E2E aprovados após validar a recuperação de histórico.
+
 ## 2026-08-17 — Wave Mestre 1, baseline de execução
 
 - A execução aprovada passou a registrar evidências TOOL e GIT reais, somente leitura, no Flight Recorder e no painel.

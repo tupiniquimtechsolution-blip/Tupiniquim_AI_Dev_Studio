@@ -1,7 +1,7 @@
 # SESSION HANDOFF
 
 Wave: Mestre 0 concluída; Wave 1 em andamento
-Checkpoint: checkpoint/wave-07 (baseline de execução)
+Checkpoint: checkpoint/wave-08 (histórico recuperável)
 Branch: codex/wip-waves-04-10-20260813
 Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 
@@ -14,6 +14,7 @@ Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d
 - Provider Ollama local integrado ao contrato, persistência, IPC e UI; validate (17 unitários) e E2E aprovados.
 - Catálogo de contexto metadata-only integrado ao workspace, IPC, UI e providers; não persiste conteúdo bruto nem lê arquivos.
 - Execução aprovada registra baseline real de contexto e Git em Flight Recorder, sem mutação.
+- Histórico de IA recuperável via IPC e Caixa-preta; migration SQLite v4 repara tabelas de IA ausentes.
 
 ## Pending
 

@@ -44,3 +44,13 @@
 
 - O E2E aprova os passos exigidos, inicia a execução e verifica eventos TOOL e GIT no Flight Recorder.
 - O baseline usa somente leituras reais do catálogo metadata-only e git status; não dispara terminal, escrita, mudança de Git ou conclusão de passo simulada.
+
+## 2026-08-17 — Wave 1, histórico recuperável
+
+| Comando | Resultado |
+|---|---|
+| scripts\pnpm-d.ps1 validate | PASS: validação D:, lint, typecheck, 17 unitários, 11 integrações (2 opt-in ignorados), 4 segurança e build |
+| scripts\pnpm-d.ps1 test:e2e | PASS: 1 cenário Electron real |
+
+- A bridge retorna thread, turns e eventos normalizados; a UI mostra somente a contagem de turns e o tipo/status dos eventos.
+- O E2E validou consulta de thread inexistente e migrou o banco local legado para a versão 4 com tabelas de IA presentes.

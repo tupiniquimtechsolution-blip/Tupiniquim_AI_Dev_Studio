@@ -9,6 +9,8 @@ import {
   agentLocalModelSelectInputSchema,
   agentProviderSelectInputSchema,
   agentSendInputSchema,
+  agentThreadIdInputSchema,
+  aiThreadHistorySchema,
   approvalDecideInputSchema,
   configureWorkspaceInputSchema,
   err,
@@ -227,6 +229,11 @@ const registerIpc = (): void => {
     ollamaAgent.selectModel(model)
     return ollamaAgent.status()
   })
+  register(ipcChannels.agentHistory, agentThreadIdInputSchema, 'agent.history', async ({ threadId }) => ({
+    thread: await database.getAIThread(threadId),
+    turns: await database.listAITurns(threadId),
+    events: await database.listAIEvents(threadId)
+  }), aiThreadHistorySchema)
   register(ipcChannels.agentSend, agentSendInputSchema, 'agent.send', async (input) => activeAgent().send({
     ...input,
     workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3))

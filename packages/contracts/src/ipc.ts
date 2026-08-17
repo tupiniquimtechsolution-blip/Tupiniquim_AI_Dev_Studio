@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Result } from './result'
-import type { AIEvent, AIStatus, AgentTurnReference, LocalModel, agentInterruptInputSchema, agentLocalModelSelectInputSchema, agentProviderSelectInputSchema, agentSendInputSchema } from './ai'
+import type { AIEvent, AIStatus, AIThreadHistory, AgentTurnReference, LocalModel, agentInterruptInputSchema, agentLocalModelSelectInputSchema, agentProviderSelectInputSchema, agentSendInputSchema, agentThreadIdInputSchema } from './ai'
 import { approvalScopeSchema, modeSchema, planSchema, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan } from './domain'
 import type { researchCollectInputSchema, researchSearchInputSchema, technologyResolveInputSchema, ResearchResult, ResearchSource, TechnologyResolution } from './research'
 import type { promptCompareInputSchema, promptCompileInputSchema, promptIdInputSchema, promptLintInputSchema, promptSaveInputSchema, CompiledPrompt, PromptComparison, PromptLintIssue, PromptTemplate } from './prompt'
@@ -27,6 +27,7 @@ export const ipcChannels = {
   agentProviderSelect: 'studio:agent:provider:select',
   agentLocalModels: 'studio:agent:local-models',
   agentLocalModelSelect: 'studio:agent:local-model:select',
+  agentHistory: 'studio:agent:history',
   agentSend: 'studio:agent:send',
   agentInterrupt: 'studio:agent:interrupt',
   agentEvent: 'studio:agent:event',
@@ -164,6 +165,7 @@ export interface StudioApi {
     selectProvider(input: z.input<typeof agentProviderSelectInputSchema>): Promise<Result<AIStatus>>
     listLocalModels(): Promise<Result<LocalModel[]>>
     selectLocalModel(input: z.input<typeof agentLocalModelSelectInputSchema>): Promise<Result<AIStatus>>
+    history(input: z.input<typeof agentThreadIdInputSchema>): Promise<Result<AIThreadHistory>>
     send(input: z.input<typeof agentSendInputSchema>): Promise<Result<AgentTurnReference>>
     interrupt(input: z.input<typeof agentInterruptInputSchema>): Promise<Result<void>>
     onEvent(listener: (event: AIEvent) => void): () => void

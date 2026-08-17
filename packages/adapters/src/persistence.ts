@@ -95,7 +95,19 @@ const initialize = () => {
       'COMMIT;'
     ].join('\n'))
   }
-  return { version: 3 }
+  if (version < 4) {
+    db.exec([
+      'BEGIN IMMEDIATE;',
+      'CREATE TABLE IF NOT EXISTS ai_threads (id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL);',
+      'CREATE TABLE IF NOT EXISTS ai_turns (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL);',
+      'CREATE INDEX IF NOT EXISTS ai_turns_thread_created ON ai_turns(thread_id, created_at);',
+      'CREATE TABLE IF NOT EXISTS ai_events (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, turn_id TEXT, at TEXT NOT NULL, payload TEXT NOT NULL);',
+      'CREATE INDEX IF NOT EXISTS ai_events_thread_at ON ai_events(thread_id, at);',
+      'PRAGMA user_version=4;',
+      'COMMIT;'
+    ].join('\n'))
+  }
+  return { version: 4 }
 }
 
 const execute = (operation) => {

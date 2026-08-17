@@ -36,6 +36,9 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
       expect(context.value.entries.length).toBeGreaterThan(0)
       expect(JSON.stringify(context.value)).not.toContain('node_modules')
     }
+    const emptyHistory = await page.evaluate(async () => window.studio.agent.history({ threadId: 'thread-inexistente' }))
+    if (!emptyHistory.ok) throw new Error(emptyHistory.error.message)
+    expect(emptyHistory).toMatchObject({ ok: true, value: { thread: null, turns: [], events: [] } })
     const tree = await page.evaluate(async () => window.studio.workspace.list({ relativePath: '', depth: 2 }))
     expect(tree.ok).toBe(true)
     const blockedWrite = await page.evaluate(async () => window.studio.workspace.write({ relativePath: '.agent-policy-probe', content: 'não deve gravar' }))

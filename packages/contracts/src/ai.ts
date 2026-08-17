@@ -47,6 +47,8 @@ export const agentInterruptInputSchema = z.object({
   turnId: z.string().min(1).max(200)
 })
 
+export const agentThreadIdInputSchema = z.object({ threadId: z.string().min(1).max(200) })
+
 export const agentTurnReferenceSchema = z.object({
   threadId: z.string().min(1).max(200),
   turnId: z.string().min(1).max(200)
@@ -84,6 +86,13 @@ export const aiEventSchema = z.object({
   detail: z.string().optional()
 })
 export type AIEvent = z.infer<typeof aiEventSchema>
+
+export const aiThreadHistorySchema = z.object({
+  thread: aiThreadSchema.nullable(),
+  turns: z.array(aiTurnSchema),
+  events: z.array(aiEventSchema)
+})
+export type AIThreadHistory = z.infer<typeof aiThreadHistorySchema>
 
 export interface AIProvider {
   connect(): Promise<AIStatus>

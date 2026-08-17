@@ -1,7 +1,7 @@
 import Editor from '@monaco-editor/react'
 import { Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, Eye, FileSearch, GitBranch, History, LayoutDashboard, Palette, PanelBottom, Save, Search, Settings2, ShieldCheck, Sparkles, TerminalSquare } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AIEvent, AIProviderKind, AIStatus, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, SystemInfo, UIProfile, WorkspaceContext } from '@tupiniquim/contracts'
+import type { AIEvent, AIProviderKind, AIStatus, AIThreadHistory, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, SystemInfo, UIProfile, WorkspaceContext } from '@tupiniquim/contracts'
 import { FileTree } from './components/FileTree'
 import { TerminalPane } from './components/TerminalPane'
 
@@ -297,7 +297,7 @@ export const App = (): React.JSX.Element => {
 
         <section className="bottom-deck">
           <nav><button className={deck === 'terminal' ? 'active' : ''} onClick={() => setDeck('terminal')}><TerminalSquare size={14} />Terminal</button><button className={deck === 'tests' ? 'active' : ''} onClick={() => setDeck('tests')}><CheckCircle2 size={14} />Testes</button><button className={deck === 'review' ? 'active' : ''} onClick={() => setDeck('review')}><Eye size={14} />Review</button><button className={deck === 'timeline' ? 'active' : ''} onClick={() => setDeck('timeline')}><History size={14} />Caixa-preta</button><div className="spacer" /><span className="notice">{notice}</span></nav>
-          <div className="deck-content">{deck === 'terminal' && <TerminalPane workspaceReady={workspaceRoot !== null} />}{deck === 'tests' && <DeckEmpty icon={<CheckCircle2 />} title="Nenhuma suíte executada" detail="Testes reais aparecerão aqui com comando, duração e evidência." />}{deck === 'review' && <DeckEmpty icon={<Eye />} title="Diff aguardando mudanças" detail="O review compara o baseline Git sem ocultar arquivos." />}{deck === 'timeline' && <Timeline workspaceReady={workspaceRoot !== null} />}</div>
+          <div className="deck-content">{deck === 'terminal' && <TerminalPane workspaceReady={workspaceRoot !== null} />}{deck === 'tests' && <DeckEmpty icon={<CheckCircle2 />} title="Nenhuma suíte executada" detail="Testes reais aparecerão aqui com comando, duração e evidência." />}{deck === 'review' && <DeckEmpty icon={<Eye />} title="Diff aguardando mudanças" detail="O review compara o baseline Git sem ocultar arquivos." />}{deck === 'timeline' && <Timeline key={aiStatus?.activeThreadId ?? 'empty'} workspaceReady={workspaceRoot !== null} threadId={aiStatus?.activeThreadId ?? null} />}</div>
         </section>
         <div className="resize-handle explorer-resize" role="separator" aria-label="Redimensionar explorer" onPointerDown={(event) => beginResize('explorerWidth', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, explorerWidth: current.layout.explorerWidth === 0 ? 230 : 0 } }))} />
         <div className="resize-handle agent-resize" role="separator" aria-label="Redimensionar agente" onPointerDown={(event) => beginResize('agentWidth', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, agentWidth: current.layout.agentWidth === 0 ? 340 : 0 } }))} />
@@ -311,9 +311,18 @@ export const App = (): React.JSX.Element => {
 
 const DeckEmpty = ({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }): React.JSX.Element => <div className="deck-empty"><span>{icon}</span><div><strong>{title}</strong><p>{detail}</p></div></div>
 
-const Timeline = ({ workspaceReady }: { workspaceReady: boolean }): React.JSX.Element => (
-  <div className="timeline"><div className="timeline-event success"><span /><time>agora</time><strong>Aplicação iniciada</strong><p>Fronteiras Electron e armazenamento D:\CODEX-only ativos.</p></div>{workspaceReady && <div className="timeline-event info"><span /><time>agora</time><strong>Workspace autorizado</strong><p>Mapa de arquivos e estado Git carregados.</p></div>}</div>
-)
+const Timeline = ({ workspaceReady, threadId }: { workspaceReady: boolean; threadId: string | null }): React.JSX.Element => {
+  const [history, setHistory] = useState<AIThreadHistory | null>(null)
+  useEffect(() => {
+    if (threadId === null) return
+    let active = true
+    void window.studio.agent.history({ threadId }).then((result) => { if (active && result.ok) setHistory(result.value) })
+    return () => { active = false }
+  }, [threadId])
+  return (
+    <div className="timeline"><div className="timeline-event success"><span /><time>agora</time><strong>Aplicação iniciada</strong><p>Fronteiras Electron e armazenamento D:\CODEX-only ativos.</p></div>{workspaceReady && <div className="timeline-event info"><span /><time>agora</time><strong>Workspace autorizado</strong><p>Mapa de arquivos e estado Git carregados.</p></div>}{history !== null && <div className="timeline-event info"><span /><time>histórico</time><strong>{String(history.turns.length)} turns persistidos</strong><p>{history.events.slice(-3).map((event) => event.kind + (event.status === undefined ? '' : ' · ' + event.status)).join('\n') || 'Eventos sem conteúdo bruto de entrada.'}</p></div>}</div>
+  )
+}
 
 const handleAgentEvent = (
   event: AIEvent,

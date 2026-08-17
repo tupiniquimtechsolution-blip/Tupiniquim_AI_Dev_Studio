@@ -5,7 +5,7 @@ Atualizado em: 2026-08-17
 ## Estado atual
 
 - Current wave: Wave 1 do Plano Mestre — runtime local entregue; agente/contexto em andamento.
-- Current checkpoint: checkpoint/wave-07 (baseline de execução).
+- Current checkpoint: checkpoint/wave-08 (histórico recuperável).
 - Current branch: codex/wip-waves-04-10-20260813.
 - Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d.
 - Repositório operacional: D:\CODEX\Tupiniquim-AI-Dev-Studio.
@@ -39,6 +39,8 @@ Atualizado em: 2026-08-17
 - Contexto do workspace é um catálogo real, limitado e metadata-only (máximo de 256 entradas); ignora itens ocultos e diretórios de build/dependências, não lê conteúdo e trata nomes como dados não confiáveis.
 - Ao iniciar uma execução com aprovações válidas, a aplicação coleta e persiste evidências reais e não mutáveis do catálogo do workspace e do status Git; a UI as apresenta no fluxo do plano.
 - GitAdapter configura safe.directory somente no processo Git do workspace atual, sem alterar configurações globais.
+- Histórico de thread, turns e eventos é recuperável por IPC tipado e aparece na Caixa-preta com contagens e estados; a UI não reexibe entrada bruta.
+- Migração SQLite v4 corrige de forma idempotente bancos v3 que não possuíam tabelas de IA, sem remoção de dados.
 
 ## Próximo
 
