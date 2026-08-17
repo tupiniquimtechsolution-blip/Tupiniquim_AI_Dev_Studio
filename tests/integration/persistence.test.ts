@@ -28,8 +28,9 @@ describe('persistência Plan/Approval/Execute', () => {
     }
     const execution = await service.start(planned.execution.id)
     expect(execution.state).toBe('EXECUTION')
+    await service.recordEvidence(execution.id, 'TOOL', 'Baseline lido', 'Leitura local sem mutação.', 'SUCCESS')
     expect((await service.read(execution.id)).plan.objective).toContain('capacidade')
-    expect((await service.events(execution.id)).map((event) => event.category)).toContain('APPROVAL')
+    expect((await service.events(execution.id)).map((event) => event.category)).toEqual(expect.arrayContaining(['APPROVAL', 'TOOL']))
   })
 
   it('faz a negativa prevalecer mesmo após uma aprovação anterior', async () => {
@@ -40,6 +41,12 @@ describe('persistência Plan/Approval/Execute', () => {
     await service.decide(planned.execution.id, targetStep.id, 'APPROVED', 'TASK')
     await service.decide(planned.execution.id, targetStep.id, 'DENIED', 'TASK')
     await expect(service.start(planned.execution.id)).rejects.toThrow('bloqueada')
+  })
+
+  it('rejeita evidência de ferramenta antes da execução autorizada', async () => {
+    const service = new PlanApprovalService(database)
+    const planned = await service.create('Não registrar tool antes de aprovar', fixture, 'PLAN')
+    await expect(service.recordEvidence(planned.execution.id, 'TOOL', 'Leitura', 'Não deve executar.', 'SUCCESS')).rejects.toThrow('execução autorizada')
   })
 
   it('persiste threads, turns e eventos de IA sem armazenar o conteúdo da entrada', async () => {

@@ -1,6 +1,6 @@
 # Próxima ação
 
-1. Revisar PlanApprovalService, WorkspaceAdapter, TerminalAdapter e o registrador IPC para identificar um primeiro passo real e não destrutivo.
-2. Definir contrato de execução com estados e evidência auditável; rejeitar passos sem aprovação material.
-3. Implementar somente a ponte de capacidade coberta por teste, sem ampliar permissões do renderer.
+1. Definir um manifest imutável e tipado para cada efeito pretendido (alvo, operação, risco e hash), antes de habilitar escrita, terminal ou Git mutável.
+2. Fazer a aprovação vincular-se ao manifest, invalidando-a quando alvo ou efeito mudarem.
+3. Implementar somente uma capacidade que possua manifest, PolicyEngine, AuditLog e teste de ponta a ponta; ausência de capacidade continua estado explícito.
 4. Executar os gates proporcionais e registrar evidência antes de introduzir memória semântica ou browser controlado.

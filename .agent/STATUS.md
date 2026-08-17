@@ -5,7 +5,7 @@ Atualizado em: 2026-08-17
 ## Estado atual
 
 - Current wave: Wave 1 do Plano Mestre — runtime local entregue; agente/contexto em andamento.
-- Current checkpoint: checkpoint/wave-06 (contexto de workspace).
+- Current checkpoint: checkpoint/wave-07 (baseline de execução).
 - Current branch: codex/wip-waves-04-10-20260813.
 - Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d.
 - Repositório operacional: D:\CODEX\Tupiniquim-AI-Dev-Studio.
@@ -27,8 +27,8 @@ Atualizado em: 2026-08-17
     powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 validate
     powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 test:e2e
 
-- validate: PASS — validação D:, lint, typecheck, 17 unitários, 9 integrações (2 opt-in ignorados), 4 testes de segurança e build.
-- test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita, bloqueio de git reset --hard, Ollama local e contexto de workspace.
+- validate: PASS — validação D:, lint, typecheck, 17 unitários, 11 integrações (2 opt-in ignorados), 4 testes de segurança e build.
+- test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita, bloqueio de git reset --hard, Ollama local, contexto e baseline de execução.
 
 ## Concluído na Wave 1
 
@@ -37,6 +37,8 @@ Atualizado em: 2026-08-17
 - O provider é selecionável pelo renderer por IPC tipado e preload mínimo; o painel mostra modelos locais e desabilita envio até existir seleção válida.
 - Threads e turns do provider local usam a mesma persistência normalizada; a entrada fica somente como SHA-256 e eventos/modelo são redigidos antes de publicação ou reuso de contexto.
 - Contexto do workspace é um catálogo real, limitado e metadata-only (máximo de 256 entradas); ignora itens ocultos e diretórios de build/dependências, não lê conteúdo e trata nomes como dados não confiáveis.
+- Ao iniciar uma execução com aprovações válidas, a aplicação coleta e persiste evidências reais e não mutáveis do catálogo do workspace e do status Git; a UI as apresenta no fluxo do plano.
+- GitAdapter configura safe.directory somente no processo Git do workspace atual, sem alterar configurações globais.
 
 ## Próximo
 

@@ -126,6 +126,12 @@ export class PlanApprovalService {
     return updated
   }
 
+  public async recordEvidence(executionId: string, category: Extract<FlightRecorderEvent['category'], 'TOOL' | 'GIT' | 'SYSTEM'>, title: string, detail: string, severity: FlightRecorderEvent['severity']): Promise<void> {
+    const { execution } = await this.read(executionId)
+    if (execution.state !== 'EXECUTION') throw new Error('Evidência só pode ser registrada durante execução autorizada.')
+    await this.record(executionId, category, title, detail, severity)
+  }
+
   public async events(executionId: string): Promise<FlightRecorderEvent[]> { return await this.repository.listEvents(executionId) }
 
   private async record(executionId: string, category: FlightRecorderEvent['category'], title: string, detail: string, severity: FlightRecorderEvent['severity']): Promise<void> {

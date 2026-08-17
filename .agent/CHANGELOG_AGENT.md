@@ -1,5 +1,11 @@
 # Changelog do Agente
 
+## 2026-08-17 — Wave Mestre 1, baseline de execução
+
+- A execução aprovada passou a registrar evidências TOOL e GIT reais, somente leitura, no Flight Recorder e no painel.
+- GitAdapter passou a aplicar safe.directory apenas ao processo do workspace, corrigindo o bloqueio de proprietário Windows sem tocar na configuração global.
+- E2E valida aprovações, início de execução e as duas evidências; gates completos aprovados com 11 integrações.
+
 ## 2026-08-17 — Wave Mestre 1, contexto seguro do workspace
 
 - Adicionado catálogo limitado e metadata-only do workspace ao IPC tipado, preload, painel e contexto dos providers.

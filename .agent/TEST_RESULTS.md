@@ -34,3 +34,13 @@
 
 - O catálogo retorna somente caminhos relativos, tipos e tamanhos, limita-se a 256 entradas e não lê conteúdo de arquivo.
 - Itens ocultos, .env, dependências e diretórios de build ficam fora do catálogo. Nomes passam por redaction e são avisados como conteúdo não confiável antes do provider.
+
+## 2026-08-17 — Wave 1, baseline de execução aprovado
+
+| Comando | Resultado |
+|---|---|
+| scripts\pnpm-d.ps1 validate | PASS: validação D:, lint, typecheck, 17 unitários, 11 integrações (2 opt-in ignorados), 4 segurança e build |
+| scripts\pnpm-d.ps1 test:e2e | PASS: 1 cenário Electron real |
+
+- O E2E aprova os passos exigidos, inicia a execução e verifica eventos TOOL e GIT no Flight Recorder.
+- O baseline usa somente leituras reais do catálogo metadata-only e git status; não dispara terminal, escrita, mudança de Git ou conclusão de passo simulada.

@@ -194,7 +194,15 @@ export const App = (): React.JSX.Element => {
   const startPlannedExecution = async (): Promise<void> => {
     if (planned === null) return
     const result = await window.studio.planning.start({ executionId: planned.execution.id })
-    if (result.ok) { setPlanned({ ...planned, execution: result.value }); setNotice('Execução autorizada; aguardando orquestração dos passos.') }
+    if (result.ok) {
+      setPlanned({ ...planned, execution: result.value })
+      const events = await window.studio.planning.events({ executionId: planned.execution.id })
+      if (events.ok) {
+        const evidence = events.value.filter((event) => event.category === 'TOOL' || event.category === 'GIT').slice(-2)
+        if (evidence.length > 0) setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: 'EXECUÇÃO AUTORIZADA\n' + evidence.map((event) => event.title + ': ' + (event.detail ?? '')).join('\n'), turnId: null, complete: true }])
+      }
+      setNotice('Execução autorizada; baseline real de workspace e Git registrado.')
+    }
     else setNotice(result.error.message)
   }
 

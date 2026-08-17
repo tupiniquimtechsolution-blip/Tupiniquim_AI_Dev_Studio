@@ -48,6 +48,21 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
       return blocked
     })
     expect(terminalPolicy).toMatchObject({ ok: false, error: { code: 'POLICY_DENIED' } })
+    const executionEvidence = await page.evaluate(async () => {
+      const created = await window.studio.planning.create({ objective: 'Registrar baseline sem mutar o workspace', mode: 'PLAN' })
+      if (!created.ok) throw new Error(created.error.message)
+      for (const step of created.value.plan.steps.filter((candidate) => candidate.requiresApproval)) {
+        const approval = await window.studio.planning.decide({ executionId: created.value.execution.id, stepId: step.id, decision: 'APPROVED', scope: 'TASK' })
+        if (!approval.ok) throw new Error(approval.error.message)
+      }
+      const started = await window.studio.planning.start({ executionId: created.value.execution.id })
+      if (!started.ok) throw new Error(started.error.message)
+      const events = await window.studio.planning.events({ executionId: created.value.execution.id })
+      if (!events.ok) throw new Error(events.error.message)
+      return { state: started.value.state, categories: events.value.map((event) => event.category) }
+    })
+    expect(executionEvidence.state).toBe('EXECUTION')
+    expect(executionEvidence.categories).toEqual(expect.arrayContaining(['TOOL', 'GIT']))
 
     await page.screenshot({ path: path.join(projectRoot, 'test-results', 'hud-foundation.png'), fullPage: true })
 

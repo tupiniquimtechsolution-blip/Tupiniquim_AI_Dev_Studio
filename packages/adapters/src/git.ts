@@ -9,7 +9,8 @@ export class GitAdapter {
   public constructor(private readonly workspaceRoot: () => string) {}
 
   private async run(args: string[], timeout = 20_000): Promise<string> {
-    const { stdout } = await execFileAsync('git', args, { cwd: this.workspaceRoot(), encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 5_000_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' } })
+    const root = this.workspaceRoot()
+    const { stdout } = await execFileAsync('git', ['-c', 'safe.directory=' + root, ...args], { cwd: root, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 5_000_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' } })
     return stdout
   }
 

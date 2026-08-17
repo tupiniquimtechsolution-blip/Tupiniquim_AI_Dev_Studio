@@ -105,6 +105,30 @@ const formatAgentWorkspaceContext = (context: WorkspaceContext): string => [
   'Entradas: ' + String(context.entries.length) + (context.truncated ? '+' : '') + '.',
   ...context.entries.map((entry) => (entry.kind === 'directory' ? 'DIR ' : 'FILE ') + redactContextMetadata(entry.relativePath) + ' (' + String(entry.size) + ' bytes)')
 ].join('\n').slice(0, 19_000)
+const recordExecutionBaseline = async (executionId: string): Promise<void> => {
+  const [context, gitStatus] = await Promise.allSettled([workspace.context(64, 3), git.status()])
+  if (context.status === 'fulfilled') {
+    await planning.recordEvidence(
+      executionId,
+      'TOOL',
+      'Catálogo do workspace registrado',
+      'Leitura metadata-only com ' + String(context.value.entries.length) + (context.value.truncated ? '+' : '') + ' entradas.',
+      'SUCCESS'
+    )
+  }
+  if (gitStatus.status === 'fulfilled') {
+    await planning.recordEvidence(
+      executionId,
+      'GIT',
+      'Baseline Git registrado',
+      'Status Git lido sem mutação; ' + String(gitStatus.value.entries.length) + ' alterações no worktree.',
+      'SUCCESS'
+    )
+  }
+  if (context.status === 'rejected' && gitStatus.status === 'rejected') {
+    await planning.recordEvidence(executionId, 'SYSTEM', 'Baseline indisponível', 'Nenhuma leitura de baseline foi concluída; nenhuma mutação foi executada.', 'WARNING')
+  }
+}
 
 const trustedSender = (senderId: number): boolean => mainWindow !== null && mainWindow.webContents.id === senderId
 
@@ -212,7 +236,11 @@ const registerIpc = (): void => {
   register(ipcChannels.planUpdate, planUpdateInputSchema, 'plan.update', ({ plan }) => planning.update(plan))
   register(ipcChannels.executionRead, executionIdInputSchema, 'execution.read', ({ executionId }) => planning.read(executionId))
   register(ipcChannels.approvalDecide, approvalDecideInputSchema, 'approval.decide', ({ executionId, stepId, decision, scope }) => planning.decide(executionId, stepId, decision, scope))
-  register(ipcChannels.executionStart, executionIdInputSchema, 'execution.start', ({ executionId }) => planning.start(executionId))
+  register(ipcChannels.executionStart, executionIdInputSchema, 'execution.start', async ({ executionId }) => {
+    const execution = await planning.start(executionId)
+    await recordExecutionBaseline(executionId)
+    return execution
+  })
   register(ipcChannels.executionEvents, executionIdInputSchema, 'execution.events', ({ executionId }) => planning.events(executionId))
   register(ipcChannels.researchSearch, researchSearchInputSchema, 'research.search', ({ query, maxResults }) => research.search(query, maxResults))
   register(ipcChannels.researchCollect, researchCollectInputSchema, 'research.collect', ({ url }) => research.collect(url))
