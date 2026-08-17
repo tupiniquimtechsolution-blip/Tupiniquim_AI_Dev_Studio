@@ -72,7 +72,7 @@ export const terminalWriteInputSchema = z.object({ terminalId: z.string().uuid()
 export const terminalResizeInputSchema = z.object({ terminalId: z.string().uuid(), cols: z.number().int().min(20).max(500), rows: z.number().int().min(5).max(200) })
 export const terminalKillInputSchema = z.object({ terminalId: z.string().uuid() })
 export const planCreateInputSchema = z.object({ objective: z.string().trim().min(3).max(100_000), mode: modeSchema })
-export const planUpdateInputSchema = z.object({ plan: planSchema })
+export const planUpdateInputSchema = z.object({ executionId: z.string().uuid(), plan: planSchema })
 export const executionIdInputSchema = z.object({ executionId: z.string().uuid() })
 export const approvalDecideInputSchema = z.object({ executionId: z.string().uuid(), stepId: z.string().uuid(), decision: z.enum(['APPROVED', 'DENIED']), scope: approvalScopeSchema })
 

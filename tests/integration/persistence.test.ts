@@ -7,6 +7,21 @@ import { PlanApprovalService } from '@tupiniquim/core'
 let fixture = ''
 let database: LocalDatabase
 
+const materializeEffects = (plan: Awaited<ReturnType<PlanApprovalService['create']>>['plan'], targetPrefix = 'src/alteracao'): typeof plan => ({
+  ...plan,
+  steps: plan.steps.map((step, index) => step.requiresApproval ? {
+    ...step,
+    effects: [{
+      id: crypto.randomUUID(),
+      capability: 'workspace.write' as const,
+      operation: 'REPLACE' as const,
+      target: `${targetPrefix}-${String(index)}.ts`,
+      payloadHash: String(index + 1).repeat(64),
+      risk: 'HIGH' as const
+    }]
+  } : step)
+})
+
 beforeEach(async () => {
   const temp = process.env.TEMP
   if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'D:\\') throw new Error('TEMP de testes precisa estar em D:.')
@@ -23,7 +38,8 @@ describe('persistência Plan/Approval/Execute', () => {
   it('migra SQLite em worker, persiste o plano e autoriza somente após todas as aprovações', async () => {
     const service = new PlanApprovalService(database)
     const planned = await service.create('Implementar uma capacidade verificável', fixture, 'PLAN')
-    for (const targetStep of planned.plan.steps.filter((candidate) => candidate.requiresApproval)) {
+    const plan = await service.update(planned.execution.id, materializeEffects(planned.plan))
+    for (const targetStep of plan.steps.filter((candidate) => candidate.requiresApproval)) {
       await service.decide(planned.execution.id, targetStep.id, 'APPROVED', 'TASK')
     }
     const execution = await service.start(planned.execution.id)
@@ -36,7 +52,8 @@ describe('persistência Plan/Approval/Execute', () => {
   it('faz a negativa prevalecer mesmo após uma aprovação anterior', async () => {
     const service = new PlanApprovalService(database)
     const planned = await service.create('Validar precedência da negativa', fixture, 'PLAN')
-    const targetStep = planned.plan.steps.find((candidate) => candidate.requiresApproval)
+    const plan = await service.update(planned.execution.id, materializeEffects(planned.plan))
+    const targetStep = plan.steps.find((candidate) => candidate.requiresApproval)
     if (targetStep === undefined) throw new Error('Fixture sem passo aprovável.')
     await service.decide(planned.execution.id, targetStep.id, 'APPROVED', 'TASK')
     await service.decide(planned.execution.id, targetStep.id, 'DENIED', 'TASK')
@@ -47,6 +64,25 @@ describe('persistência Plan/Approval/Execute', () => {
     const service = new PlanApprovalService(database)
     const planned = await service.create('Não registrar tool antes de aprovar', fixture, 'PLAN')
     await expect(service.recordEvidence(planned.execution.id, 'TOOL', 'Leitura', 'Não deve executar.', 'SUCCESS')).rejects.toThrow('execução autorizada')
+  })
+
+  it('exige manifesto e invalida aprovação quando alvo ou efeito muda', async () => {
+    const service = new PlanApprovalService(database)
+    const planned = await service.create('Vincular efeito exato à aprovação', fixture, 'PLAN')
+    const firstApprovalStep = planned.plan.steps.find((candidate) => candidate.requiresApproval)
+    if (firstApprovalStep === undefined) throw new Error('Fixture sem passo aprovável.')
+    const loweredApproval = {
+      ...planned.plan,
+      steps: planned.plan.steps.map((step) => step.id === firstApprovalStep.id ? { ...step, requiresApproval: false } : step)
+    }
+    await expect(service.update(planned.execution.id, loweredApproval)).rejects.toThrow('não pode reduzir risco, alterar aprovação ou estado')
+    await expect(service.decide(planned.execution.id, firstApprovalStep.id, 'APPROVED', 'TASK')).rejects.toThrow('manifesto de efeitos')
+    const approvedPlan = await service.update(planned.execution.id, materializeEffects(planned.plan, 'src/original'))
+    for (const targetStep of approvedPlan.steps.filter((candidate) => candidate.requiresApproval)) {
+      await service.decide(planned.execution.id, targetStep.id, 'APPROVED', 'TASK')
+    }
+    await service.update(planned.execution.id, materializeEffects(approvedPlan, 'src/destino-alterado'))
+    await expect(service.start(planned.execution.id)).rejects.toThrow('Aprovação pendente')
   })
 
   it('persiste threads, turns e eventos de IA sem armazenar o conteúdo da entrada', async () => {

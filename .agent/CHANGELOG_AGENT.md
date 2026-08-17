@@ -1,5 +1,11 @@
 # Changelog do Agente
 
+## 2026-08-17 — Wave Mestre 1, manifestos de efeitos
+
+- Substituída a aprovação baseada em título genérico por manifesto canônico e tipado: capacidade, operação, alvo, risco e hash de payload, sem persistir o conteúdo do payload.
+- Aprovação sem manifesto é recusada; mudanças de alvo ou efeito invalidam a decisão anterior. Atualizações do renderer não podem remover aprovação, reduzir risco, alterar estado ou modificar o manifesto após iniciar a execução.
+- A interface passa a indicar manifestos pendentes e exibe os campos revisáveis de cada efeito antes da aprovação. Integração e E2E cobrem o vínculo e sua invalidação.
+
 ## 2026-08-17 — Wave Mestre 1, histórico recuperável
 
 - Adicionada consulta IPC tipada de thread, turns e eventos persistidos, exibida na Caixa-preta sem conteúdo bruto de entrada.

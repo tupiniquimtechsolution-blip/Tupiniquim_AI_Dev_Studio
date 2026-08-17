@@ -5,7 +5,7 @@ Atualizado em: 2026-08-17
 ## Estado atual
 
 - Current wave: Wave 1 do Plano Mestre — runtime local entregue; agente/contexto em andamento.
-- Current checkpoint: checkpoint/wave-08 (histórico recuperável).
+- Current checkpoint: checkpoint/wave-09 (manifestos imutáveis de efeitos).
 - Current branch: codex/wip-waves-04-10-20260813.
 - Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d.
 - Repositório operacional: D:\CODEX\Tupiniquim-AI-Dev-Studio.
@@ -27,8 +27,8 @@ Atualizado em: 2026-08-17
     powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 validate
     powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 test:e2e
 
-- validate: PASS — validação D:, lint, typecheck, 17 unitários, 11 integrações (2 opt-in ignorados), 4 testes de segurança e build.
-- test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita, bloqueio de git reset --hard, Ollama local, contexto e baseline de execução.
+- validate: PASS — validação D:, lint, typecheck, 17 unitários, 12 integrações (2 opt-in ignorados), 4 testes de segurança e build.
+- test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita, bloqueio de git reset --hard, Ollama local, contexto, baseline e aprovação vinculada a manifesto.
 
 ## Concluído na Wave 1
 
@@ -41,10 +41,12 @@ Atualizado em: 2026-08-17
 - GitAdapter configura safe.directory somente no processo Git do workspace atual, sem alterar configurações globais.
 - Histórico de thread, turns e eventos é recuperável por IPC tipado e aparece na Caixa-preta com contagens e estados; a UI não reexibe entrada bruta.
 - Migração SQLite v4 corrige de forma idempotente bancos v3 que não possuíam tabelas de IA, sem remoção de dados.
+- Cada passo mutável agora exige um manifesto tipado e sem payload bruto (capacidade, operação, alvo, risco e hash). A aprovação é vinculada ao hash canônico do manifesto, e qualquer mudança de alvo ou efeito torna a decisão anterior inválida.
+- A atualização de plano não pode alterar a estrutura, reduzir risco, remover exigência de aprovação, mudar estado de passo ou alterar manifestos após o início da execução. A UI exibe alvo, operação e prefixo do hash antes de habilitar os botões de decisão.
 
 ## Próximo
 
-Estender a execução de planos aprovados para um runtime de agente real, mantendo ações mutáveis sob PolicyEngine, aprovações granulares e AuditLog.
+Implementar a primeira capacidade executável: `workspace.write` limitada ao manifesto aprovado, com conferência do hash do conteúdo, PolicyEngine, AuditLog e teste de ponta a ponta. Terminal e Git mutável permanecem indisponíveis.
 
 ## Bloqueios externos
 

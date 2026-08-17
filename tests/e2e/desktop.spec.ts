@@ -54,7 +54,16 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
     const executionEvidence = await page.evaluate(async () => {
       const created = await window.studio.planning.create({ objective: 'Registrar baseline sem mutar o workspace', mode: 'PLAN' })
       if (!created.ok) throw new Error(created.error.message)
-      for (const step of created.value.plan.steps.filter((candidate) => candidate.requiresApproval)) {
+      const plan = {
+        ...created.value.plan,
+        steps: created.value.plan.steps.map((step, index) => step.requiresApproval ? {
+          ...step,
+          effects: [{ id: crypto.randomUUID(), capability: 'workspace.write' as const, operation: 'REPLACE' as const, target: `.agent-effect-${String(index)}.md`, payloadHash: String(index + 1).repeat(64), risk: 'HIGH' as const }]
+        } : step)
+      }
+      const updated = await window.studio.planning.update({ executionId: created.value.execution.id, plan })
+      if (!updated.ok) throw new Error(updated.error.message)
+      for (const step of updated.value.steps.filter((candidate) => candidate.requiresApproval)) {
         const approval = await window.studio.planning.decide({ executionId: created.value.execution.id, stepId: step.id, decision: 'APPROVED', scope: 'TASK' })
         if (!approval.ok) throw new Error(approval.error.message)
       }

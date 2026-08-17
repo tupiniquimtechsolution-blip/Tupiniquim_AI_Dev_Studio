@@ -1,5 +1,21 @@
 # Resultados de testes
 
+## 2026-08-17 — Wave 1, manifestos imutáveis de efeitos
+
+| Comando | Resultado |
+|---|---|
+| scripts\validate-d-drive.ps1 | PASS: regra D:\CODEX-only e componentes locais |
+| scripts\pnpm-d.ps1 lint | PASS |
+| scripts\pnpm-d.ps1 typecheck | PASS |
+| scripts\pnpm-d.ps1 test:unit | PASS: 17 unitários |
+| scripts\pnpm-d.ps1 test:integration | PASS: 12 integrações (2 opt-in ignorados) |
+| scripts\pnpm-d.ps1 test:security | PASS: 4 cenários |
+| scripts\pnpm-d.ps1 build | PASS: Electron production build |
+| scripts\pnpm-d.ps1 test:e2e | PASS: 1 cenário Electron real |
+
+- Integração cobre manifesto ausente, tentativa de reduzir a exigência de aprovação e invalidação da decisão quando o alvo ou efeito muda.
+- O E2E só inicia execução depois de persistir manifestos tipados e obter as aprovações correspondentes; ele preserva a evidência read-only de workspace e Git.
+
 ## 2026-08-17 — Wave 0, checkpoint 8bab9fe
 
 | Comando | Resultado |

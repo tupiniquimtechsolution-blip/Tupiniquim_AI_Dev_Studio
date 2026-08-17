@@ -240,7 +240,7 @@ const registerIpc = (): void => {
   }))
   register(ipcChannels.agentInterrupt, agentInterruptInputSchema, 'agent.interrupt', (input) => activeAgent().interrupt(input))
   register(ipcChannels.planCreate, planCreateInputSchema, 'plan.create', ({ objective, mode }) => planning.create(objective, workspace.getRoot(), mode))
-  register(ipcChannels.planUpdate, planUpdateInputSchema, 'plan.update', ({ plan }) => planning.update(plan))
+  register(ipcChannels.planUpdate, planUpdateInputSchema, 'plan.update', ({ executionId, plan }) => planning.update(executionId, plan))
   register(ipcChannels.executionRead, executionIdInputSchema, 'execution.read', ({ executionId }) => planning.read(executionId))
   register(ipcChannels.approvalDecide, approvalDecideInputSchema, 'approval.decide', ({ executionId, stepId, decision, scope }) => planning.decide(executionId, stepId, decision, scope))
   register(ipcChannels.executionStart, executionIdInputSchema, 'execution.start', async ({ executionId }) => {

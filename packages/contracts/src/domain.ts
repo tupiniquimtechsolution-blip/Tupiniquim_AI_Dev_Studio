@@ -35,13 +35,44 @@ export const approvalScopes = ['ONCE', 'TASK', 'SESSION', 'PROJECT'] as const
 export const approvalScopeSchema = z.enum(approvalScopes)
 export type ApprovalScope = z.infer<typeof approvalScopeSchema>
 
+export const effectCapabilities = ['workspace.write', 'terminal.command', 'git.stage', 'git.commit', 'git.push'] as const
+export const effectCapabilitySchema = z.enum(effectCapabilities)
+export type EffectCapability = z.infer<typeof effectCapabilitySchema>
+
+export const effectOperations = ['CREATE', 'REPLACE', 'DELETE', 'RUN', 'STAGE', 'COMMIT', 'PUSH'] as const
+export const effectOperationSchema = z.enum(effectOperations)
+export type EffectOperation = z.infer<typeof effectOperationSchema>
+
+const validEffectOperation: Record<EffectCapability, readonly EffectOperation[]> = {
+  'workspace.write': ['CREATE', 'REPLACE', 'DELETE'],
+  'terminal.command': ['RUN'],
+  'git.stage': ['STAGE'],
+  'git.commit': ['COMMIT'],
+  'git.push': ['PUSH']
+}
+
+export const actionManifestSchema = z.object({
+  id: z.string().uuid(),
+  capability: effectCapabilitySchema,
+  operation: effectOperationSchema,
+  target: z.string().min(1).max(4096),
+  payloadHash: z.string().regex(/^[a-f0-9]{64}$/),
+  risk: riskLevelSchema
+}).superRefine((effect, context) => {
+  if (!validEffectOperation[effect.capability].includes(effect.operation)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['operation'], message: 'Operação incompatível com a capacidade do efeito.' })
+  }
+})
+export type ActionManifest = z.infer<typeof actionManifestSchema>
+
 export const planStepSchema = z.object({
   id: z.string().uuid(),
   title: z.string().min(1),
   description: z.string(),
   status: z.enum(['PENDING', 'RUNNING', 'COMPLETED', 'FAILED', 'SKIPPED']),
   risk: riskLevelSchema,
-  requiresApproval: z.boolean()
+  requiresApproval: z.boolean(),
+  effects: z.array(actionManifestSchema).max(64).default([])
 })
 export type PlanStep = z.infer<typeof planStepSchema>
 

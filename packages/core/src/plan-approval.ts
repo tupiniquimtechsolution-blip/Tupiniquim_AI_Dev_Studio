@@ -3,6 +3,7 @@ import {
   approvalDecisionSchema,
   executionSchema,
   planSchema,
+  type ActionManifest,
   type ApprovalDecision,
   type ApprovalScope,
   type Execution,
@@ -25,9 +26,28 @@ export interface PlanRepository {
 
 export interface PlannedExecution { plan: Plan; execution: Execution }
 
-const step = (title: string, description: string, risk: PlanStep['risk'], requiresApproval: boolean): PlanStep => ({ id: randomUUID(), title, description, status: 'PENDING', risk, requiresApproval })
+const step = (title: string, description: string, risk: PlanStep['risk'], requiresApproval: boolean): PlanStep => ({ id: randomUUID(), title, description, status: 'PENDING', risk, requiresApproval, effects: [] })
 
-const effectsHash = (action: string, target: string, risk: string): string => createHash('sha256').update(JSON.stringify({ action, target, risk })).digest('hex')
+const riskWeight: Record<PlanStep['risk'], number> = { LOW: 0, MEDIUM: 1, HIGH: 2, CRITICAL: 3 }
+
+const canonicalEffects = (effects: readonly ActionManifest[]): Array<Pick<ActionManifest, 'capability' | 'operation' | 'target' | 'payloadHash' | 'risk'>> => effects
+  .map(({ capability, operation, target, payloadHash, risk }) => ({ capability, operation, target, payloadHash, risk }))
+  .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+
+export const manifestEffectsHash = (effects: readonly ActionManifest[]): string => createHash('sha256').update(JSON.stringify(canonicalEffects(effects))).digest('hex')
+
+const effectRisk = (effects: readonly ActionManifest[]): PlanStep['risk'] => effects.reduce<PlanStep['risk']>((highest, effect) => riskWeight[effect.risk] > riskWeight[highest] ? effect.risk : highest, 'LOW')
+
+const effectTarget = (effects: readonly ActionManifest[]): string => {
+  const target = effects.map((effect) => `${effect.capability}:${effect.target}`).join(', ')
+  return target.length <= 4096 ? target : `${target.slice(0, 4030)}… (${effects.length} efeitos)`
+}
+
+const effectAction = (effects: readonly ActionManifest[]): string => `${effects.length} efeito(s) imutáveis: ${[...new Set(effects.map((effect) => effect.capability))].join(', ')}`.slice(0, 500)
+
+const assertManifest = (step: PlanStep): void => {
+  if (step.effects.length === 0) throw new Error(`Passo requer manifesto de efeitos antes da aprovação: ${step.title}`)
+}
 
 export class PlanApprovalService {
   public constructor(private readonly repository: PlanRepository) {}
@@ -66,11 +86,28 @@ export class PlanApprovalService {
     return { plan, execution }
   }
 
-  public async update(plan: Plan): Promise<Plan> {
+  public async update(executionId: string, plan: Plan): Promise<Plan> {
+    const execution = await this.repository.getExecution(executionId)
+    if (execution === null || execution.planId !== plan.id) throw new Error('Execução não corresponde ao plano a ser atualizado.')
+    if (execution.state === 'EXECUTION') throw new Error('Manifesto de efeitos é imutável após o início da execução.')
     const current = await this.repository.getPlan(plan.id)
     if (current === null) throw new Error('Plano não encontrado.')
-    const updated = planSchema.parse({ ...plan, createdAt: current.createdAt, updatedAt: new Date().toISOString() })
+    const currentPlan = planSchema.parse(current)
+    const incoming = planSchema.parse(plan)
+    if (incoming.steps.length !== currentPlan.steps.length || incoming.steps.some((candidate, index) => candidate.id !== currentPlan.steps[index]?.id)) {
+      throw new Error('A estrutura do plano não pode ser alterada durante uma execução.')
+    }
+    if (incoming.steps.some((candidate, index) => {
+      const currentStep = currentPlan.steps[index]
+      return currentStep === undefined || candidate.description !== currentStep.description || candidate.status !== currentStep.status || candidate.risk !== currentStep.risk || candidate.requiresApproval !== currentStep.requiresApproval
+    })) {
+      throw new Error('Atualização do plano não pode reduzir risco, alterar aprovação ou estado dos passos.')
+    }
+    const updated = planSchema.parse({ ...incoming, createdAt: currentPlan.createdAt, updatedAt: new Date().toISOString() })
     await this.repository.putPlan(updated)
+    if (manifestEffectsHash(currentPlan.steps.flatMap((candidate) => candidate.effects)) !== manifestEffectsHash(updated.steps.flatMap((candidate) => candidate.effects))) {
+      await this.record(executionId, 'SYSTEM', 'Manifesto de efeitos atualizado', 'Efeitos mutáveis foram reespecificados; aprovações anteriores serão revalidadas.', 'INFO')
+    }
     return updated
   }
 
@@ -86,14 +123,15 @@ export class PlanApprovalService {
     const { execution, plan } = await this.read(executionId)
     const targetStep = plan.steps.find((candidate) => candidate.id === stepId)
     if (targetStep === undefined || !targetStep.requiresApproval) throw new Error('Passo não requer aprovação ou não pertence ao plano.')
+    assertManifest(targetStep)
     const approval = approvalDecisionSchema.parse({
       id: randomUUID(),
       executionId,
       stepId,
-      action: targetStep.title,
-      target: execution.workspaceRoot,
-      risk: targetStep.risk,
-      effectsHash: effectsHash(targetStep.title, execution.workspaceRoot, targetStep.risk),
+      action: effectAction(targetStep.effects),
+      target: effectTarget(targetStep.effects),
+      risk: effectRisk(targetStep.effects),
+      effectsHash: manifestEffectsHash(targetStep.effects),
       scope,
       decision,
       decidedAt: new Date().toISOString()
@@ -115,14 +153,15 @@ export class PlanApprovalService {
     if (execution.state === 'BLOCKED') throw new Error('Execução bloqueada por uma negativa.')
     const approvals = (await Promise.all(execution.approvalIds.map(async (id) => await this.repository.getApproval(id)))).filter((candidate): candidate is ApprovalDecision => candidate !== null)
     for (const targetStep of plan.steps.filter((candidate) => candidate.requiresApproval)) {
-      const expected = effectsHash(targetStep.title, execution.workspaceRoot, targetStep.risk)
+      assertManifest(targetStep)
+      const expected = manifestEffectsHash(targetStep.effects)
       const relevant = approvals.filter((approval) => approval.stepId === targetStep.id && approval.effectsHash === expected)
       if (relevant.some((approval) => approval.decision === 'DENIED')) throw new Error(`Passo negado: ${targetStep.title}`)
       if (!relevant.some((approval) => approval.decision === 'APPROVED')) throw new Error(`Aprovação pendente: ${targetStep.title}`)
     }
     const updated = executionSchema.parse({ ...execution, state: 'EXECUTION', activeStepId: plan.steps[0]?.id ?? null, updatedAt: new Date().toISOString() })
     await this.repository.putExecution(updated)
-    await this.record(executionId, 'STATE', 'Execução autorizada', 'Todos os efeitos mutáveis possuem aprovação válida.', 'SUCCESS')
+    await this.record(executionId, 'STATE', 'Execução autorizada', 'Todos os manifestos de efeitos mutáveis possuem aprovação válida.', 'SUCCESS')
     return updated
   }
 
