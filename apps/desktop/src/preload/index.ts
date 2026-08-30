@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { ipcChannels, type AIEvent, type StudioApi, type TerminalDataEvent } from '@tupiniquim/contracts'
+import { ipcChannels, type AIEvent, type StudioApi, type TerminalDataEvent, type WorkspaceWriteProposal } from '@tupiniquim/contracts'
 
 const api: StudioApi = {
   system: { info: () => ipcRenderer.invoke(ipcChannels.systemInfo) },
@@ -39,6 +39,11 @@ const api: StudioApi = {
       const wrapped = (_event: Electron.IpcRendererEvent, data: AIEvent): void => listener(data)
       ipcRenderer.on(ipcChannels.agentEvent, wrapped)
       return () => ipcRenderer.removeListener(ipcChannels.agentEvent, wrapped)
+    },
+    onWorkspaceWriteProposal: (listener) => {
+      const wrapped = (_event: Electron.IpcRendererEvent, proposal: WorkspaceWriteProposal): void => listener(proposal)
+      ipcRenderer.on(ipcChannels.agentWorkspaceWriteProposal, wrapped)
+      return () => ipcRenderer.removeListener(ipcChannels.agentWorkspaceWriteProposal, wrapped)
     }
   },
   planning: {
@@ -49,7 +54,6 @@ const api: StudioApi = {
     start: (input) => ipcRenderer.invoke(ipcChannels.executionStart, input),
     events: (input) => ipcRenderer.invoke(ipcChannels.executionEvents, input),
     applyWorkspaceWrite: (input) => ipcRenderer.invoke(ipcChannels.executionApplyWorkspaceWrite, input),
-    proposeWorkspaceWrite: (input) => ipcRenderer.invoke(ipcChannels.executionProposeWorkspaceWrite, input),
     applyProposedWorkspaceWrite: (input) => ipcRenderer.invoke(ipcChannels.executionApplyProposedWorkspaceWrite, input)
   },
   research: {

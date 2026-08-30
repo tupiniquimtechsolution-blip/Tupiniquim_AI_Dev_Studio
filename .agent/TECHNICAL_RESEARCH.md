@@ -8,7 +8,7 @@
 - Transporte Codex: stdio JSONL estável. WebSocket remoto e APIs experimentais ficam fora da V1.
 - Persistência: `node:sqlite` em worker, evitando dependência nativa adicional num host sem toolchain C++.
 - Terminal: `node-pty`/ConPTY atrás de adapter e teste de compatibilidade.
-- Preview: Playwright/Electron e navegador isolado, usando Edge existente ou cache de browser em D:\CODEX.
+- Preview: Playwright/Electron e navegador isolado, usando Edge existente ou cache de browser em F:\CODEX.
 - Packaging: artefato portátil e unpacked; assinatura e auto-update dependem de infraestrutura externa.
 
 ## Fontes primárias

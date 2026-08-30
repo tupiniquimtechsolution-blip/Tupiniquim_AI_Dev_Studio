@@ -51,16 +51,43 @@ const validEffectOperation: Record<EffectCapability, readonly EffectOperation[]>
   'git.push': ['PUSH']
 }
 
+const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/)
+
+export const agentProposalEffectSourceSchema = z.object({
+  kind: z.literal('AGENT_PROPOSAL'),
+  provider: z.enum(['codex-app-server', 'ollama']),
+  threadId: z.string().min(1).max(200),
+  turnId: z.string().min(1).max(200),
+  toolCallId: z.string().uuid(),
+  proposalId: z.string().uuid(),
+  tool: z.literal('workspace.write')
+})
+export type AgentProposalEffectSource = z.infer<typeof agentProposalEffectSourceSchema>
+
 export const actionManifestSchema = z.object({
   id: z.string().uuid(),
   capability: effectCapabilitySchema,
   operation: effectOperationSchema,
   target: z.string().min(1).max(4096),
-  payloadHash: z.string().regex(/^[a-f0-9]{64}$/),
-  risk: riskLevelSchema
+  payloadHash: sha256Schema,
+  risk: riskLevelSchema,
+  expectedTargetHash: sha256Schema.nullable().optional(),
+  source: agentProposalEffectSourceSchema.optional()
 }).superRefine((effect, context) => {
   if (!validEffectOperation[effect.capability].includes(effect.operation)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ['operation'], message: 'Operação incompatível com a capacidade do efeito.' })
+  }
+  if (effect.source !== undefined && effect.capability !== 'workspace.write') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['source'], message: 'Proposta de agente só pode originar efeito workspace.write.' })
+  }
+  if (effect.source !== undefined && effect.operation !== 'CREATE' && effect.operation !== 'REPLACE') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['operation'], message: 'Proposta de agente só pode criar ou substituir arquivo.' })
+  }
+  if (effect.source !== undefined && effect.operation === 'CREATE' && effect.expectedTargetHash !== null) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['expectedTargetHash'], message: 'CREATE de agente exige baseline inexistente.' })
+  }
+  if (effect.source !== undefined && effect.operation === 'REPLACE' && typeof effect.expectedTargetHash !== 'string') {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['expectedTargetHash'], message: 'REPLACE de agente exige hash SHA-256 do baseline.' })
   }
 })
 export type ActionManifest = z.infer<typeof actionManifestSchema>

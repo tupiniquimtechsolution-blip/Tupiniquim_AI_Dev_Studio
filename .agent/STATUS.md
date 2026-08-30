@@ -1,20 +1,20 @@
 # Status
 
-Atualizado em: 2026-08-17
+Atualizado em: 2026-08-20
 
 ## Estado atual
 
 - Current wave: Wave 1 do Plano Mestre — runtime local entregue; agente/contexto em andamento.
 - Current checkpoint: checkpoint/wave-13 (consumo aprovado de propostas de escrita).
 - Current branch: codex/wip-waves-04-10-20260813.
-- Wave 0 checkpoint head: 8bab9fe2e0afcb4be9b28449ccdf31397323778d.
-- Repositório operacional: D:\CODEX\Tupiniquim-AI-Dev-Studio.
-- Dados: D:\CODEX\Tupiniquim-AI-Dev-Studio.data.
-- Toolchain: D:\CODEX\programas.
+- Wave 0 checkpoint head: 8bab9fec6800260e7879be09a3ce6e114968cc18.
+- Repositório operacional: F:\CODEX\Tupiniquim-AI-Dev-Studio.
+- Dados: F:\CODEX\Tupiniquim-AI-Dev-Studio.data.
+- Toolchain: F:\CODEX\programas.
 
 ## Concluído na Wave 0
 
-- Migração operacional F: → D: com ADR 0011, scripts D:, validação de localização e reparo do iniciador corrompido.
+- Isolamento operacional reconciliado para F: nesta máquina pelo ADR 0012, preservando o histórico das localizações anteriores.
 - Correção do início Electron ESM por fileURLToPath; a janela real abre no E2E.
 - CodexAppServerAdapter com handshake, autenticação degradável sem segredo, JSONL controlado, streaming, interrupção, encerramento e thread/resume.
 - Persistência SQLite de threads, turns (somente hash da entrada) e eventos normalizados.
@@ -24,10 +24,10 @@ Atualizado em: 2026-08-17
 
 ## Gates atuais
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 validate
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-d.ps1 test:e2e
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-f.ps1 validate
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-f.ps1 test:e2e
 
-- validate: PASS — validação D:, lint, typecheck, 17 unitários, 15 integrações (2 opt-in ignorados), 4 testes de segurança e build.
+- validate: revalidação em F: em andamento; o último checkpoint passou em lint, typecheck, 17 unitários, 15 integrações (2 opt-in ignorados), 4 testes de segurança e build na estação anterior.
 - test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita, bloqueio de git reset --hard, Ollama local, contexto, baseline, manifesto aprovado e `workspace.write` atômico.
 
 ## Concluído na Wave 1

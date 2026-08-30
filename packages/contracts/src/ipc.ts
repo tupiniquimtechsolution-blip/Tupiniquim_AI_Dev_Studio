@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { Result } from './result'
-import type { AIEvent, AIStatus, AIThreadHistory, AgentTurnReference, LocalModel, agentInterruptInputSchema, agentLocalModelSelectInputSchema, agentProviderSelectInputSchema, agentSendInputSchema, agentThreadIdInputSchema } from './ai'
-import { approvalScopeSchema, modeSchema, planSchema, type ActionManifest, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan } from './domain'
+import { aiProviderKindSchema, type AIEvent, type AIStatus, type AIThreadHistory, type AgentTurnReference, type LocalModel, type agentInterruptInputSchema, type agentLocalModelSelectInputSchema, type agentProviderSelectInputSchema, type agentSendInputSchema, type agentThreadIdInputSchema } from './ai'
+import { actionManifestSchema, approvalScopeSchema, modeSchema, planSchema, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan } from './domain'
 import type { researchCollectInputSchema, researchSearchInputSchema, technologyResolveInputSchema, ResearchResult, ResearchSource, TechnologyResolution } from './research'
 import type { promptCompareInputSchema, promptCompileInputSchema, promptIdInputSchema, promptLintInputSchema, promptSaveInputSchema, CompiledPrompt, PromptComparison, PromptLintIssue, PromptTemplate } from './prompt'
 import type { visualAssetAddInputSchema, visualAssetUseInputSchema, visualProviderOpenInputSchema, VisualAsset, VisualProviderStatus } from './visual'
@@ -31,13 +31,13 @@ export const ipcChannels = {
   agentSend: 'studio:agent:send',
   agentInterrupt: 'studio:agent:interrupt',
   agentEvent: 'studio:agent:event',
+  agentWorkspaceWriteProposal: 'studio:agent:workspace-write-proposal',
   planCreate: 'studio:plan:create',
   planUpdate: 'studio:plan:update',
   executionRead: 'studio:execution:read',
   executionStart: 'studio:execution:start',
   executionEvents: 'studio:execution:events',
   executionApplyWorkspaceWrite: 'studio:execution:workspace:write',
-  executionProposeWorkspaceWrite: 'studio:execution:workspace:propose',
   executionApplyProposedWorkspaceWrite: 'studio:execution:workspace:apply-proposal',
   approvalDecide: 'studio:approval:decide',
   researchSearch: 'studio:research:search',
@@ -85,15 +85,6 @@ export const executionWorkspaceWriteInputSchema = z.object({
   content: z.string().max(10_000_000),
   expectedHash: z.string().regex(/^[a-f0-9]{64}$/).optional()
 })
-export const executionWorkspaceWriteProposalInputSchema = z.object({
-  executionId: z.string().uuid(),
-  stepId: z.string().uuid(),
-  threadId: z.string().min(1).max(200),
-  turnId: z.string().min(1).max(200),
-  relativePath: workspacePathSchema,
-  content: z.string().max(10_000_000),
-  operation: z.enum(['CREATE', 'REPLACE'])
-})
 export const executionWorkspaceWriteProposalIdInputSchema = z.object({ proposalId: z.string().uuid() })
 export const approvalDecideInputSchema = z.object({ executionId: z.string().uuid(), stepId: z.string().uuid(), decision: z.enum(['APPROVED', 'DENIED']), scope: approvalScopeSchema })
 
@@ -119,15 +110,36 @@ export interface AppliedWorkspaceEffect {
   modifiedAt: string
 }
 
-export interface WorkspaceWriteProposal {
-  id: string
-  executionId: string
-  stepId: string
-  threadId: string
-  turnId: string
-  effect: ActionManifest
-  createdAt: string
-}
+export const workspaceWriteProposalSchema = z.object({
+  id: z.string().uuid(),
+  executionId: z.string().uuid(),
+  stepId: z.string().uuid(),
+  provider: aiProviderKindSchema,
+  threadId: z.string().min(1).max(200),
+  turnId: z.string().min(1).max(200),
+  toolCallId: z.string().uuid(),
+  tool: z.literal('workspace.write'),
+  effect: actionManifestSchema,
+  createdAt: z.string().datetime()
+}).superRefine((proposal, context) => {
+  const source = proposal.effect.source
+  if (source === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['effect', 'source'], message: 'Proposta pública exige origem de agente persistível.' })
+    return
+  }
+  const fields = [
+    ['id', proposal.id, source.proposalId],
+    ['provider', proposal.provider, source.provider],
+    ['threadId', proposal.threadId, source.threadId],
+    ['turnId', proposal.turnId, source.turnId],
+    ['toolCallId', proposal.toolCallId, source.toolCallId],
+    ['tool', proposal.tool, source.tool]
+  ] as const
+  for (const [field, topLevel, persisted] of fields) {
+    if (topLevel !== persisted) context.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: `Campo ${field} diverge da origem persistida no manifesto.` })
+  }
+})
+export type WorkspaceWriteProposal = z.infer<typeof workspaceWriteProposalSchema>
 
 export interface SearchMatch {
   relativePath: string
@@ -207,6 +219,7 @@ export interface StudioApi {
     send(input: z.input<typeof agentSendInputSchema>): Promise<Result<AgentTurnReference>>
     interrupt(input: z.input<typeof agentInterruptInputSchema>): Promise<Result<void>>
     onEvent(listener: (event: AIEvent) => void): () => void
+    onWorkspaceWriteProposal(listener: (proposal: WorkspaceWriteProposal) => void): () => void
   }
   planning: {
     create(input: z.input<typeof planCreateInputSchema>): Promise<Result<PlannedExecution>>
@@ -216,7 +229,6 @@ export interface StudioApi {
     start(input: z.input<typeof executionIdInputSchema>): Promise<Result<Execution>>
     events(input: z.input<typeof executionIdInputSchema>): Promise<Result<FlightRecorderEvent[]>>
     applyWorkspaceWrite(input: z.input<typeof executionWorkspaceWriteInputSchema>): Promise<Result<AppliedWorkspaceEffect>>
-    proposeWorkspaceWrite(input: z.input<typeof executionWorkspaceWriteProposalInputSchema>): Promise<Result<WorkspaceWriteProposal>>
     applyProposedWorkspaceWrite(input: z.input<typeof executionWorkspaceWriteProposalIdInputSchema>): Promise<Result<AppliedWorkspaceEffect>>
   }
   research: {

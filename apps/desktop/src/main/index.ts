@@ -18,7 +18,6 @@ import {
   executionIdInputSchema,
   executionWorkspaceWriteInputSchema,
   executionWorkspaceWriteProposalIdInputSchema,
-  executionWorkspaceWriteProposalInputSchema,
   listFilesInputSchema,
   ok,
   readFileInputSchema,
@@ -44,6 +43,7 @@ import {
   visualProviderOpenInputSchema,
   toAppError,
   writeFileInputSchema,
+  workspaceWriteProposalSchema,
   type AIProvider,
   type AIProviderKind,
   type AppliedWorkspaceEffect,
@@ -54,7 +54,7 @@ import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitA
 import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService, WorkspaceWriteProposalService, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const dataRoot = 'D:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
+const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
 const requiredDataDirectories = ['logs', 'tmp', 'session', 'user-data', 'crash-dumps', 'backups', 'assets', 'research', 'database', 'codex-home']
 for (const directory of requiredDataDirectories) mkdirSync(path.join(dataRoot, directory), { recursive: true })
 
@@ -83,6 +83,8 @@ const terminal = new TerminalAdapter(
   (event) => mainWindow?.webContents.send(ipcChannels.terminalData, event)
 )
 let selectedAgentProvider: AIProviderKind = 'codex-app-server'
+let agentProviderTransitioning = false
+let agentSendPreparing = false
 const codexAgent = new CodexAppServerAdapter({
   dataRoot,
   projectRoot: process.cwd(),
@@ -93,14 +95,41 @@ const codexAgent = new CodexAppServerAdapter({
   }
 })
 const ollamaAgent = new OllamaAdapter({
+  baseUrl: process.env.TUPINIQUIM_OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
   getWorkspaceRoot: () => workspace.getRoot(),
   history: database,
+  onWorkspaceWriteToolCall: async (call) => {
+    const started = Date.now()
+    let proposalId: string | undefined
+    try {
+      if (selectedAgentProvider !== 'ollama') throw new Error('O turno Ollama não é mais o provider autorizado.')
+      const relativePath = await workspace.validateWriteTarget(call.relativePath)
+      const targetBaseline = await workspace.inspectWriteTarget(relativePath)
+      if (call.operation === 'CREATE' && targetBaseline.exists) throw new Error('CREATE exige que o alvo não exista no momento da proposta.')
+      if (call.operation === 'REPLACE' && !targetBaseline.exists) throw new Error('REPLACE exige um arquivo existente no momento da proposta.')
+      const { callId, ...source } = call
+      const proposal = workspaceWriteProposalSchema.parse(await writeProposals.propose({ ...source, toolCallId: callId, relativePath, targetBaselineHash: targetBaseline.hash }))
+      proposalId = proposal.id
+      await audit.write({ requestId: call.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', target: redactContextMetadata(proposal.effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
+      mainWindow?.webContents.send(ipcChannels.agentWorkspaceWriteProposal, proposal)
+      return proposal
+    } catch (cause) {
+      if (proposalId !== undefined) writeProposals.invalidate(proposalId)
+      const error = toAppError(cause, 'AGENT_PROPOSAL_ERROR')
+      await audit.write({ requestId: call.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', outcome: 'ERROR', durationMs: Date.now() - started, errorCode: error.code }).catch(() => undefined)
+      throw new Error('A proposta automática foi recusada pelo runtime privilegiado.', { cause })
+    }
+  },
   onEvent: (event) => {
     if (selectedAgentProvider === 'ollama') mainWindow?.webContents.send(ipcChannels.agentEvent, event)
   }
 })
 const agents: Record<AIProviderKind, AIProvider> = { 'codex-app-server': codexAgent, ollama: ollamaAgent }
 const activeAgent = (): AIProvider => agents[selectedAgentProvider]
+const agentRuntimeLocked = (): boolean => agentProviderTransitioning || agentSendPreparing || Object.values(agents).some((agent) => {
+  const state = agent.status().state
+  return state === 'STARTING' || state === 'BUSY'
+})
 const redactContextMetadata = (value: string): string => value
   .replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gu, '[REDACTED]')
   .replace(/(authorization|api[_-]?key|token)\s*[:=]\s*\S+/giu, '$1=[REDACTED]')
@@ -212,11 +241,18 @@ const registerApprovedWorkspaceWrite = (): void => {
       const effect = await planning.claimEffect(input.executionId, input.stepId, input.effectId)
       claimed = { executionId: input.executionId, effectId: input.effectId }
       if (effect.capability !== 'workspace.write' || (effect.operation !== 'CREATE' && effect.operation !== 'REPLACE')) throw new Error('Manifesto não autoriza escrita de workspace.')
+      if (effect.source?.kind === 'AGENT_PROPOSAL') throw new Error('Efeito originado por agente exige consumo pelo canal de proposta com proveniência.')
       if (effect.target !== input.relativePath) throw new Error('Alvo solicitado diverge do manifesto aprovado.')
       if (effect.payloadHash !== contentHash(input.content)) throw new Error('Hash do conteúdo diverge do manifesto aprovado.')
+      let expectedTargetHash: string | null = null
+      if (effect.operation === 'REPLACE') {
+        if (typeof effect.expectedTargetHash !== 'string') throw new Error('REPLACE exige baseline aprovado do arquivo existente.')
+        expectedTargetHash = effect.expectedTargetHash
+      }
+      if (input.expectedHash !== undefined && input.expectedHash !== expectedTargetHash) throw new Error('Baseline solicitado diverge do manifesto aprovado.')
       const decision = policy.evaluate({ capability: effect.capability, target: effect.target, risk: effect.risk, destructive: true, requiresNetwork: false })
       if (!decision.allowed) throw new Error(decision.reason)
-      const document = await workspace.write(input.relativePath, input.content, input.expectedHash)
+      const document = await workspace.applyWriteEffect(input.relativePath, input.content, effect.operation, expectedTargetHash)
       await planning.completeEffect(input.executionId, input.effectId)
       claimed = undefined
       await planning.recordEvidence(input.executionId, 'TOOL', 'Arquivo materializado', `workspace.write · ${redactContextMetadata(effect.target)} · hash ${effect.payloadHash.slice(0, 12)}…`, 'SUCCESS')
@@ -245,9 +281,10 @@ const registerApprovedProposedWorkspaceWrite = (): void => {
       const effect = await planning.claimEffect(proposal.executionId, proposal.stepId, proposal.effect.id)
       claimed = { executionId: proposal.executionId, effectId: effect.id }
       if (effect.capability !== 'workspace.write' || (effect.operation !== 'CREATE' && effect.operation !== 'REPLACE') || effect.capability !== proposal.effect.capability || effect.operation !== proposal.effect.operation || effect.target !== proposal.effect.target || effect.payloadHash !== proposal.effect.payloadHash || effect.risk !== proposal.effect.risk || effect.payloadHash !== contentHash(content)) throw new Error('Proposta não corresponde ao manifesto aprovado.')
+      if (effect.source?.kind !== 'AGENT_PROPOSAL' || effect.source.proposalId !== proposal.id || effect.expectedTargetHash !== proposal.effect.expectedTargetHash) throw new Error('Origem ou baseline da proposta diverge do manifesto aprovado.')
       const decision = policy.evaluate({ capability: effect.capability, target: effect.target, risk: effect.risk, destructive: true, requiresNetwork: false })
       if (!decision.allowed || isPrivateEnvironmentPath(effect.target)) throw new Error('Política não permite materializar esta proposta.')
-      const document = await workspace.write(effect.target, content)
+      const document = await workspace.applyWriteEffect(effect.target, content, effect.operation, effect.expectedTargetHash ?? null)
       await planning.completeEffect(proposal.executionId, effect.id)
       claimed = undefined
       writeProposals.invalidate(proposal.id)
@@ -291,9 +328,15 @@ const registerIpc = (): void => {
   register(ipcChannels.terminalKill, terminalKillInputSchema, 'terminal.kill', ({ terminalId }) => terminal.kill(terminalId))
   register(ipcChannels.agentStatus, z.undefined(), 'agent.status', () => activeAgent().status())
   register(ipcChannels.agentProviderSelect, agentProviderSelectInputSchema, 'agent.provider.select', async ({ provider }) => {
-    if (activeAgent().status().state === 'BUSY') throw new Error('Interrompa o turno em andamento antes de trocar de provider.')
-    selectedAgentProvider = provider
-    return activeAgent().connect()
+    if (agentRuntimeLocked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
+    agentProviderTransitioning = true
+    try {
+      const status = await agents[provider].connect()
+      selectedAgentProvider = provider
+      return status
+    } finally {
+      agentProviderTransitioning = false
+    }
   })
   register(ipcChannels.agentLocalModels, z.undefined(), 'agent.local-models', async () => {
     if (selectedAgentProvider !== 'ollama') throw new Error('Selecione Ollama local antes de listar modelos.')
@@ -309,22 +352,75 @@ const registerIpc = (): void => {
     turns: await database.listAITurns(threadId),
     events: await database.listAIEvents(threadId)
   }), aiThreadHistorySchema)
-  register(ipcChannels.agentSend, agentSendInputSchema, 'agent.send', async (input) => activeAgent().send({
-    ...input,
-    workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3))
-  }))
+  register(ipcChannels.agentSend, agentSendInputSchema, 'agent.send', async (input) => {
+    if (agentRuntimeLocked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
+    agentSendPreparing = true
+    const provider = selectedAgentProvider
+    const agent = agents[provider]
+    try {
+      if (input.proposalContext !== undefined) {
+        if (provider !== 'ollama') throw new Error('O provider selecionado não oferece propostas de escrita pelo protocolo estável.')
+        if (input.mode !== 'PLAN') throw new Error('Propostas automáticas de escrita só podem ser solicitadas no modo PLAN.')
+        const { execution, plan } = await planning.read(input.proposalContext.executionId)
+        const targetStep = plan.steps.find((step) => step.id === input.proposalContext?.stepId)
+        if (execution.workspaceRoot !== workspace.getRoot()) throw new Error('A execução não pertence ao workspace autorizado.')
+        if (execution.state !== 'WAITING_APPROVAL') throw new Error('A execução não está aguardando aprovação e não aceita nova proposta.')
+        if (targetStep === undefined || !targetStep.requiresApproval) throw new Error('O passo selecionado não aceita proposta mutável.')
+      }
+      return await agent.send({
+        ...input,
+        workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3))
+      })
+    } finally {
+      agentSendPreparing = false
+    }
+  })
   register(ipcChannels.agentInterrupt, agentInterruptInputSchema, 'agent.interrupt', (input) => activeAgent().interrupt(input))
   register(ipcChannels.planCreate, planCreateInputSchema, 'plan.create', ({ objective, mode }) => planning.create(objective, workspace.getRoot(), mode))
   register(ipcChannels.planUpdate, planUpdateInputSchema, 'plan.update', ({ executionId, plan }) => planning.update(executionId, plan))
   register(ipcChannels.executionRead, executionIdInputSchema, 'execution.read', ({ executionId }) => planning.read(executionId))
-  register(ipcChannels.approvalDecide, approvalDecideInputSchema, 'approval.decide', ({ executionId, stepId, decision, scope }) => planning.decide(executionId, stepId, decision, scope))
+  register(ipcChannels.approvalDecide, approvalDecideInputSchema, 'approval.decide', async ({ executionId, stepId, decision, scope }) => {
+    if (decision === 'APPROVED') {
+      const { execution, plan } = await planning.read(executionId)
+      if (execution.state !== 'WAITING_APPROVAL') throw new Error('A execução não está disponível para confirmação humana.')
+      const targetStep = plan.steps.find((step) => step.id === stepId)
+      if (targetStep === undefined || !targetStep.requiresApproval || targetStep.effects.length === 0) throw new Error('O passo não possui efeitos aprováveis.')
+      const detail = targetStep.effects.flatMap((effect, index) => {
+        const source = effect.source
+        return [
+          `Efeito ${String(index + 1)}: ${effect.capability} · ${effect.operation}`,
+          `Alvo: ${redactContextMetadata(effect.target)}`,
+          `Payload SHA-256: ${effect.payloadHash}`,
+          `Baseline: ${effect.expectedTargetHash ?? 'alvo inexistente/não declarado'}`,
+          ...(source === undefined ? ['Origem: manifesto local sem tool call de agente'] : [
+            `Origem: ${source.provider} · ${source.tool}`,
+            `Thread: ${source.threadId}`,
+            `Turn: ${source.turnId}`,
+            `Tool call: ${source.toolCallId}`,
+            `Proposal: ${source.proposalId}`
+          ])
+        ]
+      }).join('\n')
+      const confirmation = await dialog.showMessageBox(mainWindow!, {
+        type: 'warning',
+        title: 'Confirmar efeito mutável',
+        message: `Aprovar “${targetStep.title}” para esta tarefa?`,
+        detail,
+        buttons: ['Aprovar esta tarefa', 'Cancelar'],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true
+      })
+      if (confirmation.response !== 0) throw new Error('A aprovação foi cancelada na confirmação privilegiada.')
+    }
+    return await planning.decide(executionId, stepId, decision, scope)
+  })
   register(ipcChannels.executionStart, executionIdInputSchema, 'execution.start', async ({ executionId }) => {
     const execution = await planning.start(executionId)
     await recordExecutionBaseline(executionId)
     return execution
   })
   register(ipcChannels.executionEvents, executionIdInputSchema, 'execution.events', ({ executionId }) => planning.events(executionId))
-  register(ipcChannels.executionProposeWorkspaceWrite, executionWorkspaceWriteProposalInputSchema, 'execution.workspace.propose', (input) => writeProposals.propose(input))
   register(ipcChannels.researchSearch, researchSearchInputSchema, 'research.search', ({ query, maxResults }) => research.search(query, maxResults))
   register(ipcChannels.researchCollect, researchCollectInputSchema, 'research.collect', ({ url }) => research.collect(url))
   register(ipcChannels.technologyResolve, technologyResolveInputSchema, 'technology.resolve', ({ requirements, platforms, availableTools }) => technology.resolve(requirements, platforms, availableTools))

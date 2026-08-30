@@ -15,9 +15,9 @@ export default defineConfig({
   test: {
     projects: [
       { resolve: { alias: aliases }, test: { name: 'unit', include: ['packages/**/*.unit.test.ts'] } },
-      { resolve: { alias: aliases }, test: { name: 'integration', include: ['tests/integration/**/*.test.ts'] } },
-      { resolve: { alias: aliases }, test: { name: 'security', include: ['tests/security/**/*.test.ts'] } },
-      { resolve: { alias: aliases }, test: { name: 'dogfood', include: ['tests/dogfood/**/*.test.ts'] } }
+      { resolve: { alias: aliases }, test: { name: 'integration', include: ['tests/integration/**/*.test.ts'], testTimeout: 30_000, hookTimeout: 30_000 } },
+      { resolve: { alias: aliases }, test: { name: 'security', include: ['tests/security/**/*.test.ts'], testTimeout: 30_000, hookTimeout: 30_000 } },
+      { resolve: { alias: aliases }, test: { name: 'dogfood', include: ['tests/dogfood/**/*.test.ts'], testTimeout: 30_000, hookTimeout: 30_000 } }
     ],
     coverage: {
       provider: 'v8',

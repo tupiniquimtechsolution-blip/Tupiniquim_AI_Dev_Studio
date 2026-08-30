@@ -10,8 +10,10 @@ import {
   type AIEvent,
   type AIProvider,
   type AIStatus,
+  type AIThread,
   type AgentTurnReference,
-  type LocalModel
+  type LocalModel,
+  type WorkspaceWriteProposal
 } from '@tupiniquim/contracts'
 import type { AIHistoryRepository } from './codex-app-server'
 
@@ -24,21 +26,79 @@ const tagsResponseSchema = z.object({
   }))
 })
 
+const streamedToolCallSchema = z.object({
+  function: z.object({
+    name: z.string().min(1),
+    arguments: z.unknown()
+  }).passthrough()
+}).passthrough()
+
 const chatChunkSchema = z.object({
-  message: z.object({ content: z.string().optional() }).optional(),
+  message: z.object({
+    content: z.string().optional(),
+    tool_calls: z.array(streamedToolCallSchema).max(1).optional()
+  }).passthrough().optional(),
   done: z.boolean().default(false),
   error: z.string().optional()
-})
+}).passthrough()
+
+const maxWorkspaceWriteContentChars = 10_000_000
+// A code unit can expand to six ASCII bytes as a JSON \uXXXX escape.
+const maxStreamBytes = 64 * 1_024 * 1_024
+const maxStreamReads = 100_000
+const maxStreamLines = 100_000
+const maxStreamChunks = 100_000
+
+const workspaceWriteToolArgumentsSchema = z.object({
+  relativePath: z.string().min(1).max(4_096).refine((value) => !value.includes('\0'), 'Caminho inválido.'),
+  content: z.string().max(maxWorkspaceWriteContentChars),
+  operation: z.enum(['CREATE', 'REPLACE'])
+}).strict()
+
+const workspaceWriteTool = {
+  type: 'function',
+  function: {
+    name: 'tupiniquim_workspace_write_proposal',
+    description: 'Propõe criar ou substituir exatamente um arquivo do workspace. A aplicação exige revisão e aprovação humana antes de qualquer escrita.',
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        relativePath: { type: 'string', minLength: 1, maxLength: 4_096, description: 'Caminho relativo do arquivo dentro do workspace.' },
+        content: { type: 'string', maxLength: maxWorkspaceWriteContentChars, description: 'Conteúdo integral proposto para o arquivo.' },
+        operation: { type: 'string', enum: ['CREATE', 'REPLACE'], description: 'Operação de escrita proposta.' }
+      },
+      required: ['relativePath', 'content', 'operation']
+    }
+  }
+} as const
 
 type LocalMessage = { role: 'system' | 'user' | 'assistant'; content: string }
+type OllamaHistoryRepository = AIHistoryRepository & {
+  getAIThread?: (id: string) => Promise<AIThread | null>
+}
+
+export interface OllamaWorkspaceWriteToolCall {
+  callId: string
+  provider: 'ollama'
+  threadId: string
+  turnId: string
+  executionId: string
+  stepId: string
+  tool: 'workspace.write'
+  relativePath: string
+  content: string
+  operation: 'CREATE' | 'REPLACE'
+}
 
 export interface OllamaAdapterOptions {
   onEvent: (event: AIEvent) => void
+  onWorkspaceWriteToolCall?: (call: OllamaWorkspaceWriteToolCall) => Promise<WorkspaceWriteProposal>
   baseUrl?: string
   fetchImpl?: typeof fetch
   selectedModel?: string
   getWorkspaceRoot?: () => string
-  history?: AIHistoryRepository
+  history?: OllamaHistoryRepository
 }
 
 const assertLocalBaseUrl = (raw: string): URL => {
@@ -126,12 +186,26 @@ export class OllamaAdapter implements AIProvider {
 
   public async send(rawInput: z.input<typeof agentSendInputSchema>): Promise<AgentTurnReference> {
     const input = agentSendInputSchema.parse(rawInput)
+    if (input.proposalContext !== undefined && input.mode !== 'PLAN') {
+      throw new Error('Contexto de proposta Ollama não autorizado.')
+    }
     const status = await this.connect()
     if (status.state !== 'READY') throw new Error(status.detail ?? 'Ollama local indisponível.')
     if (this.selectedModel === null) throw new Error('Selecione um modelo Ollama local antes de enviar uma mensagem.')
 
     const threadId = input.threadId ?? randomUUID()
     const isNewThread = !this.conversations.has(threadId)
+    if (isNewThread) {
+      const persistedThread = await this.options.history?.getAIThread?.(threadId)
+      if (persistedThread !== undefined && persistedThread !== null) {
+        const parsedThread = aiThreadSchema.parse(persistedThread)
+        const workspaceRoot = this.options.getWorkspaceRoot?.() ?? 'local://ollama'
+        if (parsedThread.provider !== 'ollama' || parsedThread.workspaceRoot !== workspaceRoot) {
+          throw new Error('Thread persistida não pertence ao runtime Ollama ou workspace atual.')
+        }
+        throw new Error('Thread Ollama persistida não pode ser retomada sem o histórico em memória desta sessão.')
+      }
+    }
     const conversation = this.conversations.get(threadId) ?? []
     if (isNewThread && input.workspaceContext !== undefined) conversation.push({ role: 'system', content: input.workspaceContext })
     conversation.push({ role: 'user', content: input.message })
@@ -160,7 +234,13 @@ export class OllamaAdapter implements AIProvider {
     this.updateStatus({ state: 'BUSY', activeThreadId: threadId, activeTurnId: turnId, detail: null })
     const controller = new AbortController()
     this.controllers.set(turnId, controller)
-    void this.streamTurn(reference, conversation, controller)
+    const proposalContext = input.proposalContext
+    if (proposalContext !== undefined && this.options.onWorkspaceWriteToolCall === undefined) {
+      this.controllers.delete(turnId)
+      this.updateStatus({ state: 'ERROR', activeTurnId: null, detail: 'Ferramenta de proposta Ollama indisponível.' })
+      throw new Error('Ferramenta de proposta Ollama indisponível.')
+    }
+    void this.streamTurn(reference, conversation, controller, proposalContext)
     return reference
   }
 
@@ -181,13 +261,29 @@ export class OllamaAdapter implements AIProvider {
     return Promise.resolve()
   }
 
-  private async streamTurn(reference: AgentTurnReference, conversation: LocalMessage[], controller: AbortController): Promise<void> {
+  private async streamTurn(
+    reference: AgentTurnReference,
+    conversation: LocalMessage[],
+    controller: AbortController,
+    proposalContext?: { executionId: string; stepId: string }
+  ): Promise<void> {
     let assistantText = ''
+    const toolCalls: z.infer<typeof streamedToolCallSchema>[] = []
+    let terminalChunks = 0
+    let streamBytes = 0
+    let streamReads = 0
+    let streamLines = 0
+    let streamChunks = 0
     try {
       const response = await this.fetchImpl(new URL('/api/chat', this.baseUrl), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ model: this.selectedModel, messages: conversation, stream: true }),
+        body: JSON.stringify({
+          model: this.selectedModel,
+          messages: conversation,
+          stream: true,
+          ...(proposalContext === undefined ? {} : { tools: [workspaceWriteTool] })
+        }),
         signal: controller.signal
       })
       if (!response.ok || response.body === null) throw new Error('Ollama não iniciou o streaming.')
@@ -195,17 +291,55 @@ export class OllamaAdapter implements AIProvider {
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let remaining = ''
+      const consumeLine = (line: string): void => {
+        streamLines += 1
+        if (streamLines > maxStreamLines) throw new Error('Ollama excedeu o limite de linhas do streaming.')
+        if (line.trim() === '') return
+        streamChunks += 1
+        if (streamChunks > maxStreamChunks) throw new Error('Ollama excedeu o limite de chunks NDJSON do streaming.')
+        if (terminalChunks !== 0) throw new Error('Ollama enviou dados após o chunk terminal.')
+        const consumed = this.consumeChunk(line, reference, proposalContext === undefined)
+        if (proposalContext === undefined) assistantText += consumed.text
+        if (toolCalls.length + consumed.toolCalls.length > 1) throw new Error('Quantidade de tool calls Ollama não autorizada.')
+        toolCalls.push(...consumed.toolCalls)
+        if (consumed.done) terminalChunks += 1
+      }
       while (true) {
         const next = await reader.read()
         if (next.done) break
         if (controller.signal.aborted) throw new Error('Turno Ollama interrompido.')
+        streamReads += 1
+        streamBytes += next.value.byteLength
+        if (streamReads > maxStreamReads || streamBytes > maxStreamBytes) throw new Error('Ollama excedeu os limites do streaming local.')
         remaining += decoder.decode(next.value, { stream: true })
         const lines = remaining.split(/\r?\n/u)
         remaining = lines.pop() ?? ''
-        for (const line of lines) assistantText += this.consumeChunk(line, reference)
+        for (const line of lines) consumeLine(line)
       }
-      if (remaining.trim() !== '') assistantText += this.consumeChunk(remaining, reference)
-      if (assistantText !== '') conversation.push({ role: 'assistant', content: redact(assistantText) })
+      remaining += decoder.decode()
+      if (remaining !== '') consumeLine(remaining)
+      if (terminalChunks !== 1) throw new Error('Ollama encerrou o streaming sem um único chunk terminal.')
+      if (proposalContext === undefined) {
+        if (toolCalls.length !== 0) throw new Error('Tool call Ollama sem contexto autorizado.')
+        if (assistantText !== '') conversation.push({ role: 'assistant', content: redact(assistantText) })
+      } else {
+        if (toolCalls.length !== 1) throw new Error('Quantidade de tool calls Ollama não autorizada.')
+        const toolCall = toolCalls[0]
+        if (toolCall === undefined || toolCall.function.name !== workspaceWriteTool.function.name) throw new Error('Tool call Ollama não autorizada.')
+        const parsedArguments = workspaceWriteToolArgumentsSchema.parse(parseToolArguments(toolCall.function.arguments))
+        const proposal = await this.options.onWorkspaceWriteToolCall?.({
+          callId: randomUUID(),
+          provider: 'ollama',
+          threadId: reference.threadId,
+          turnId: reference.turnId,
+          executionId: proposalContext.executionId,
+          stepId: proposalContext.stepId,
+          tool: 'workspace.write',
+          ...parsedArguments
+        })
+        if (proposal === undefined) throw new Error('Ferramenta de proposta Ollama indisponível.')
+        conversation.push({ role: 'assistant', content: publicProposalHistory(proposal) })
+      }
       this.emit({ kind: 'TURN_COMPLETED', threadId: reference.threadId, turnId: reference.turnId, status: 'COMPLETED' })
       this.updateStatus({ state: 'READY', activeTurnId: null, detail: null })
     } catch {
@@ -222,13 +356,12 @@ export class OllamaAdapter implements AIProvider {
     }
   }
 
-  private consumeChunk(line: string, reference: AgentTurnReference): string {
-    if (line.trim() === '') return ''
+  private consumeChunk(line: string, reference: AgentTurnReference, publishText: boolean): { text: string; toolCalls: z.infer<typeof streamedToolCallSchema>[]; done: boolean } {
     const chunk = chatChunkSchema.parse(JSON.parse(line))
     if (chunk.error !== undefined) throw new Error('Ollama retornou erro de geração.')
     const text = chunk.message?.content ?? ''
-    if (text !== '') this.emit({ kind: 'MESSAGE_DELTA', threadId: reference.threadId, turnId: reference.turnId, text })
-    return text
+    if (publishText && text !== '') this.emit({ kind: 'MESSAGE_DELTA', threadId: reference.threadId, turnId: reference.turnId, text })
+    return { text: publishText ? text : '', toolCalls: chunk.message?.tool_calls ?? [], done: chunk.done }
   }
 
   private emit(event: Omit<AIEvent, 'id' | 'at'>): void {
@@ -257,3 +390,16 @@ const redact = (value: string): string => value
   .replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gu, '[REDACTED]')
   .replace(/(authorization|api[_-]?key|token)\s*[:=]\s*\S+/giu, '$1=[REDACTED]')
   .slice(0, 2_000)
+
+const parseToolArguments = (value: unknown): unknown => {
+  if (typeof value !== 'string') return value
+  try { return JSON.parse(value) } catch { throw new Error('Argumentos da ferramenta Ollama são inválidos.') }
+}
+
+const publicProposalHistory = (proposal: WorkspaceWriteProposal): string => [
+  'Proposta workspace.write registrada para revisão humana.',
+  `Operação: ${proposal.effect.operation}.`,
+  `Alvo: ${redact(proposal.effect.target)}.`,
+  `Hash: ${proposal.effect.payloadHash.slice(0, 12)}…`,
+  `Origem: thread ${redact(proposal.threadId)} / turn ${redact(proposal.turnId)}.`
+].join(' ')

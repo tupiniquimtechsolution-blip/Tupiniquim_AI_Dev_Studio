@@ -1,6 +1,6 @@
 # ADR 0011 — Projeto e toolchain local em D:\CODEX
 
-Status: Aceito
+Status: Substituído pelo ADR 0012
 
 O volume que hospedava a instalação controlada anteriormente referenciada como F: está disponível nesta máquina como D:. A raiz operacional é `D:\CODEX\Tupiniquim-AI-Dev-Studio`, os dados locais ficam em `D:\CODEX\Tupiniquim-AI-Dev-Studio.data` e o toolchain compartilhado em `D:\CODEX\programas`.
 

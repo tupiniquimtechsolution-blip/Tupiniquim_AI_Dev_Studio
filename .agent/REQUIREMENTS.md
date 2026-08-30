@@ -20,7 +20,7 @@
 
 ## Não funcionais
 
-- RNF-01: todo artefato controlável permanece em `D:\CODEX`.
+- RNF-01: todo artefato controlável permanece em `F:\CODEX` nesta máquina.
 - RNF-02: renderer sem Node, sandbox ativo, CSP restritiva e IPC allowlisted.
 - RNF-03: operações privilegiadas exigem schema, política, cancelamento e auditoria.
 - RNF-04: segredos nunca aparecem em banco, logs, prompts, Git ou mensagens de erro.

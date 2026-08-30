@@ -30,7 +30,7 @@ export class VisualIntelligenceService {
     const expectedRoot = path.resolve(this.dataRoot, 'assets')
     const candidate = path.resolve(input.localPath)
     const relative = path.relative(expectedRoot, candidate)
-    if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Assets visuais precisam ser copiados para o diretório de dados em D:\\CODEX.')
+    if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Assets visuais precisam ser copiados para o diretório de dados em F:\\CODEX.')
     const asset = visualAssetSchema.parse({ ...input, id: randomUUID(), createdAt: new Date().toISOString() })
     await this.repository.putVisualAsset(asset)
     return asset

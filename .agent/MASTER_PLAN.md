@@ -4,13 +4,13 @@
 
 Este plano operacionaliza o Prompt Mestre de 2026-08-17. Git, código e testes prevalecem sobre documentação histórica. A implementação preservada em `66f94a7` mistura entregas da antiga Wave 4 com código antecipado das Waves 5–10; ela será consolidada sem descartar componentes válidos.
 
-O ambiente desta máquina usa `D:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0011 substitui o ADR 0010 apenas quanto à letra do volume.
+O ambiente desta máquina usa `F:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0012 substitui o ADR 0011 apenas quanto à letra do volume e preserva a cadeia histórica.
 
 ## Waves
 
 | Wave Mestre | Escopo | Estado |
 |---:|---|---|
-| 0 | Fundação confiável: migração D:, AIProvider, persistência, IPC/PolicyEngine, E2E e redaction | CONCLUÍDA; checkpoint/wave-04 |
+| 0 | Fundação confiável: isolamento local, AIProvider, persistência, IPC/PolicyEngine, E2E e redaction | CONCLUÍDA; checkpoint/wave-04 |
 | 1 | Dev AI local autônomo: runtime local, agente, workspace, memória, contexto e browser QA | EM ANDAMENTO; checkpoint/wave-13 cobre runtime, contexto, baseline, histórico, manifestos, escrita, retomada e ciclo aprovado de propostas efêmeras |
 | 2 | Research, Knowledge, Technology/Tool/MCP/Skill Registries | PENDENTE |
 | 3 | Dev Studio completo, hardening e dogfood controlado | PENDENTE |
@@ -25,7 +25,7 @@ O ambiente desta máquina usa `D:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0011 su
 
 ## Aceite da Wave 0
 
-1. Scripts, dados, caches e testes usam somente D:.
+1. Scripts, dados, caches e testes usam somente o volume operacional autorizado, atualmente F:.
 2. O transporte Codex stdio JSONL inicializa, autentica quando disponível, transmite eventos, interrompe e encerra sem expor segredos.
 3. Threads, turns e eventos normalizados persistem e retomam.
 4. Toda IPC privilegiada aplica política, valida input e output, e audita o resultado sanitizado.

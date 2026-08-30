@@ -1,9 +1,87 @@
 import { describe, expect, it } from 'vitest'
-import type { AIEvent, AIThread, AITurn } from '@tupiniquim/contracts'
-import { OllamaAdapter } from './ollama'
+import type { AIEvent, AIThread, AITurn, WorkspaceWriteProposal } from '@tupiniquim/contracts'
+import { OllamaAdapter, type OllamaWorkspaceWriteToolCall } from './ollama'
 
 const delay = async (): Promise<void> => await new Promise((resolve) => setTimeout(resolve, 20))
 const urlFor = (input: Parameters<typeof fetch>[0]): string => input instanceof URL ? input.href : typeof input === 'string' ? input : input.url
+const waitFor = async (predicate: () => boolean): Promise<void> => {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (predicate()) return
+    await delay()
+  }
+  throw new Error('Timeout aguardando estado do adapter Ollama.')
+}
+const ndjsonResponse = (...chunks: unknown[]): Response => {
+  const encoder = new TextEncoder()
+  return new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(JSON.stringify(chunk) + '\n'))
+      controller.close()
+    }
+  }))
+}
+const proposalFor = (call: OllamaWorkspaceWriteToolCall): WorkspaceWriteProposal => ({
+  id: crypto.randomUUID(),
+  provider: call.provider,
+  toolCallId: call.callId,
+  tool: call.tool,
+  executionId: call.executionId,
+  stepId: call.stepId,
+  threadId: call.threadId,
+  turnId: call.turnId,
+  effect: {
+    id: crypto.randomUUID(),
+    capability: 'workspace.write',
+    operation: call.operation,
+    target: call.relativePath,
+    payloadHash: 'a'.repeat(64),
+    risk: 'HIGH'
+  },
+  createdAt: new Date().toISOString()
+})
+const rejectedMarker = 'MARCADOR_REJEITADO_OLLAMA'
+const workspaceWriteToolCall = (argumentsValue: unknown, name = 'tupiniquim_workspace_write_proposal'): unknown => ({
+  function: { name, arguments: argumentsValue }
+})
+const rejectedProposalChunk = (toolCalls: unknown[] | undefined, done: boolean): unknown => ({
+  message: {
+    content: rejectedMarker,
+    ...(toolCalls === undefined ? {} : { tool_calls: toolCalls })
+  },
+  done
+})
+const rejectedNdjson = (...chunks: unknown[]): (() => Response) => () => ndjsonResponse(...chunks)
+const validToolArguments = { relativePath: 'src/rejeitado.ts', content: rejectedMarker, operation: 'CREATE' }
+const rejectedProposalScenarios: Array<[string, () => Response]> = [
+  ['zero tool call', rejectedNdjson(rejectedProposalChunk(undefined, true))],
+  ['tool desconhecida', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall(validToolArguments, 'ferramenta_nao_autorizada')], true))],
+  ['múltiplas tools no mesmo chunk', rejectedNdjson(rejectedProposalChunk([
+    workspaceWriteToolCall({ ...validToolArguments, relativePath: 'src/a.ts' }),
+    workspaceWriteToolCall({ ...validToolArguments, relativePath: 'src/b.ts', operation: 'REPLACE' })
+  ], true))],
+  ['múltiplas tools em chunks separados', rejectedNdjson(
+    rejectedProposalChunk([workspaceWriteToolCall({ ...validToolArguments, relativePath: 'src/a.ts' })], false),
+    rejectedProposalChunk([workspaceWriteToolCall({ ...validToolArguments, relativePath: 'src/b.ts', operation: 'REPLACE' })], true)
+  )],
+  ['operation DELETE', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall({ ...validToolArguments, operation: 'DELETE' })], true))],
+  ['proveniência extra', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall({ ...validToolArguments, executionId: rejectedMarker })], true))],
+  ['argumento extra', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall({ ...validToolArguments, unexpected: rejectedMarker })], true))],
+  ['campo ausente', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall({ relativePath: 'src/rejeitado.ts', operation: 'CREATE' })], true))],
+  ['tipo de campo incorreto', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall({ ...validToolArguments, content: 42 })], true))],
+  ['JSON de argumentos malformado', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall(`{"relativePath":"src/rejeitado.ts","content":"${rejectedMarker}","operation":"CREATE"`)], true))],
+  ['EOF sem done', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall(validToolArguments)], false))],
+  ['múltiplos chunks done', rejectedNdjson(
+    rejectedProposalChunk([workspaceWriteToolCall(validToolArguments)], true),
+    rejectedProposalChunk(undefined, true)
+  )],
+  ['excesso de linhas', () => new Response(`${'\n'.repeat(100_001)}${JSON.stringify(rejectedProposalChunk(undefined, true))}`)]
+]
+const currentWorkspaceRoot = 'F:\\CODEX\\workspace'
+const persistedThreadCollisionCases: Array<[string, AIThread['provider'], string]> = [
+  ['com provider divergente', 'codex-app-server', currentWorkspaceRoot],
+  ['com workspace divergente', 'ollama', 'F:\\CODEX\\outro-workspace'],
+  ['mesmo no provider e workspace atuais', 'ollama', currentWorkspaceRoot]
+]
 
 describe('OllamaAdapter', () => {
   it('descobre modelos locais e transmite NDJSON sem usar rede externa', async () => {
@@ -29,7 +107,7 @@ describe('OllamaAdapter', () => {
     const adapter = new OllamaAdapter({
       onEvent: (event) => events.push(event),
       fetchImpl,
-      getWorkspaceRoot: () => 'D:\\CODEX\\workspace',
+      getWorkspaceRoot: () => 'F:\\CODEX\\workspace',
       history: {
         putAIThread: (thread) => { storedThreads.push(thread); return Promise.resolve() },
         putAITurn: (turn) => { storedTurns.push(turn); return Promise.resolve() },
@@ -45,6 +123,7 @@ describe('OllamaAdapter', () => {
     expect(events.some((event) => event.kind === 'TURN_COMPLETED' && event.status === 'COMPLETED')).toBe(true)
     expect(calls.find((call) => call.url.endsWith('/api/chat'))?.body).toContain('"model":"qwen-local"')
     expect(calls.find((call) => call.url.endsWith('/api/chat'))?.body).toContain('SOMENTE METADADOS')
+    expect(calls.find((call) => call.url.endsWith('/api/chat'))?.body).not.toContain('"tools"')
     expect(reference.threadId).not.toBe('')
     expect(storedThreads).toMatchObject([{ provider: 'ollama', model: 'qwen-local' }])
     expect(storedTurns[0]?.threadId).toBe(reference.threadId)
@@ -117,6 +196,196 @@ describe('OllamaAdapter', () => {
     await adapter.send({ message: 'teste', mode: 'CHAT' })
     await delay()
     expect(events.find((event) => event.kind === 'MESSAGE_DELTA')?.text).toBe('token=[REDACTED]')
+  })
+
+  it('rejeita proposalContext fora de PLAN antes de acessar o runtime', async () => {
+    let fetchCalls = 0
+    const adapter = new OllamaAdapter({
+      onEvent: () => undefined,
+      fetchImpl: () => {
+        fetchCalls += 1
+        return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local' }] })))
+      }
+    })
+
+    await expect(adapter.send({
+      message: 'Não anuncie ferramenta neste modo.',
+      mode: 'CHAT',
+      proposalContext: { executionId: crypto.randomUUID(), stepId: crypto.randomUUID() }
+    })).rejects.toThrow()
+    expect(fetchCalls).toBe(0)
+    expect(adapter.status()).toMatchObject({ state: 'DISCONNECTED', activeThreadId: null, activeTurnId: null })
+  })
+
+  it.each(persistedThreadCollisionCases)('recusa thread persistida %s em vez de sobrescrevê-la', async (_label, provider, workspaceRoot) => {
+    const threadId = 'thread-persistida-fora-da-memoria'
+    const now = new Date().toISOString()
+    const persistedThread: AIThread = { id: threadId, provider, workspaceRoot, model: 'modelo-persistido', createdAt: now, updatedAt: now }
+    let reads = 0
+    let threadWrites = 0
+    let turnWrites = 0
+    let chatCalls = 0
+    const fetchImpl: typeof fetch = (input) => {
+      if (urlFor(input).endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local' }] })))
+      chatCalls += 1
+      return Promise.resolve(ndjsonResponse({ message: { content: 'NAO_DEVE_EXECUTAR' }, done: true }))
+    }
+    const adapter = new OllamaAdapter({
+      onEvent: () => undefined,
+      fetchImpl,
+      getWorkspaceRoot: () => currentWorkspaceRoot,
+      history: {
+        getAIThread: (id) => {
+          reads += 1
+          return Promise.resolve(id === threadId ? persistedThread : null)
+        },
+        putAIThread: () => { threadWrites += 1; return Promise.resolve() },
+        putAITurn: () => { turnWrites += 1; return Promise.resolve() },
+        appendAIEvent: () => Promise.resolve()
+      }
+    })
+    await adapter.connect()
+    adapter.selectModel('qwen-local')
+
+    await expect(adapter.send({ message: 'Não sobrescreva a thread.', mode: 'CHAT', threadId })).rejects.toThrow('Thread')
+    expect(reads).toBe(1)
+    expect(threadWrites).toBe(0)
+    expect(turnWrites).toBe(0)
+    expect(chatCalls).toBe(0)
+    expect(adapter.status()).toMatchObject({ state: 'READY', activeThreadId: null, activeTurnId: null })
+    await adapter.close()
+  })
+
+  it('executa uma proposta oficial de tool calling sem expor payload em eventos ou histórico', async () => {
+    const marker = 'MARCADOR_BRUTO_OLLAMA_NAO_PERSISTIR'
+    const executionId = crypto.randomUUID()
+    const stepId = crypto.randomUUID()
+    const events: AIEvent[] = []
+    const storedEvents: AIEvent[] = []
+    const chatBodies: string[] = []
+    let chatIndex = 0
+    const received: OllamaWorkspaceWriteToolCall[] = []
+    const fetchImpl: typeof fetch = (input, init) => {
+      if (urlFor(input).endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local' }] })))
+      if (typeof init?.body === 'string') chatBodies.push(init.body)
+      chatIndex += 1
+      if (chatIndex === 1) {
+        return Promise.resolve(ndjsonResponse({
+          message: {
+            content: marker,
+            tool_calls: [{
+              function: {
+                name: 'tupiniquim_workspace_write_proposal',
+                arguments: { relativePath: 'src/gerado.ts', content: marker, operation: 'CREATE' }
+              }
+            }]
+          },
+          done: true
+        }))
+      }
+      return Promise.resolve(ndjsonResponse({ message: { content: 'SEGUIMENTO_OK' }, done: true }))
+    }
+    const adapter = new OllamaAdapter({
+      onEvent: (event) => events.push(event),
+      fetchImpl,
+      history: {
+        putAIThread: () => Promise.resolve(),
+        putAITurn: () => Promise.resolve(),
+        appendAIEvent: (event) => { storedEvents.push(event); return Promise.resolve() }
+      },
+      onWorkspaceWriteToolCall: (call) => {
+        received.push(call)
+        return Promise.resolve(proposalFor(call))
+      }
+    })
+    await adapter.connect()
+    adapter.selectModel('qwen-local')
+    const reference = await adapter.send({
+      message: 'Proponha um arquivo TypeScript.',
+      mode: 'PLAN',
+      proposalContext: { executionId, stepId }
+    })
+    await waitFor(() => adapter.status().state === 'READY')
+
+    const requestBody = JSON.parse(chatBodies[0] ?? '{}') as {
+      tools?: Array<{ function?: { name?: string; parameters?: { properties?: Record<string, unknown> } } }>
+    }
+    expect(requestBody.tools).toHaveLength(1)
+    expect(requestBody.tools?.[0]?.function?.name).toBe('tupiniquim_workspace_write_proposal')
+    expect(Object.keys(requestBody.tools?.[0]?.function?.parameters?.properties ?? {}).sort()).toEqual(['content', 'operation', 'relativePath'])
+    expect(chatBodies[0]).not.toContain(executionId)
+    expect(chatBodies[0]).not.toContain(stepId)
+    expect(received[0]).toMatchObject({
+      provider: 'ollama',
+      threadId: reference.threadId,
+      turnId: reference.turnId,
+      executionId,
+      stepId,
+      tool: 'workspace.write',
+      relativePath: 'src/gerado.ts',
+      content: marker,
+      operation: 'CREATE'
+    })
+    expect(received[0]?.callId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
+    expect(JSON.stringify(events)).not.toContain(marker)
+    expect(JSON.stringify(storedEvents)).not.toContain(marker)
+    expect(events.some((event) => event.kind === 'MESSAGE_DELTA' && event.text === marker)).toBe(false)
+
+    await adapter.send({ message: 'Continue sem ferramenta.', mode: 'CHAT', threadId: reference.threadId })
+    await waitFor(() => adapter.status().state === 'READY')
+    expect(chatBodies[1]).not.toContain(marker)
+    expect(chatBodies[1]).toContain('Proposta workspace.write registrada para revisão humana.')
+    await adapter.close()
+  })
+
+  it.each(rejectedProposalScenarios)('recusa %s sem executar callback nem vazar argumentos', async (_label, rejectedResponse) => {
+    const events: AIEvent[] = []
+    const storedEvents: AIEvent[] = []
+    const chatBodies: string[] = []
+    let chatCalls = 0
+    let callbackCount = 0
+    const fetchImpl: typeof fetch = (input, init) => {
+      if (urlFor(input).endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local' }] })))
+      if (typeof init?.body === 'string') chatBodies.push(init.body)
+      chatCalls += 1
+      return Promise.resolve(chatCalls === 1
+        ? rejectedResponse()
+        : ndjsonResponse({ message: { content: 'RECUPERACAO_OK' }, done: true }))
+    }
+    const adapter = new OllamaAdapter({
+      onEvent: (event) => events.push(event),
+      fetchImpl,
+      history: {
+        putAIThread: () => Promise.resolve(),
+        putAITurn: () => Promise.resolve(),
+        appendAIEvent: (event) => { storedEvents.push(event); return Promise.resolve() }
+      },
+      onWorkspaceWriteToolCall: (call) => {
+        callbackCount += 1
+        return Promise.resolve(proposalFor(call))
+      }
+    })
+    await adapter.connect()
+    adapter.selectModel('qwen-local')
+    const reference = await adapter.send({
+      message: 'Tente propor uma escrita.',
+      mode: 'PLAN',
+      proposalContext: { executionId: crypto.randomUUID(), stepId: crypto.randomUUID() }
+    })
+    await waitFor(() => adapter.status().state === 'ERROR')
+    expect(callbackCount).toBe(0)
+    expect(events).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'ERROR', detail: 'Falha no streaming do Ollama local.', status: 'FAILED' })]))
+    expect(JSON.stringify(events)).not.toContain(rejectedMarker)
+    expect(JSON.stringify(storedEvents)).not.toContain(rejectedMarker)
+
+    await adapter.connect()
+    await adapter.send({ message: 'Continue após a recusa.', mode: 'CHAT', threadId: reference.threadId })
+    await waitFor(() => adapter.status().state === 'READY')
+    expect(callbackCount).toBe(0)
+    expect(chatBodies[1]).not.toContain(rejectedMarker)
+    expect(JSON.stringify(events)).not.toContain(rejectedMarker)
+    expect(JSON.stringify(storedEvents)).not.toContain(rejectedMarker)
+    await adapter.close()
   })
 
   it('rejeita hosts Ollama remotos', () => {

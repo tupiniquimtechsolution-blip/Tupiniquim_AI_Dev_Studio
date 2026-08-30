@@ -1,7 +1,7 @@
 import Editor from '@monaco-editor/react'
 import { Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, Eye, FileSearch, GitBranch, History, LayoutDashboard, Palette, PanelBottom, Save, Search, Settings2, ShieldCheck, Sparkles, TerminalSquare } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AIEvent, AIProviderKind, AIStatus, AIThreadHistory, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, SystemInfo, UIProfile, WorkspaceContext } from '@tupiniquim/contracts'
+import type { AIEvent, AIProviderKind, AIStatus, AIThreadHistory, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, SystemInfo, UIProfile, WorkspaceContext, WorkspaceWriteProposal } from '@tupiniquim/contracts'
 import { FileTree } from './components/FileTree'
 import { TerminalPane } from './components/TerminalPane'
 
@@ -25,6 +25,8 @@ interface ConversationMessage {
   complete: boolean
 }
 
+type ProposalStatus = 'PENDING_REVIEW' | 'APPROVED' | 'DENIED' | 'MATERIALIZED' | 'FAILED'
+
 export const App = (): React.JSX.Element => {
   const [system, setSystem] = useState<SystemInfo | null>(null)
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
@@ -43,6 +45,8 @@ export const App = (): React.JSX.Element => {
   const [conversation, setConversation] = useState<ConversationMessage[]>([])
   const [sending, setSending] = useState(false)
   const [planned, setPlanned] = useState<PlannedExecution | null>(null)
+  const [proposal, setProposal] = useState<WorkspaceWriteProposal | null>(null)
+  const [proposalStatus, setProposalStatus] = useState<ProposalStatus | null>(null)
   const [profile, setProfile] = useState<UIProfile | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const profileRef = useRef<UIProfile | null>(null)
@@ -52,7 +56,14 @@ export const App = (): React.JSX.Element => {
     void window.studio.system.info().then((result) => { if (result.ok) setSystem(result.value) })
     void window.studio.agent.status().then((result) => { if (result.ok) setAIStatus(result.value) })
     void window.studio.settings.get().then((result) => { if (result.ok) { profileRef.current = result.value; setProfile(result.value) } })
-    return window.studio.agent.onEvent((event) => handleAgentEvent(event, setAIStatus, setConversation, setSending))
+    const removeAgentListener = window.studio.agent.onEvent((event) => handleAgentEvent(event, setAIStatus, setConversation, setSending))
+    const removeProposalListener = window.studio.agent.onWorkspaceWriteProposal((incoming) => {
+      setProposal(incoming)
+      setProposalStatus('PENDING_REVIEW')
+      setConversation((current) => [...current, { id: incoming.id, role: 'assistant', text: `PROPOSTA DISPONÍVEL PARA REVISÃO\n${incoming.effect.operation} ${incoming.effect.target}\nHash ${incoming.effect.payloadHash.slice(0, 12)}…`, turnId: incoming.turnId, complete: true }])
+      void window.studio.planning.read({ executionId: incoming.executionId }).then((result) => { if (result.ok) setPlanned(result.value) })
+    })
+    return () => { removeAgentListener(); removeProposalListener() }
   }, [])
 
   const openWorkspace = async (): Promise<void> => {
@@ -61,6 +72,9 @@ export const App = (): React.JSX.Element => {
     const configured = await window.studio.workspace.configure({ root: selected.value })
     if (!configured.ok) { setNotice(configured.error.message); return }
     setWorkspaceRoot(configured.value)
+    setPlanned(null)
+    setProposal(null)
+    setProposalStatus(null)
     const [tree, status, context] = await Promise.all([
       window.studio.workspace.list({ relativePath: '', depth: 4 }),
       window.studio.git.status(),
@@ -132,9 +146,30 @@ export const App = (): React.JSX.Element => {
       const planResult = await window.studio.planning.create({ objective: message, mode })
       if (planResult.ok) {
         setPlanned(planResult.value)
-        setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: 'Plano persistido. O runtime deve propor manifestos imutáveis antes de qualquer aprovação material.', turnId: null, complete: true }])
+        setProposal(null)
+        setProposalStatus(null)
+        const targetStep = planResult.value.plan.steps.find((step) => step.requiresApproval)
+        if (targetStep === undefined) {
+          setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: 'O plano não possui um passo mutável compatível com workspace.write.', turnId: null, complete: true }])
+          setSending(false)
+          return
+        }
+        if (aiStatus?.provider !== 'ollama') {
+          setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: 'Plano persistido, mas o provider atual permanece read-only. Selecione Ollama local com um modelo compatível para gerar a proposta sem habilitar APIs experimentais.', turnId: null, complete: true }])
+          setSending(false)
+          return
+        }
+        const turn = await window.studio.agent.send({
+          message,
+          mode,
+          proposalContext: { executionId: planResult.value.execution.id, stepId: targetStep.id }
+        })
+        if (!turn.ok) {
+          setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: turn.error.message, turnId: null, complete: true }])
+          setSending(false)
+        }
       } else setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: planResult.error.message, turnId: null, complete: true }])
-      setSending(false)
+      if (!planResult.ok) setSending(false)
       return
     }
     const threadId = aiStatus?.activeThreadId
@@ -157,6 +192,9 @@ export const App = (): React.JSX.Element => {
     if (!result.ok) { setNotice(result.error.message); return }
     setAIStatus(result.value)
     setConversation([])
+    setPlanned(null)
+    setProposal(null)
+    setProposalStatus(null)
     setSelectedLocalModel('')
     if (provider !== 'ollama') { setLocalModels([]); return }
     const models = await window.studio.agent.listLocalModels()
@@ -184,10 +222,20 @@ export const App = (): React.JSX.Element => {
 
   const decidePlanStep = async (stepId: string, decision: 'APPROVED' | 'DENIED'): Promise<void> => {
     if (planned === null) return
+    const currentStep = planned.plan.steps.find((step) => step.id === stepId)
+    const matchesProposal = proposal !== null
+      && proposal.executionId === planned.execution.id
+      && proposal.stepId === stepId
+      && currentStep?.effects.some((effect) => effect.id === proposal.effect.id && effect.source?.proposalId === proposal.id) === true
+    if (!matchesProposal || proposalStatus !== 'PENDING_REVIEW') {
+      setNotice('A proposta pública não corresponde ao manifesto atualmente exibido para revisão.')
+      return
+    }
     const result = await window.studio.planning.decide({ executionId: planned.execution.id, stepId, decision, scope: 'TASK' })
     if (!result.ok) { setNotice(result.error.message); return }
     const refreshed = await window.studio.planning.read({ executionId: planned.execution.id })
     if (refreshed.ok) setPlanned(refreshed.value)
+    if (proposal?.stepId === stepId) setProposalStatus(decision === 'APPROVED' ? 'APPROVED' : 'DENIED')
     setNotice(decision === 'APPROVED' ? 'Efeito aprovado para esta tarefa.' : 'Efeito negado; a execução foi bloqueada.')
   }
 
@@ -201,7 +249,22 @@ export const App = (): React.JSX.Element => {
         const evidence = events.value.filter((event) => event.category === 'TOOL' || event.category === 'GIT').slice(-2)
         if (evidence.length > 0) setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: 'EXECUÇÃO AUTORIZADA\n' + evidence.map((event) => event.title + ': ' + (event.detail ?? '')).join('\n'), turnId: null, complete: true }])
       }
-      setNotice('Execução autorizada; baseline real de workspace e Git registrado.')
+      if (proposal !== null && proposal.executionId === planned.execution.id && proposalStatus === 'APPROVED') {
+        const applied = await window.studio.planning.applyProposedWorkspaceWrite({ proposalId: proposal.id })
+        if (applied.ok) {
+          setProposalStatus('MATERIALIZED')
+          const [tree, status] = await Promise.all([
+            window.studio.workspace.list({ relativePath: '', depth: 4 }),
+            window.studio.git.status()
+          ])
+          if (tree.ok) setFiles(tree.value)
+          if (status.ok) setGit(status.value)
+          setNotice(`Proposta materializada atomicamente: ${applied.value.relativePath}`)
+        } else {
+          setProposalStatus('FAILED')
+          setNotice(applied.error.message)
+        }
+      } else setNotice('Execução autorizada; baseline real de workspace e Git registrado.')
     }
     else setNotice(result.error.message)
   }
@@ -240,6 +303,10 @@ export const App = (): React.JSX.Element => {
 
   const workspaceName = useMemo(() => workspaceRoot?.split(/[\\/]/).filter(Boolean).at(-1) ?? 'Nenhum projeto', [workspaceRoot])
   const missingEffectManifest = planned?.plan.steps.some((step) => step.requiresApproval && step.effects.length === 0) ?? false
+  const proposalMatchesManifest = proposal !== null && planned !== null
+    && proposal.executionId === planned.execution.id
+    && planned.plan.steps.some((step) => step.id === proposal.stepId && step.effects.some((effect) => effect.id === proposal.effect.id && effect.source?.proposalId === proposal.id))
+  const proposalReady = proposalMatchesManifest && proposalStatus === 'APPROVED'
 
   return (
     <main className={`studio ${profile?.density === 'COMFORTABLE' ? 'density-comfortable' : 'density-compact'}`} style={profile === null ? undefined : { '--bg': profile.theme.background, '--surface': profile.theme.surface, '--raised': profile.theme.raised, '--text': profile.theme.text, '--muted': profile.theme.muted, '--accent': profile.theme.accent, '--info': profile.theme.info, '--warning': profile.theme.warning, '--danger': profile.theme.danger, '--explorer-width': `${profile.layout.explorerWidth}px`, '--agent-width': `${profile.layout.agentWidth}px`, '--deck-height': `${profile.layout.deckHeight}px` } as React.CSSProperties}>
@@ -289,9 +356,26 @@ export const App = (): React.JSX.Element => {
             {aiStatus?.provider === 'ollama' && <label>MODELO<select aria-label="Modelo Ollama local" value={selectedLocalModel} disabled={localModels.length === 0 || aiStatus.state !== 'READY'} onChange={(event) => void selectOllamaModel(event.target.value)}><option value="">Selecionar modelo</option>{localModels.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select></label>}
           </div>
           <section className="agent-conversation">
-            <div className="agent-message"><span className="message-label">SISTEMA</span><p>{aiStatus?.provider === 'ollama' ? 'Ollama usa somente o loopback local; modelos são escolhidos explicitamente e não há downloads automáticos.' : 'Codex usa stdio JSONL, dados em D:\\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.'}</p></div>
+            <div className="agent-message"><span className="message-label">SISTEMA</span><p>{aiStatus?.provider === 'ollama' ? 'Ollama usa somente o loopback local; modelos são escolhidos explicitamente e não há downloads automáticos.' : 'Codex usa stdio JSONL, dados em F:\\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.'}</p></div>
             {conversation.map((message) => <div key={message.id} className={`agent-message ${message.role}`}><span className="message-label">{message.role === 'user' ? 'VOCÊ' : message.role === 'error' ? 'ERRO' : aiStatus?.provider === 'ollama' ? 'OLLAMA' : 'CODEX'}</span><p>{message.text}{!message.complete && <span className="stream-caret">▋</span>}</p></div>)}
-            {planned !== null ? <div className="live-plan-card"><header><div><CheckCircle2 size={15} /><strong>{planned.plan.title}</strong></div><span>{planned.execution.state}</span></header><ol>{planned.plan.steps.map((step, index) => <li key={step.id}><span className="step-number">{index + 1}</span><div><input value={step.title} onChange={(event) => editPlanStep(step.id, event.target.value)} /><small>{step.risk} · {step.requiresApproval ? step.effects.length === 0 ? 'manifesto de efeitos pendente' : String(step.effects.length) + ' efeito(s) para aprovação' : 'sem mutação'}</small>{step.effects.map((effect) => <small key={effect.id} title={`${effect.capability} · ${effect.operation} · ${effect.target} · ${effect.payloadHash}`}>{effect.capability} · {effect.operation} · {effect.target} · hash {effect.payloadHash.slice(0, 12)}…</small>)}</div>{step.requiresApproval && <div className="approval-actions"><button disabled={step.effects.length === 0} onClick={() => void decidePlanStep(step.id, 'APPROVED')}>Aprovar</button><button className="deny" disabled={step.effects.length === 0} onClick={() => void decidePlanStep(step.id, 'DENIED')}>Negar</button></div>}</li>)}</ol><footer><button onClick={() => void savePlan()}>Salvar plano</button><button className="primary" title={missingEffectManifest ? 'Aguardando manifesto de efeitos do runtime.' : undefined} disabled={planned.execution.state === 'BLOCKED' || missingEffectManifest} onClick={() => void startPlannedExecution()}>Iniciar execução</button></footer></div> : conversation.length === 0 && <div className="plan-card"><div><CheckCircle2 size={15} /><strong>Fluxo protegido</strong></div><ol><li><span>1</span>Entender objetivo</li><li><span>2</span>Produzir plano verificável</li><li><span>3</span>Solicitar aprovação material</li><li><span>4</span>Executar e validar</li></ol></div>}
+            {proposal !== null && <ProposalProvenance proposal={proposal} status={proposalStatus ?? 'PENDING_REVIEW'} />}
+            {planned !== null ? (
+              <div className="live-plan-card">
+                <header><div><CheckCircle2 size={15} /><strong>{planned.plan.title}</strong></div><span>{planned.execution.state}</span></header>
+                <ol>{planned.plan.steps.map((step, index) => (
+                  <li key={step.id}>
+                    <span className="step-number">{index + 1}</span>
+                    <div>
+                      <input value={step.title} onChange={(event) => editPlanStep(step.id, event.target.value)} />
+                      <small>{step.risk} · {step.requiresApproval ? step.effects.length === 0 ? 'manifesto de efeitos pendente' : String(step.effects.length) + ' efeito(s) para aprovação' : 'sem mutação'}</small>
+                      {step.effects.map((effect) => <small key={effect.id} title={`${effect.capability} · ${effect.operation} · ${effect.target} · ${effect.payloadHash}`}>{effect.capability} · {effect.operation} · {effect.target} · hash {effect.payloadHash.slice(0, 12)}…</small>)}
+                    </div>
+                    {step.requiresApproval && <div className="approval-actions"><button disabled={step.effects.length === 0 || proposalStatus !== 'PENDING_REVIEW' || proposal?.executionId !== planned.execution.id || proposal.stepId !== step.id || !step.effects.some((effect) => effect.id === proposal.effect.id && effect.source?.proposalId === proposal.id)} onClick={() => void decidePlanStep(step.id, 'APPROVED')}>Aprovar</button><button className="deny" disabled={step.effects.length === 0 || proposalStatus !== 'PENDING_REVIEW' || proposal?.executionId !== planned.execution.id || proposal.stepId !== step.id || !step.effects.some((effect) => effect.id === proposal.effect.id && effect.source?.proposalId === proposal.id)} onClick={() => void decidePlanStep(step.id, 'DENIED')}>Negar</button></div>}
+                  </li>
+                ))}</ol>
+                <footer><button onClick={() => void savePlan()}>Salvar plano</button><button className="primary" title={missingEffectManifest ? 'Aguardando manifesto de efeitos do runtime.' : !proposalReady ? 'A proposta precisa ser aprovada antes da execução.' : undefined} disabled={planned.execution.state === 'BLOCKED' || missingEffectManifest || !proposalReady} onClick={() => void startPlannedExecution()}>Iniciar execução</button></footer>
+              </div>
+            ) : conversation.length === 0 && <div className="plan-card"><div><CheckCircle2 size={15} /><strong>Fluxo protegido</strong></div><ol><li><span>1</span>Entender objetivo</li><li><span>2</span>Produzir plano verificável</li><li><span>3</span>Solicitar aprovação material</li><li><span>4</span>Executar e validar</li></ol></div>}
           </section>
           <div className="composer"><textarea aria-label="Mensagem ao agente" placeholder={workspaceRoot === null ? 'Abra um workspace primeiro…' : 'Descreva o que deseja construir…'} value={agentInput} onChange={(event) => setAgentInput(event.target.value)} onKeyDown={(event) => { if (event.ctrlKey && event.key === 'Enter') { event.preventDefault(); void sendToAgent() } }} /><div><span>{aiStatus?.provider === 'ollama' ? selectedLocalModel === '' ? 'Selecione um modelo local' : 'Ollama somente loopback' : aiStatus?.account === 'API_KEY' ? 'API key local' : aiStatus?.account === 'CHATGPT' ? 'Conta Codex' : 'Ctrl + Enter para enviar'}</span>{aiStatus?.state === 'BUSY' ? <button onClick={() => void interruptAgent()}>Interromper</button> : <button disabled={workspaceRoot === null || agentInput.trim() === '' || sending || (aiStatus?.provider === 'ollama' && (aiStatus.state !== 'READY' || selectedLocalModel === ''))} onClick={() => void sendToAgent()}><Sparkles size={15} />{sending ? 'Conectando…' : 'Enviar'}</button>}</div></div>
         </aside>
@@ -312,6 +396,28 @@ export const App = (): React.JSX.Element => {
 
 const DeckEmpty = ({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }): React.JSX.Element => <div className="deck-empty"><span>{icon}</span><div><strong>{title}</strong><p>{detail}</p></div></div>
 
+const ProposalProvenance = ({ proposal, status }: { proposal: WorkspaceWriteProposal; status: ProposalStatus }): React.JSX.Element => (
+  <section className="proposal-provenance" aria-label="Proveniência da proposta de escrita">
+    <header><strong>workspace.write</strong><span>{status}</span></header>
+    <dl>
+      <div><dt>Provider</dt><dd>{proposal.provider}</dd></div>
+      <div><dt>Tool</dt><dd>{proposal.tool}</dd></div>
+      <div><dt>Execution</dt><dd title={proposal.executionId}>{proposal.executionId}</dd></div>
+      <div><dt>Step</dt><dd title={proposal.stepId}>{proposal.stepId}</dd></div>
+      <div><dt>Thread</dt><dd title={proposal.threadId}>{proposal.threadId}</dd></div>
+      <div><dt>Turn</dt><dd title={proposal.turnId}>{proposal.turnId}</dd></div>
+      <div><dt>Tool call</dt><dd title={proposal.toolCallId}>{proposal.toolCallId}</dd></div>
+      <div><dt>Target</dt><dd title={proposal.effect.target}>{proposal.effect.target}</dd></div>
+      <div><dt>Operation</dt><dd>{proposal.effect.operation}</dd></div>
+      <div><dt>Manifest</dt><dd title={proposal.effect.id}>{proposal.effect.id}</dd></div>
+      <div><dt>Proposal</dt><dd title={proposal.id}>{proposal.id}</dd></div>
+      <div><dt>Hash</dt><dd title={proposal.effect.payloadHash}>{proposal.effect.payloadHash}</dd></div>
+      <div><dt>Target baseline</dt><dd title={proposal.effect.expectedTargetHash ?? 'INEXISTENTE'}>{proposal.effect.expectedTargetHash ?? 'INEXISTENTE'}</dd></div>
+      <div><dt>Timestamp</dt><dd>{new Date(proposal.createdAt).toLocaleString('pt-BR')}</dd></div>
+    </dl>
+  </section>
+)
+
 const Timeline = ({ workspaceReady, threadId }: { workspaceReady: boolean; threadId: string | null }): React.JSX.Element => {
   const [history, setHistory] = useState<AIThreadHistory | null>(null)
   useEffect(() => {
@@ -321,7 +427,7 @@ const Timeline = ({ workspaceReady, threadId }: { workspaceReady: boolean; threa
     return () => { active = false }
   }, [threadId])
   return (
-    <div className="timeline"><div className="timeline-event success"><span /><time>agora</time><strong>Aplicação iniciada</strong><p>Fronteiras Electron e armazenamento D:\CODEX-only ativos.</p></div>{workspaceReady && <div className="timeline-event info"><span /><time>agora</time><strong>Workspace autorizado</strong><p>Mapa de arquivos e estado Git carregados.</p></div>}{history !== null && <div className="timeline-event info"><span /><time>histórico</time><strong>{String(history.turns.length)} turns persistidos</strong><p>{history.events.slice(-3).map((event) => event.kind + (event.status === undefined ? '' : ' · ' + event.status)).join('\n') || 'Eventos sem conteúdo bruto de entrada.'}</p></div>}</div>
+    <div className="timeline"><div className="timeline-event success"><span /><time>agora</time><strong>Aplicação iniciada</strong><p>Fronteiras Electron e armazenamento F:\CODEX-only ativos.</p></div>{workspaceReady && <div className="timeline-event info"><span /><time>agora</time><strong>Workspace autorizado</strong><p>Mapa de arquivos e estado Git carregados.</p></div>}{history !== null && <div className="timeline-event info"><span /><time>histórico</time><strong>{String(history.turns.length)} turns persistidos</strong><p>{history.events.slice(-3).map((event) => event.kind + (event.status === undefined ? '' : ' · ' + event.status)).join('\n') || 'Eventos sem conteúdo bruto de entrada.'}</p></div>}</div>
   )
 }
 

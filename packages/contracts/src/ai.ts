@@ -35,11 +35,22 @@ export type LocalModel = z.infer<typeof localModelSchema>
 export const agentProviderSelectInputSchema = z.object({ provider: aiProviderKindSchema })
 export const agentLocalModelSelectInputSchema = z.object({ model: z.string().trim().min(1).max(300) })
 
+export const agentProposalContextSchema = z.object({
+  executionId: z.string().uuid(),
+  stepId: z.string().uuid()
+})
+export type AgentProposalContext = z.infer<typeof agentProposalContextSchema>
+
 export const agentSendInputSchema = z.object({
   message: z.string().trim().min(1).max(100_000),
   mode: modeSchema,
   threadId: z.string().min(1).max(200).optional(),
-  workspaceContext: z.string().max(20_000).optional()
+  workspaceContext: z.string().max(20_000).optional(),
+  proposalContext: agentProposalContextSchema.optional()
+}).superRefine((input, context) => {
+  if (input.proposalContext !== undefined && input.threadId !== undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['threadId'], message: 'Uma proposta privilegiada deve iniciar uma nova thread gerada pelo runtime.' })
+  }
 })
 
 export const agentInterruptInputSchema = z.object({

@@ -5,7 +5,7 @@ import { CodexAppServerAdapter, findCodexExecutable, type AIHistoryRepository } 
 import type { AIEvent, AIThread, AITurn } from '@tupiniquim/contracts'
 
 const projectRoot = process.cwd()
-const dataRoot = path.join('D:\\CODEX\\Tupiniquim-AI-Dev-Studio.data', 'tests', 'codex-app-server')
+const dataRoot = path.join('F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data', 'tests', 'codex-app-server')
 let adapter: CodexAppServerAdapter | null = null
 const events: AIEvent[] = []
 

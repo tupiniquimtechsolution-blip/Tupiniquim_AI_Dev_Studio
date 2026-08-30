@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LocalDatabase } from '@tupiniquim/adapters'
-import type { Execution } from '@tupiniquim/contracts'
+import { workspaceWriteProposalSchema, type AIThread, type AITurn, type Execution } from '@tupiniquim/contracts'
 import { PlanApprovalService, WorkspaceWriteProposalService } from '@tupiniquim/core'
 
 let fixture = ''
@@ -25,7 +25,7 @@ const materializeEffects = (plan: Awaited<ReturnType<PlanApprovalService['create
 
 beforeEach(async () => {
   const temp = process.env.TEMP
-  if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'D:\\') throw new Error('TEMP de testes precisa estar em D:.')
+  if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de testes precisa estar em F:.')
   fixture = await mkdtemp(path.join(temp, 'tupiniquim-sqlite-'))
   database = new LocalDatabase(fixture)
 })
@@ -39,6 +39,7 @@ describe('persistência Plan/Approval/Execute', () => {
   it('migra SQLite em worker, persiste o plano e autoriza somente após todas as aprovações', async () => {
     const service = new PlanApprovalService(database)
     const planned = await service.create('Implementar uma capacidade verificável', fixture, 'PLAN')
+    expect(planned.plan.steps.find((candidate) => candidate.title === 'Review e checkpoint')).toMatchObject({ risk: 'MEDIUM', requiresApproval: false })
     const plan = await service.update(planned.execution.id, materializeEffects(planned.plan))
     for (const targetStep of plan.steps.filter((candidate) => candidate.requiresApproval)) {
       await service.decide(planned.execution.id, targetStep.id, 'APPROVED', 'TASK')
@@ -113,7 +114,110 @@ describe('persistência Plan/Approval/Execute', () => {
     expect((await service.read(planned.execution.id)).execution.completedEffectIds).toEqual([])
   })
 
-  it('mantém proposta de escrita somente em memória e a vincula ao turn de origem', async () => {
+  it('persiste somente o primeiro vínculo de thread e recusa vínculo após EXECUTION', async () => {
+    const service = new PlanApprovalService(database)
+    const planned = await service.create('Vincular execução à thread de origem', fixture, 'PLAN')
+    const [first, competing] = await Promise.allSettled([
+      service.bindThread(planned.execution.id, 'thread-principal'),
+      service.bindThread(planned.execution.id, 'thread-concorrente')
+    ])
+    expect(first.status).toBe('fulfilled')
+    if (first.status !== 'fulfilled') throw new Error('O primeiro vínculo deveria ter sido persistido.')
+    expect(first.value).toMatchObject({ threadId: 'thread-principal' })
+    expect(competing.status).toBe('rejected')
+    if (competing.status !== 'rejected') throw new Error('O vínculo concorrente deveria ter sido recusado.')
+    expect(String(competing.reason)).toContain('outra thread')
+    await expect(service.bindThread(planned.execution.id, 'thread-principal')).resolves.toMatchObject({ threadId: 'thread-principal' })
+    expect((await service.read(planned.execution.id)).execution.threadId).toBe('thread-principal')
+
+    const plan = await service.update(planned.execution.id, materializeEffects(planned.plan))
+    for (const targetStep of plan.steps.filter((candidate) => candidate.requiresApproval)) {
+      await service.decide(planned.execution.id, targetStep.id, 'APPROVED', 'TASK')
+    }
+    await service.start(planned.execution.id)
+    await expect(service.bindThread(planned.execution.id, 'thread-principal')).rejects.toThrow('aguarda aprovação')
+  })
+
+  it('restringe update, bind, decide e start exatamente ao estado WAITING_APPROVAL', async () => {
+    const service = new PlanApprovalService(database)
+    const executable = await service.create('Validar transições após iniciar', fixture, 'PLAN')
+    const executablePlan = await service.update(executable.execution.id, materializeEffects(executable.plan, 'src/execution'))
+    const executableStep = executablePlan.steps.find((candidate) => candidate.requiresApproval)
+    if (executableStep === undefined) throw new Error('Fixture sem passo aprovável.')
+    await service.decide(executable.execution.id, executableStep.id, 'APPROVED', 'TASK')
+    await service.start(executable.execution.id)
+    await expect(service.update(executable.execution.id, executablePlan)).rejects.toThrow('aguarda aprovação')
+    await expect(service.bindThread(executable.execution.id, 'thread-tardia')).rejects.toThrow('aguarda aprovação')
+    await expect(service.decide(executable.execution.id, executableStep.id, 'APPROVED', 'TASK')).rejects.toThrow('aguarda aprovação')
+    await expect(service.start(executable.execution.id)).rejects.toThrow('só pode iniciar')
+
+    const blocked = await service.create('Validar transições após negativa', fixture, 'PLAN')
+    const blockedPlan = await service.update(blocked.execution.id, materializeEffects(blocked.plan, 'src/blocked'))
+    const blockedStep = blockedPlan.steps.find((candidate) => candidate.requiresApproval)
+    if (blockedStep === undefined) throw new Error('Fixture sem passo aprovável.')
+    await service.decide(blocked.execution.id, blockedStep.id, 'DENIED', 'TASK')
+    await expect(service.update(blocked.execution.id, blockedPlan)).rejects.toThrow('aguarda aprovação')
+    await expect(service.bindThread(blocked.execution.id, 'thread-bloqueada')).rejects.toThrow('aguarda aprovação')
+    await expect(service.decide(blocked.execution.id, blockedStep.id, 'APPROVED', 'TASK')).rejects.toThrow('aguarda aprovação')
+    await expect(service.start(blocked.execution.id)).rejects.toThrow('bloqueada')
+  })
+
+  it('serializa bind×start e start×start sem perder vínculo ou aprovações', async () => {
+    const service = new PlanApprovalService(database)
+    const planned = await service.create('Serializar início da execução', fixture, 'PLAN')
+    const plan = await service.update(planned.execution.id, materializeEffects(planned.plan, 'src/race-start'))
+    const step = plan.steps.find((candidate) => candidate.requiresApproval)
+    if (step === undefined) throw new Error('Fixture sem passo aprovável.')
+    const approval = await service.decide(planned.execution.id, step.id, 'APPROVED', 'TASK')
+    const [binding, firstStart, competingStart] = await Promise.allSettled([
+      service.bindThread(planned.execution.id, 'thread-race'),
+      service.start(planned.execution.id),
+      service.start(planned.execution.id)
+    ])
+    expect(binding.status).toBe('fulfilled')
+    expect(firstStart.status).toBe('fulfilled')
+    expect(competingStart.status).toBe('rejected')
+    const persisted = (await service.read(planned.execution.id)).execution
+    expect(persisted).toMatchObject({ state: 'EXECUTION', threadId: 'thread-race' })
+    expect(persisted.approvalIds).toContain(approval.id)
+  })
+
+  it('preserva todos os campos ao concluir efeitos diferentes concorrentemente', async () => {
+    const service = new PlanApprovalService(database)
+    const planned = await service.create('Concluir efeitos sem lost update', fixture, 'PLAN')
+    await service.bindThread(planned.execution.id, 'thread-complete')
+    const singleEffectPlan = materializeEffects(planned.plan, 'src/complete')
+    const targetStep = singleEffectPlan.steps.find((candidate) => candidate.requiresApproval)
+    const firstEffect = targetStep?.effects[0]
+    if (targetStep === undefined || firstEffect === undefined) throw new Error('Fixture sem efeito aprovável.')
+    const secondEffect = { ...firstEffect, id: crypto.randomUUID(), target: 'src/complete-segundo.ts', payloadHash: '8'.repeat(64) }
+    const plan = await service.update(planned.execution.id, {
+      ...singleEffectPlan,
+      steps: singleEffectPlan.steps.map((candidate) => candidate.id === targetStep.id ? { ...candidate, effects: [firstEffect, secondEffect] } : candidate)
+    })
+    const approval = await service.decide(planned.execution.id, targetStep.id, 'APPROVED', 'TASK')
+    await service.start(planned.execution.id)
+    await Promise.all([
+      service.claimEffect(planned.execution.id, targetStep.id, firstEffect.id),
+      service.claimEffect(planned.execution.id, targetStep.id, secondEffect.id)
+    ])
+    const before = (await service.read(planned.execution.id)).execution
+    await Promise.all([
+      service.completeEffect(planned.execution.id, firstEffect.id),
+      service.completeEffect(planned.execution.id, secondEffect.id)
+    ])
+    const after = (await service.read(planned.execution.id)).execution
+    expect(after).toMatchObject({
+      planId: plan.id,
+      state: 'EXECUTION',
+      threadId: 'thread-complete',
+      activeStepId: before.activeStepId,
+      approvalIds: [approval.id]
+    })
+    expect([...after.completedEffectIds].sort()).toEqual([firstEffect.id, secondEffect.id].sort())
+  })
+
+  it('mantém proposta somente em memória e revalida a proveniência completa', async () => {
     const now = new Date().toISOString()
     const thread = { id: 'thread-proposta', provider: 'ollama' as const, workspaceRoot: fixture, model: 'modelo-teste', createdAt: now, updatedAt: now }
     const turn = { id: 'turn-proposta', threadId: thread.id, mode: 'PLAN' as const, inputHash: 'b'.repeat(64), createdAt: now }
@@ -124,31 +228,159 @@ describe('persistência Plan/Approval/Execute', () => {
     const planned = await planning.create('Propor escrita com proveniência', fixture, 'PLAN')
     const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
     if (step === undefined) throw new Error('Fixture sem passo aprovável.')
-    const first = await proposals.propose({ executionId: planned.execution.id, stepId: step.id, threadId: thread.id, turnId: turn.id, relativePath: 'src/proposta.ts', content: 'conteúdo privado da proposta', operation: 'CREATE' })
+    await expect(proposals.propose({ executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: 'nao-e-uuid', tool: 'workspace.write', relativePath: 'src/chamada-invalida.ts', content: 'não deve virar proposta', operation: 'CREATE', targetBaselineHash: null })).rejects.toThrow('Proveniência')
+    await expect(proposals.propose({ executionId: planned.execution.id, stepId: crypto.randomUUID(), provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: crypto.randomUUID(), tool: 'workspace.write', relativePath: 'src/passo-invalido.ts', content: 'não deve vincular a execução', operation: 'CREATE', targetBaselineHash: null })).rejects.toThrow('Passo não aceita')
+    expect((await planning.read(planned.execution.id)).execution.threadId).toBeNull()
+    const firstToolCallId = crypto.randomUUID()
+    const first = await proposals.propose({ executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: firstToolCallId, tool: 'workspace.write', relativePath: 'src/proposta.ts', content: 'conteúdo privado da proposta', operation: 'CREATE', targetBaselineHash: null })
     expect(JSON.stringify(first)).not.toContain('conteúdo privado')
-    expect(first).toMatchObject({ threadId: thread.id, turnId: turn.id, effect: { target: 'src/proposta.ts', capability: 'workspace.write' } })
+    expect(workspaceWriteProposalSchema.safeParse(first).success).toBe(true)
+    expect(first).toMatchObject({ provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: firstToolCallId, tool: 'workspace.write', effect: { target: 'src/proposta.ts', capability: 'workspace.write', expectedTargetHash: null, source: { kind: 'AGENT_PROPOSAL', provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: firstToolCallId, proposalId: first.id, tool: 'workspace.write' } } })
+    expect(workspaceWriteProposalSchema.safeParse({ ...first, effect: { ...first.effect, source: undefined } }).success).toBe(false)
+    expect(workspaceWriteProposalSchema.safeParse({ ...first, provider: 'codex-app-server' }).success).toBe(false)
+    expect((await planning.read(planned.execution.id)).execution.threadId).toBe(thread.id)
+    await expect(planning.bindThread(planned.execution.id, 'thread-diferente')).rejects.toThrow('outra thread')
+    await expect(proposals.propose({ executionId: planned.execution.id, stepId: step.id, provider: 'codex-app-server', threadId: thread.id, turnId: turn.id, toolCallId: crypto.randomUUID(), tool: 'workspace.write', relativePath: 'src/provider-invalido.ts', content: 'não deve virar proposta', operation: 'CREATE', targetBaselineHash: null })).rejects.toThrow('Provider ou thread')
     expect((await planning.read(planned.execution.id)).plan.steps.find((candidate) => candidate.id === step.id)?.effects).toHaveLength(1)
-    const second = await proposals.propose({ executionId: planned.execution.id, stepId: step.id, threadId: thread.id, turnId: turn.id, relativePath: 'src/substituida.ts', content: 'novo conteúdo privado', operation: 'REPLACE' })
+    const secondBaselineHash = 'd'.repeat(64)
+    const second = await proposals.propose({ executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: crypto.randomUUID(), tool: 'workspace.write', relativePath: 'src/substituida.ts', content: 'novo conteúdo privado', operation: 'REPLACE', targetBaselineHash: secondBaselineHash })
     await expect(proposals.consume(first.id)).rejects.toThrow('não está disponível')
-    await expect(proposals.consume(second.id)).resolves.toMatchObject({ proposal: { id: second.id, effect: { target: 'src/substituida.ts' } }, content: 'novo conteúdo privado' })
+    await expect(proposals.consume(second.id)).resolves.toMatchObject({ proposal: { id: second.id, provider: thread.provider, tool: 'workspace.write', effect: { target: 'src/substituida.ts', expectedTargetHash: secondBaselineHash } }, content: 'novo conteúdo privado' })
     const altered = await planning.read(planned.execution.id)
     await planning.update(planned.execution.id, {
       ...altered.plan,
       steps: altered.plan.steps.map((candidate) => candidate.id === step.id ? {
         ...candidate,
-        effects: candidate.effects.map((effect) => effect.id === second.effect.id ? { ...effect, operation: 'CREATE' } : effect)
+        effects: candidate.effects.map((effect) => effect.id === second.effect.id ? { ...effect, target: 'src/alvo-adulterado.ts' } : effect)
       } : candidate)
     })
     await expect(proposals.consume(second.id)).rejects.toThrow('obsoleta')
-    let sourceStillAvailable = true
+    let currentSource: AIThread = { ...thread }
     const sourceBoundProposals = new WorkspaceWriteProposalService(planning, {
-      getAIThread: async (id) => sourceStillAvailable ? database.getAIThread(id) : null,
-      listAITurns: async (threadId) => sourceStillAvailable ? database.listAITurns(threadId) : []
+      getAIThread: (id) => Promise.resolve(id === currentSource.id ? currentSource : null),
+      listAITurns: (threadId) => threadId === currentSource.id ? database.listAITurns(threadId) : Promise.resolve([])
     }, () => fixture)
-    const expiring = await sourceBoundProposals.propose({ executionId: planned.execution.id, stepId: step.id, threadId: thread.id, turnId: turn.id, relativePath: 'src/origem-expirada.ts', content: 'conteúdo que não pode ser consumido', operation: 'CREATE' })
-    sourceStillAvailable = false
+    const expiring = await sourceBoundProposals.propose({ executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: crypto.randomUUID(), tool: 'workspace.write', relativePath: 'src/origem-expirada.ts', content: 'conteúdo que não pode ser consumido', operation: 'CREATE', targetBaselineHash: null })
+    currentSource = { ...thread, provider: 'codex-app-server' }
     await expect(sourceBoundProposals.consume(expiring.id)).rejects.toThrow('obsoleta')
     await expect(sourceBoundProposals.consume(expiring.id)).rejects.toThrow('não está disponível')
+  })
+
+  it('aceita apenas uma proposta por chamada de ferramenta, inclusive sob concorrência', async () => {
+    const now = new Date().toISOString()
+    const thread = { id: 'thread-tool-call', provider: 'ollama' as const, workspaceRoot: fixture, model: 'modelo-teste', createdAt: now, updatedAt: now }
+    const turn = { id: 'turn-tool-call', threadId: thread.id, mode: 'PLAN' as const, inputHash: 'c'.repeat(64), createdAt: now }
+    await database.putAIThread(thread)
+    await database.putAITurn(turn)
+    const planning = new PlanApprovalService(database)
+    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture)
+    const planned = await planning.create('Impedir replay da chamada de ferramenta', fixture, 'PLAN')
+    const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
+    if (step === undefined) throw new Error('Fixture sem passo aprovável.')
+    const input = { executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: crypto.randomUUID(), tool: 'workspace.write' as const, relativePath: 'src/tool-call.ts', content: 'payload efêmero', operation: 'CREATE' as const, targetBaselineHash: null }
+    const attempts = await Promise.allSettled([proposals.propose(input), proposals.propose(input)])
+    expect(attempts.filter((attempt) => attempt.status === 'fulfilled')).toHaveLength(1)
+    expect(attempts.filter((attempt) => attempt.status === 'rejected')).toHaveLength(1)
+    await expect(proposals.propose(input)).rejects.toThrow('já foi usada')
+    expect((await planning.read(planned.execution.id)).plan.steps.find((candidate) => candidate.id === step.id)?.effects).toHaveLength(1)
+  })
+
+  it('exige baseline coerente e turno PLAN e não recupera payload após restart do serviço', async () => {
+    const now = new Date().toISOString()
+    const thread = { id: 'thread-restart', provider: 'ollama' as const, workspaceRoot: fixture, model: 'modelo-teste', createdAt: now, updatedAt: now }
+    const planTurn = { id: 'turn-plan-restart', threadId: thread.id, mode: 'PLAN' as const, inputHash: 'e'.repeat(64), createdAt: now }
+    const chatTurn = { ...planTurn, id: 'turn-chat-restart', mode: 'CHAT' as const }
+    await database.putAIThread(thread)
+    await database.putAITurn(planTurn)
+    await database.putAITurn(chatTurn)
+    const planning = new PlanApprovalService(database)
+    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture)
+    const planned = await planning.create('Validar baseline e payload efêmero', fixture, 'PLAN')
+    const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
+    if (step === undefined) throw new Error('Fixture sem passo aprovável.')
+    const source = { executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, tool: 'workspace.write' as const }
+
+    await expect(proposals.propose({ ...source, turnId: planTurn.id, toolCallId: crypto.randomUUID(), relativePath: 'src/create-invalido.ts', content: 'x', operation: 'CREATE', targetBaselineHash: '1'.repeat(64) })).rejects.toThrow('baseline inexistente')
+    await expect(proposals.propose({ ...source, turnId: planTurn.id, toolCallId: crypto.randomUUID(), relativePath: 'src/replace-invalido.ts', content: 'x', operation: 'REPLACE', targetBaselineHash: null })).rejects.toThrow('hash SHA-256')
+    await expect(proposals.propose({ ...source, turnId: chatTurn.id, toolCallId: crypto.randomUUID(), relativePath: 'src/chat-invalido.ts', content: 'x', operation: 'CREATE', targetBaselineHash: null })).rejects.toThrow('modo PLAN')
+    const privatePayload = 'payload-antigo-que-nao-pode-ser-persistido'
+    const proposal = await proposals.propose({ ...source, turnId: planTurn.id, toolCallId: crypto.randomUUID(), relativePath: 'src/restart.ts', content: privatePayload, operation: 'CREATE', targetBaselineHash: null })
+    const persisted = (await planning.read(planned.execution.id)).plan
+    expect(JSON.stringify(persisted)).not.toContain(privatePayload)
+    expect(persisted.steps.find((candidate) => candidate.id === step.id)?.effects[0]).toMatchObject({
+      id: proposal.effect.id,
+      expectedTargetHash: null,
+      source: { kind: 'AGENT_PROPOSAL', proposalId: proposal.id, toolCallId: proposal.toolCallId }
+    })
+    const restarted = new WorkspaceWriteProposalService(new PlanApprovalService(database), database, () => fixture)
+    await expect(restarted.consume(proposal.id)).rejects.toThrow('não está disponível')
+    await expect(restarted.propose({ ...source, turnId: planTurn.id, toolCallId: proposal.toolCallId, relativePath: proposal.effect.target, content: privatePayload, operation: 'CREATE', targetBaselineHash: null })).rejects.toThrow('manifesto persistido')
+  })
+
+  it('invalida proposta quando workspace, alvo, hashes, origem ou turno derivam', async () => {
+    const now = new Date().toISOString()
+    const thread = { id: 'thread-drift', provider: 'ollama' as const, workspaceRoot: fixture, model: 'modelo-teste', createdAt: now, updatedAt: now }
+    const turn = { id: 'turn-drift', threadId: thread.id, mode: 'PLAN' as const, inputHash: 'f'.repeat(64), createdAt: now }
+    await database.putAIThread(thread)
+    await database.putAITurn(turn)
+    const planning = new PlanApprovalService(database)
+    let activeWorkspaceRoot = fixture
+    let activeTurns: AITurn[] = [turn]
+    const proposals = new WorkspaceWriteProposalService(planning, {
+      getAIThread: (id) => Promise.resolve(id === thread.id ? thread : null),
+      listAITurns: (threadId) => Promise.resolve(threadId === thread.id ? activeTurns : [])
+    }, () => activeWorkspaceRoot)
+    const planned = await planning.create('Invalidar deriva de proposta', fixture, 'PLAN')
+    const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
+    if (step === undefined) throw new Error('Fixture sem passo aprovável.')
+    const source = { executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, turnId: turn.id, tool: 'workspace.write' as const }
+    const createProposal = (suffix: string) => proposals.propose({ ...source, toolCallId: crypto.randomUUID(), relativePath: `src/drift-${suffix}.ts`, content: `conteúdo-${suffix}`, operation: 'CREATE', targetBaselineHash: null })
+
+    const workspaceDrift = await createProposal('workspace')
+    activeWorkspaceRoot = `${fixture}-outro`
+    await expect(proposals.consume(workspaceDrift.id)).rejects.toThrow('obsoleta')
+    activeWorkspaceRoot = fixture
+
+    const targetDrift = await createProposal('target')
+    let current = await planning.read(planned.execution.id)
+    await planning.update(planned.execution.id, { ...current.plan, steps: current.plan.steps.map((candidate) => candidate.id === step.id ? { ...candidate, effects: candidate.effects.map((effect) => effect.id === targetDrift.effect.id ? { ...effect, target: 'src/alvo-derivado.ts' } : effect) } : candidate) })
+    await expect(proposals.consume(targetDrift.id)).rejects.toThrow('obsoleta')
+
+    const hashDrift = await proposals.propose({ ...source, toolCallId: crypto.randomUUID(), relativePath: 'src/drift-hash.ts', content: 'conteúdo-hash', operation: 'REPLACE', targetBaselineHash: '2'.repeat(64) })
+    current = await planning.read(planned.execution.id)
+    await planning.update(planned.execution.id, { ...current.plan, steps: current.plan.steps.map((candidate) => candidate.id === step.id ? { ...candidate, effects: candidate.effects.map((effect) => effect.id === hashDrift.effect.id ? { ...effect, payloadHash: '3'.repeat(64), expectedTargetHash: '4'.repeat(64) } : effect) } : candidate) })
+    await expect(proposals.consume(hashDrift.id)).rejects.toThrow('obsoleta')
+
+    const sourceDrift = await createProposal('source')
+    current = await planning.read(planned.execution.id)
+    await planning.update(planned.execution.id, { ...current.plan, steps: current.plan.steps.map((candidate) => candidate.id === step.id ? { ...candidate, effects: candidate.effects.map((effect) => effect.id === sourceDrift.effect.id && effect.source !== undefined ? { ...effect, source: { ...effect.source, toolCallId: crypto.randomUUID() } } : effect) } : candidate) })
+    await expect(proposals.consume(sourceDrift.id)).rejects.toThrow('obsoleta')
+
+    const turnDrift = await createProposal('turn')
+    activeTurns = [{ ...turn, mode: 'CHAT' }]
+    await expect(proposals.consume(turnDrift.id)).rejects.toThrow('obsoleta')
+  })
+
+  it('invalida aprovação quando uma proposta semanticamente idêntica recebe nova identidade', async () => {
+    const now = new Date().toISOString()
+    const thread = { id: 'thread-reapproval', provider: 'ollama' as const, workspaceRoot: fixture, model: 'modelo-teste', createdAt: now, updatedAt: now }
+    const turn = { id: 'turn-reapproval', threadId: thread.id, mode: 'PLAN' as const, inputHash: '7'.repeat(64), createdAt: now }
+    await database.putAIThread(thread)
+    await database.putAITurn(turn)
+    const planning = new PlanApprovalService(database)
+    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture)
+    const planned = await planning.create('Reaprovar nova identidade causal', fixture, 'PLAN')
+    const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
+    if (step === undefined) throw new Error('Fixture sem passo aprovável.')
+    const common = { executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, turnId: turn.id, tool: 'workspace.write' as const, relativePath: 'src/mesmo-efeito.ts', content: 'mesmo conteúdo', operation: 'CREATE' as const, targetBaselineHash: null }
+    const first = await proposals.propose({ ...common, toolCallId: crypto.randomUUID() })
+    await planning.decide(planned.execution.id, step.id, 'APPROVED', 'TASK')
+    const replacement = await proposals.propose({ ...common, toolCallId: crypto.randomUUID() })
+    expect(replacement.effect.id).not.toBe(first.effect.id)
+    expect(replacement.effect.source?.proposalId).not.toBe(first.effect.source?.proposalId)
+    await expect(planning.start(planned.execution.id)).rejects.toThrow('Aprovação pendente')
+    await planning.decide(planned.execution.id, step.id, 'APPROVED', 'TASK')
+    await expect(planning.start(planned.execution.id)).resolves.toMatchObject({ state: 'EXECUTION' })
   })
 
   it('persiste threads, turns e eventos de IA sem armazenar o conteúdo da entrada', async () => {

@@ -4,9 +4,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$ExpectedRoot = 'D:\CODEX\Tupiniquim-AI-Dev-Studio'
+$ExpectedRoot = 'F:\CODEX\Tupiniquim-AI-Dev-Studio'
 if (-not $ProjectRoot.Equals($ExpectedRoot, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Execução recusada fora de $ExpectedRoot." }
-$Runner = Join-Path $ProjectRoot 'scripts\pnpm-d.ps1'
+$Runner = Join-Path $ProjectRoot 'scripts\pnpm-f.ps1'
 $LoopbackAddress = '127.0.0.1'
 $RendererPort = 5173
 $RendererUrl = 'http://{0}:{1}' -f $LoopbackAddress, $RendererPort

@@ -9,8 +9,40 @@ export const isInside = (root: string, candidate: string): boolean => {
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative))
 }
 
+const hasWindowsDeviceNamespace = (value: string): boolean =>
+  /^[\\/]{2}[?.][\\/]/u.test(value) ||
+  /^[\\/]{1,2}\?\?[\\/]/u.test(value) ||
+  /^[\\/]{1,2}device[\\/]/iu.test(value)
+
+const windowsReservedName = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/iu
+
+const assertSafeWindowsRelativePath = (relativePath: string): void => {
+  if (hasWindowsDeviceNamespace(relativePath)) {
+    throw new PathSecurityError('Namespaces e dispositivos do Windows não são permitidos.')
+  }
+
+  for (const segment of relativePath.split(/[\\/]/u)) {
+    if (segment === '') continue
+    if (segment.includes(':')) {
+      throw new PathSecurityError('Alternate data streams e dois-pontos não são permitidos.')
+    }
+    if ([...segment].some((character) => character.charCodeAt(0) <= 0x1f) || /[<>"|?*]/u.test(segment)) {
+      throw new PathSecurityError('Caracteres inválidos em nomes do Windows não são permitidos.')
+    }
+    if (/[. ]$/u.test(segment)) {
+      throw new PathSecurityError('Segmentos com ponto ou espaço final não são permitidos.')
+    }
+
+    const deviceStem = (segment.split('.')[0] ?? '').replace(/ +$/u, '')
+    if (windowsReservedName.test(deviceStem)) {
+      throw new PathSecurityError('Nomes reservados de dispositivos do Windows não são permitidos.')
+    }
+  }
+}
+
 export const resolveLexicalPath = (root: string, relativePath: string): string => {
-  if (relativePath.includes('\0') || path.isAbsolute(relativePath) || /^[a-zA-Z]:/.test(relativePath)) throw new PathSecurityError('Caminho absoluto ou inválido não é permitido.')
+  assertSafeWindowsRelativePath(relativePath)
+  if (relativePath.includes('\0') || path.isAbsolute(relativePath) || /^[a-zA-Z]:/u.test(relativePath)) throw new PathSecurityError('Caminho absoluto ou inválido não é permitido.')
   const candidate = path.resolve(root, relativePath)
   if (!isInside(root, candidate)) throw new PathSecurityError('Caminho fora do workspace.')
   return candidate

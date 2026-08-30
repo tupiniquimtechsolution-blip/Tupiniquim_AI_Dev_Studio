@@ -1,6 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { AIThread, AITurn, ActionManifest, Plan } from '@tupiniquim/contracts'
-import type { PlanApprovalService } from './plan-approval'
+import {
+  agentProposalEffectSourceSchema,
+  workspaceWriteProposalSchema,
+  type AIProviderKind,
+  type AIThread,
+  type AITurn,
+  type ActionManifest,
+  type Plan,
+  type WorkspaceWriteProposal
+} from '@tupiniquim/contracts'
+import { manifestEffectsHash, type PlanApprovalService } from './plan-approval'
 
 export interface ProposalHistory {
   getAIThread(id: string): Promise<AIThread | null>
@@ -10,21 +19,15 @@ export interface ProposalHistory {
 export interface WorkspaceWriteProposalInput {
   executionId: string
   stepId: string
+  provider: AIProviderKind
   threadId: string
   turnId: string
+  toolCallId: string
+  tool: 'workspace.write'
   relativePath: string
   content: string
   operation: 'CREATE' | 'REPLACE'
-}
-
-export interface WorkspaceWriteProposal {
-  id: string
-  executionId: string
-  stepId: string
-  threadId: string
-  turnId: string
-  effect: ActionManifest
-  createdAt: string
+  targetBaselineHash: string | null
 }
 
 interface StoredProposal extends WorkspaceWriteProposal {
@@ -33,12 +36,15 @@ interface StoredProposal extends WorkspaceWriteProposal {
 }
 
 const proposalSlot = (executionId: string, stepId: string): string => `${executionId}:${stepId}`
+const toolCallKey = ({ provider, threadId, turnId, toolCallId }: Pick<WorkspaceWriteProposalInput, 'provider' | 'threadId' | 'turnId' | 'toolCallId'>): string => JSON.stringify([provider, threadId, turnId, toolCallId])
 const isPrivateEnvironmentPath = (relativePath: string): boolean => relativePath.split(/[\\/]/u).some((segment) => segment.toLowerCase().startsWith('.env'))
 const contentHash = (content: string): string => createHash('sha256').update(content).digest('hex')
+const isSha256 = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value)
 
 export class WorkspaceWriteProposalService {
   private readonly proposals = new Map<string, StoredProposal>()
   private readonly slots = new Map<string, string>()
+  private readonly toolCalls = new Set<string>()
 
   public constructor(
     private readonly planning: PlanApprovalService,
@@ -48,31 +54,70 @@ export class WorkspaceWriteProposalService {
 
   public async propose(input: WorkspaceWriteProposalInput): Promise<WorkspaceWriteProposal> {
     if (isPrivateEnvironmentPath(input.relativePath)) throw new Error('Arquivos .env não podem receber proposta de escrita.')
+    const proposalId = randomUUID()
+    const source = agentProposalEffectSourceSchema.safeParse({
+      kind: 'AGENT_PROPOSAL',
+      provider: input.provider,
+      threadId: input.threadId,
+      turnId: input.turnId,
+      toolCallId: input.toolCallId,
+      proposalId,
+      tool: input.tool
+    })
+    if (!source.success) throw new Error('Proveniência da chamada de ferramenta é inválida.')
+    if (input.operation === 'CREATE' && input.targetBaselineHash !== null) throw new Error('CREATE exige baseline inexistente.')
+    if (input.operation === 'REPLACE' && !isSha256(input.targetBaselineHash)) throw new Error('REPLACE exige hash SHA-256 do baseline.')
+    const sourceKey = toolCallKey(input)
+    if (this.toolCalls.has(sourceKey)) throw new Error('Chamada de ferramenta já foi usada para criar uma proposta.')
+    this.toolCalls.add(sourceKey)
     const workspaceRoot = this.getWorkspaceRoot()
     const [{ execution, plan }, thread, turns] = await Promise.all([
       this.planning.read(input.executionId),
       this.history.getAIThread(input.threadId),
       this.history.listAITurns(input.threadId)
     ])
-    if (execution.state === 'EXECUTION') throw new Error('Não é possível propor efeito após o início da execução.')
-    if (execution.workspaceRoot !== workspaceRoot || thread?.workspaceRoot !== workspaceRoot) throw new Error('Proposta não pertence ao workspace atualmente autorizado.')
-    if (!turns.some((turn) => turn.id === input.turnId)) throw new Error('Turno de origem não pertence à thread declarada.')
+    if (execution.state !== 'WAITING_APPROVAL') throw new Error('Proposta só pode ser criada enquanto a execução aguarda aprovação.')
+    if (thread?.id !== input.threadId || thread.provider !== input.provider) throw new Error('Provider ou thread de origem não corresponde à proposta.')
+    if (execution.workspaceRoot !== workspaceRoot || thread.workspaceRoot !== workspaceRoot) throw new Error('Proposta não pertence ao workspace atualmente autorizado.')
+    if (!turns.some((turn) => turn.id === input.turnId && turn.threadId === input.threadId && turn.mode === 'PLAN')) throw new Error('Turno de origem deve pertencer à thread declarada e estar em modo PLAN.')
     const step = plan.steps.find((candidate) => candidate.id === input.stepId)
     if (step === undefined || !step.requiresApproval) throw new Error('Passo não aceita proposta de efeito mutável.')
+    if (plan.steps.some((candidate) => candidate.effects.some((effect) => effect.source?.provider === input.provider
+      && effect.source.threadId === input.threadId
+      && effect.source.turnId === input.turnId
+      && effect.source.toolCallId === input.toolCallId))) {
+      throw new Error('Chamada de ferramenta já está vinculada a um manifesto persistido.')
+    }
+    await this.planning.bindThread(input.executionId, input.threadId)
     const effect: ActionManifest = {
       id: randomUUID(),
       capability: 'workspace.write',
       operation: input.operation,
       target: input.relativePath,
       payloadHash: contentHash(input.content),
-      risk: 'HIGH'
+      risk: 'HIGH',
+      expectedTargetHash: input.targetBaselineHash,
+      source: source.data
     }
     const updatedPlan = this.withEffect(plan, input.stepId, effect)
     await this.planning.update(input.executionId, updatedPlan)
     const slot = proposalSlot(input.executionId, input.stepId)
     const existing = this.slots.get(slot)
     if (existing !== undefined) this.proposals.delete(existing)
-    const proposal: StoredProposal = { id: randomUUID(), executionId: input.executionId, stepId: input.stepId, threadId: input.threadId, turnId: input.turnId, effect, createdAt: new Date().toISOString(), workspaceRoot, content: input.content }
+    const proposal: StoredProposal = {
+      id: proposalId,
+      executionId: input.executionId,
+      stepId: input.stepId,
+      provider: input.provider,
+      threadId: input.threadId,
+      turnId: input.turnId,
+      toolCallId: input.toolCallId,
+      tool: input.tool,
+      effect,
+      createdAt: new Date().toISOString(),
+      workspaceRoot,
+      content: input.content
+    }
     this.proposals.set(proposal.id, proposal)
     this.slots.set(slot, proposal.id)
     return this.publicProposal(proposal)
@@ -89,12 +134,15 @@ export class WorkspaceWriteProposalService {
     const step = plan.steps.find((candidate) => candidate.id === proposal.stepId)
     const current = step?.effects.find((effect) => effect.id === proposal.effect.id)
     const manifestMatches = current !== undefined
-      && current.capability === proposal.effect.capability
-      && current.operation === proposal.effect.operation
-      && current.target === proposal.effect.target
-      && current.payloadHash === proposal.effect.payloadHash
-      && current.risk === proposal.effect.risk
-    if (execution.workspaceRoot !== this.getWorkspaceRoot() || thread?.workspaceRoot !== execution.workspaceRoot || !turns.some((turn) => turn.id === proposal.turnId) || !manifestMatches) {
+      && manifestEffectsHash([current]) === manifestEffectsHash([proposal.effect])
+      && contentHash(proposal.content) === proposal.effect.payloadHash
+    const sourceMatches = execution.threadId === proposal.threadId
+      && thread?.id === proposal.threadId
+      && thread.provider === proposal.provider
+      && thread.workspaceRoot === execution.workspaceRoot
+      && turns.some((turn) => turn.id === proposal.turnId && turn.threadId === proposal.threadId && turn.mode === 'PLAN')
+      && this.toolCalls.has(toolCallKey(proposal))
+    if (execution.workspaceRoot !== this.getWorkspaceRoot() || !sourceMatches || !manifestMatches) {
       this.invalidate(id)
       throw new Error('Proposta obsoleta para o plano ou workspace atual.')
     }
@@ -113,14 +161,17 @@ export class WorkspaceWriteProposalService {
   }
 
   private publicProposal(proposal: StoredProposal): WorkspaceWriteProposal {
-    return {
+    return workspaceWriteProposalSchema.parse({
       id: proposal.id,
       executionId: proposal.executionId,
       stepId: proposal.stepId,
+      provider: proposal.provider,
       threadId: proposal.threadId,
       turnId: proposal.turnId,
+      toolCallId: proposal.toolCallId,
+      tool: proposal.tool,
       effect: proposal.effect,
       createdAt: proposal.createdAt
-    }
+    })
   }
 }
