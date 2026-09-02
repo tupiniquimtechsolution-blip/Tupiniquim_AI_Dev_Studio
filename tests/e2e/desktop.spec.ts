@@ -150,6 +150,15 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
     expect(tree.ok).toBe(true)
     const blockedWrite = await page.evaluate(async () => window.studio.workspace.write({ relativePath: '.agent-policy-probe', content: 'não deve gravar' }))
     expect(blockedWrite).toMatchObject({ ok: false, error: { code: 'APPROVAL_REQUIRED' } })
+    const unapprovedTerminalPolicy = await page.evaluate(async () => {
+      const created = await window.studio.terminal.create({ cwd: '', cols: 80, rows: 24 })
+      if (!created.ok) return created
+      const result = await window.studio.terminal.write({ terminalId: created.value.terminalId, data: 'Write-Output UNAPPROVED_TERMINAL_COMMAND\r' })
+      await window.studio.terminal.kill({ terminalId: created.value.terminalId })
+      return result
+    })
+    expect(unapprovedTerminalPolicy).toMatchObject({ ok: false, error: { code: 'APPROVAL_REQUIRED' } })
+
     const terminalPolicy = await page.evaluate(async () => {
       const created = await window.studio.terminal.create({ cwd: '', cols: 80, rows: 24 })
       if (!created.ok) return created

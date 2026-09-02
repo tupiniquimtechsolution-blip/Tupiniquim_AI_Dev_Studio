@@ -183,7 +183,7 @@ const isPrivateEnvironmentPath = (relativePath: string): boolean => relativePath
 const policyIntent = (capability: string, input: unknown): ToolIntent => {
   const values = input as Record<string, unknown>
   if (capability === 'workspace.write') return { capability, target: String(values.relativePath), risk: 'HIGH', destructive: true, requiresNetwork: false }
-  if (capability === 'terminal.write') return { capability: 'terminal.command', target: String(values.data), risk: 'MEDIUM', destructive: false, requiresNetwork: false }
+  if (capability === 'terminal.write') return { capability: 'terminal.command', target: String(values.data), risk: 'CRITICAL', destructive: true, requiresNetwork: false }
   if (capability === 'research.search' || capability === 'research.collect' || capability === 'visual.provider.open') return { capability, target: String(values.url ?? values.query ?? values.provider), risk: 'MEDIUM', destructive: false, requiresNetwork: true }
   if (capability === 'agent.send') return { capability, target: String(values.mode), risk: 'MEDIUM', destructive: false, requiresNetwork: false }
   if (capability === 'prompt.save' || capability === 'visual.asset.add') return { capability, target: String(values.name ?? values.localPath), risk: 'HIGH', destructive: true, requiresNetwork: false }
