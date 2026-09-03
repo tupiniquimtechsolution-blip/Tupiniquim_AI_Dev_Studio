@@ -1,11 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import * as pty from 'node-pty'
 import { resolveLexicalPath } from './path-security'
+import { createRestrictedEnvironment } from './secret-environment'
 
 export interface TerminalEvent { terminalId: string; data: string; exited?: boolean; exitCode?: number }
 
 export class TerminalAdapter {
   private readonly terminals = new Map<string, pty.IPty>()
+  private readonly terminalExits = new Map<string, Promise<void>>()
 
   public constructor(private readonly workspaceRoot: () => string, private readonly onEvent: (event: TerminalEvent) => void) {}
 
@@ -16,11 +18,19 @@ export class TerminalAdapter {
     const terminalId = randomUUID()
     const terminal = pty.spawn(shell, ['-NoLogo', '-NoProfile'], {
       name: 'xterm-256color', cols, rows, cwd,
-      env: { ...process.env, TERM: 'xterm-256color', TUPINIQUIM_WORKSPACE: root }, useConpty: true
+      env: createRestrictedEnvironment({ TERM: 'xterm-256color', TUPINIQUIM_WORKSPACE: root }), useConpty: true
     })
     terminal.onData((data) => this.onEvent({ terminalId, data }))
-    terminal.onExit(({ exitCode }) => { this.terminals.delete(terminalId); this.onEvent({ terminalId, data: '', exited: true, exitCode }) })
+    const exited = new Promise<void>((resolve) => {
+      terminal.onExit(({ exitCode }) => {
+        this.terminals.delete(terminalId)
+        this.terminalExits.delete(terminalId)
+        this.onEvent({ terminalId, data: '', exited: true, exitCode })
+        resolve()
+      })
+    })
     this.terminals.set(terminalId, terminal)
+    this.terminalExits.set(terminalId, exited)
     return terminalId
   }
 
@@ -36,14 +46,15 @@ export class TerminalAdapter {
     terminal.resize(cols, rows)
   }
 
-  public kill(terminalId: string): void {
+  public async kill(terminalId: string): Promise<void> {
     const terminal = this.terminals.get(terminalId)
     if (terminal === undefined) return
-    terminal.kill(); this.terminals.delete(terminalId)
+    const exited = this.terminalExits.get(terminalId)
+    terminal.kill()
+    if (exited !== undefined) await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 5_000))])
   }
 
   public killAll(): void {
-    for (const terminal of this.terminals.values()) terminal.kill()
-    this.terminals.clear()
+    for (const terminalId of this.terminals.keys()) void this.kill(terminalId)
   }
 }

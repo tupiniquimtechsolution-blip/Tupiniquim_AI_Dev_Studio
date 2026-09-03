@@ -9,7 +9,7 @@ afterEach(async () => { if (fixture !== '') await rm(fixture, { recursive: true,
 describe('TerminalAdapter', () => {
   it('executa uma sessão ConPTY real', async () => {
     const temp = process.env.TEMP
-    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'E:\\') throw new Error('TEMP de testes precisa estar em E:.')
+    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de testes precisa estar em F:.')
     fixture = await mkdtemp(path.join(temp, 'tupiniquim-pty-'))
     const events: TerminalEvent[] = []
     let resolveOutput: (() => void) | undefined
@@ -21,7 +21,7 @@ describe('TerminalAdapter', () => {
     const id = adapter.create('', 80, 24)
     adapter.write(id, "Write-Output 'PTY_OK'\r")
     await Promise.race([output, new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout PTY')), 15_000))])
-    adapter.kill(id)
+    await adapter.kill(id)
     expect(events.map((item) => item.data).join('')).toContain('PTY_OK')
   }, 20_000)
 })

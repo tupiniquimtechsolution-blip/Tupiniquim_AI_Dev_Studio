@@ -42,6 +42,11 @@ export default defineConfig({
   },
   renderer: {
     root: path.join(root, 'apps/desktop/src/renderer'),
+    server: {
+      host: '127.0.0.1',
+      port: 5173,
+      strictPort: true
+    },
     resolve: {
       alias: {
         '@tupiniquim/contracts': path.join(root, 'packages/contracts/src/index.ts'),

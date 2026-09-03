@@ -1,12 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
+import { link, lstat, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type { FileDocument, FileEntry, SearchMatch } from '@tupiniquim/contracts'
+import type { FileDocument, FileEntry, SearchMatch, WorkspaceContext, WorkspaceContextEntry } from '@tupiniquim/contracts'
 import { assertRealPathInside, resolveLexicalPath } from './path-security'
 
 const ignoredDirectories = new Set(['.git', 'node_modules', '.pnpm', 'dist', 'out', 'coverage'])
 const maxFileBytes = 10_000_000
-const hash = (content: string): string => createHash('sha256').update(content).digest('hex')
+const maxContextEntries = 256
+const hash = (content: string | Uint8Array): string => createHash('sha256').update(content).digest('hex')
+const isMissingPathError = (cause: unknown): boolean =>
+  cause instanceof Error && 'code' in cause && cause.code === 'ENOENT'
 
 export class WorkspaceAdapter {
   private root: string | undefined
@@ -31,6 +34,74 @@ export class WorkspaceAdapter {
     return candidate
   }
 
+  public async validateWriteTarget(relativePath: string): Promise<string> {
+    const absolute = await this.safePath(relativePath)
+    return path.relative(this.getRoot(), absolute).split(path.sep).join('/')
+  }
+
+  public async inspectWriteTarget(relativePath: string): Promise<{ exists: boolean; hash: string | null }> {
+    const absolute = await this.safePath(relativePath)
+    const info = await lstat(absolute).catch((cause: unknown) => {
+      if (isMissingPathError(cause)) return undefined
+      throw cause
+    })
+
+    if (info === undefined) return { exists: false, hash: null }
+    if (!info.isFile()) throw new Error('O alvo de escrita existente deve ser um arquivo regular.')
+    if (info.size > maxFileBytes) throw new Error('Alvo de escrita excede o limite de 10 MB.')
+    return { exists: true, hash: hash(await readFile(absolute)) }
+  }
+
+  public async applyWriteEffect(
+    relativePath: string,
+    content: string,
+    operation: 'CREATE' | 'REPLACE',
+    expectedHash: string | null
+  ): Promise<FileDocument> {
+    const absolute = await this.safePath(relativePath)
+
+    if (operation === 'CREATE') {
+      if (expectedHash !== null) throw new Error('CREATE exige expectedHash nulo.')
+      const inspected = await this.inspectWriteTarget(relativePath)
+      if (inspected.exists) throw new Error('CREATE exige um alvo inexistente.')
+
+      await mkdir(path.dirname(absolute), { recursive: true })
+      await assertRealPathInside(this.getRoot(), path.dirname(absolute))
+      const temporary = path.join(path.dirname(absolute), `.${path.basename(absolute)}.${randomUUID()}.tmp`)
+      try {
+        await writeFile(temporary, content, { encoding: 'utf8', flag: 'wx' })
+        await link(temporary, absolute)
+      } catch (cause) {
+        await unlink(temporary).catch(() => undefined)
+        throw cause
+      }
+      await unlink(temporary).catch(() => undefined)
+      return this.read(relativePath)
+    }
+
+    if (operation !== 'REPLACE') throw new Error('Operação de escrita não suportada.')
+    if (!/^[a-f0-9]{64}$/iu.test(expectedHash ?? '')) throw new Error('REPLACE exige um hash baseline SHA-256.')
+
+    const inspected = await this.inspectWriteTarget(relativePath)
+    if (!inspected.exists) throw new Error('REPLACE exige um arquivo existente.')
+    if (inspected.hash !== expectedHash) throw new Error('Arquivo alterado externamente antes da materialização.')
+
+    const temporary = path.join(path.dirname(absolute), `.${path.basename(absolute)}.${randomUUID()}.tmp`)
+    try {
+      await writeFile(temporary, content, { encoding: 'utf8', flag: 'wx' })
+      const current = await this.inspectWriteTarget(relativePath)
+      if (!current.exists || current.hash !== expectedHash) {
+        throw new Error('Arquivo alterado externamente antes da materialização.')
+      }
+      await rename(temporary, absolute)
+    } catch (cause) {
+      await unlink(temporary).catch(() => undefined)
+      throw cause
+    }
+
+    return this.read(relativePath)
+  }
+
   public async list(relativePath = '', depth = 4): Promise<FileEntry[]> {
     const absolute = await this.safePath(relativePath)
     const entries = await readdir(absolute, { withFileTypes: true })
@@ -46,6 +117,30 @@ export class WorkspaceAdapter {
       result.push(item)
     }
     return result
+  }
+
+  public async context(maxEntries = maxContextEntries, maxDepth = 4): Promise<WorkspaceContext> {
+    const limit = Math.min(Math.max(Math.trunc(maxEntries), 1), maxContextEntries)
+    const depth = Math.min(Math.max(Math.trunc(maxDepth), 1), 8)
+    const entries: WorkspaceContextEntry[] = []
+    let truncated = false
+    const visit = async (relativePath: string, remainingDepth: number): Promise<void> => {
+      if (entries.length >= limit) { truncated = true; return }
+      const absolute = await this.safePath(relativePath)
+      const children = await readdir(absolute, { withFileTypes: true })
+      for (const child of children.sort((left, right) => Number(right.isDirectory()) - Number(left.isDirectory()) || left.name.localeCompare(right.name))) {
+        if (entries.length >= limit) { truncated = true; return }
+        if (child.name.startsWith('.')) continue
+        if (child.isDirectory() && ignoredDirectories.has(child.name)) continue
+        const childRelative = path.posix.join(relativePath.split(path.sep).join('/'), child.name)
+        const childAbsolute = path.join(absolute, child.name)
+        const info = await stat(childAbsolute)
+        entries.push({ relativePath: childRelative.replace(/[\r\n\t]/gu, ' ').slice(0, 240), kind: child.isDirectory() ? 'directory' : 'file', size: info.size })
+        if (child.isDirectory() && remainingDepth > 1) await visit(childRelative, remainingDepth - 1)
+      }
+    }
+    await visit('', depth)
+    return { generatedAt: new Date().toISOString(), entries, truncated, contentPolicy: 'METADATA_ONLY' }
   }
 
   public async read(relativePath: string): Promise<FileDocument> {

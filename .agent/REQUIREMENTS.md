@@ -20,7 +20,7 @@
 
 ## Não funcionais
 
-- RNF-01: todo artefato controlável permanece no disco E.
+- RNF-01: todo artefato controlável permanece em `F:\CODEX` nesta máquina.
 - RNF-02: renderer sem Node, sandbox ativo, CSP restritiva e IPC allowlisted.
 - RNF-03: operações privilegiadas exigem schema, política, cancelamento e auditoria.
 - RNF-04: segredos nunca aparecem em banco, logs, prompts, Git ou mensagens de erro.
@@ -42,4 +42,3 @@
 8. Visual Lab bloqueia assets desconhecidos e mantém atribuição/licença.
 9. Layout, tema, preview e histórico sobrevivem ao reinício.
 10. `pnpm validate` e o dogfood A–K passam.
-
