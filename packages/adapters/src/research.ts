@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { researchResultSchema, researchSourceSchema, type ResearchResult, type ResearchSource } from '@tupiniquim/contracts'
+import { assertPublicResearchUrl, fetchPublicResearch } from './research-network-security'
 
 const injectionPatterns: Array<[RegExp, string]> = [
   [/ignore (?:all |any )?(?:previous|prior) instructions/iu, 'IGNORE_PREVIOUS_INSTRUCTIONS'],
@@ -19,26 +20,8 @@ const decodeHtml = (value: string): string => value
   .replace(/\s+/gu, ' ')
   .trim()
 
-const assertPublicUrl = (rawUrl: string): URL => {
-  const url = new URL(rawUrl)
-  if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Somente HTTP/HTTPS é permitido na pesquisa.')
-  if (url.username !== '' || url.password !== '') throw new Error('URLs com credenciais são proibidas.')
-  const hostname = url.hostname.toLowerCase()
-  if (hostname === 'localhost' || hostname.endsWith('.local') || hostname === '::1' || hostname.startsWith('127.') || hostname.startsWith('10.') || hostname.startsWith('192.168.') || /^172\.(?:1[6-9]|2\d|3[01])\./u.test(hostname) || hostname.startsWith('169.254.')) throw new Error('Destino privado/local bloqueado pela política SSRF.')
-  return url
-}
-
-const fetchPublic = async (rawUrl: string, accept: string): Promise<Response> => {
-  let current = assertPublicUrl(rawUrl)
-  for (let redirect = 0; redirect < 5; redirect += 1) {
-    const response = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(15_000), headers: { accept, 'user-agent': 'Tupiniquim-AI-Dev-Studio/0.1 (+local-first research)' } })
-    if (response.status < 300 || response.status >= 400) return response
-    const location = response.headers.get('location')
-    if (location === null) return response
-    current = assertPublicUrl(new URL(location, current).toString())
-  }
-  throw new Error('Limite de redirecionamentos excedido.')
-}
+const assertPublicUrl = assertPublicResearchUrl
+const fetchPublic = fetchPublicResearch
 
 const promptSignals = (content: string): string[] => injectionPatterns.filter(([pattern]) => pattern.test(content)).map(([, signal]) => signal)
 
