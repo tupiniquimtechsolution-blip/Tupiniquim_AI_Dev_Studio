@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, session, shell } from 'electron'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { app, BrowserWindow, dialog, ipcMain, session, shell, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import {
   agentInterruptInputSchema,
@@ -166,7 +166,27 @@ const recordExecutionBaseline = async (executionId: string): Promise<void> => {
   }
 }
 
-const trustedSender = (senderId: number): boolean => mainWindow !== null && mainWindow.webContents.id === senderId
+const rendererEntryUrl = pathToFileURL(path.join(__dirname, '../renderer/index.html')).href
+
+const isTrustedRendererUrl = (rawUrl: string): boolean => {
+  try {
+    const candidate = new URL(rawUrl)
+    const developmentUrl = process.env.ELECTRON_RENDERER_URL
+    if (developmentUrl !== undefined) {
+      const development = new URL(developmentUrl)
+      return candidate.origin === development.origin
+    }
+    return candidate.href === rendererEntryUrl
+  } catch {
+    return false
+  }
+}
+
+const trustedSender = (event: IpcMainInvokeEvent): boolean =>
+  mainWindow !== null &&
+  mainWindow.webContents.id === event.sender.id &&
+  isTrustedRendererUrl(mainWindow.webContents.getURL()) &&
+  isTrustedRendererUrl(event.senderFrame?.url ?? '')
 
 const isIpcValue = (value: unknown): boolean => {
   if (value === undefined || value === null || typeof value === 'string' || typeof value === 'boolean') return true
@@ -200,7 +220,7 @@ const register = <I, O>(
   ipcMain.handle(channel, async (event, raw: unknown): Promise<Result<O>> => {
     const requestId = randomUUID()
     const started = Date.now()
-    if (!trustedSender(event.sender.id)) {
+    if (!trustedSender(event)) {
       await audit.write({ requestId, at: new Date().toISOString(), capability, outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'UNTRUSTED_SENDER' })
       return err('UNTRUSTED_SENDER', 'Origem IPC não autorizada.')
     }
@@ -231,7 +251,7 @@ const registerApprovedWorkspaceWrite = (): void => {
     const requestId = randomUUID()
     const started = Date.now()
     let claimed: { executionId: string; effectId: string } | undefined
-    if (!trustedSender(event.sender.id)) {
+    if (!trustedSender(event)) {
       await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.write', outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'UNTRUSTED_SENDER' })
       return err('UNTRUSTED_SENDER', 'Origem IPC não autorizada.')
     }
@@ -272,7 +292,7 @@ const registerApprovedProposedWorkspaceWrite = (): void => {
     const requestId = randomUUID()
     const started = Date.now()
     let claimed: { executionId: string; effectId: string } | undefined
-    if (!trustedSender(event.sender.id)) {
+    if (!trustedSender(event)) {
       await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.apply-proposal', outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'UNTRUSTED_SENDER' })
       return err('UNTRUSTED_SENDER', 'Origem IPC não autorizada.')
     }
@@ -468,8 +488,7 @@ const createWindow = async (): Promise<void> => {
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const developmentUrl = process.env.ELECTRON_RENDERER_URL
-    if (developmentUrl === undefined || !url.startsWith(developmentUrl)) event.preventDefault()
+    if (!isTrustedRendererUrl(url)) event.preventDefault()
   })
   mainWindow.once('ready-to-show', () => mainWindow?.show())
 
