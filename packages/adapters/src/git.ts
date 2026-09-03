@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import path from 'node:path'
 import type { GitStatus } from '@tupiniquim/contracts'
+import { createRestrictedEnvironment } from './secret-environment'
 
 const execFileAsync = promisify(execFile)
 
@@ -10,7 +11,7 @@ export class GitAdapter {
 
   private async run(args: string[], timeout = 20_000): Promise<string> {
     const root = this.workspaceRoot()
-    const { stdout } = await execFileAsync('git', ['-c', 'safe.directory=' + root, ...args], { cwd: root, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 5_000_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' } })
+    const { stdout } = await execFileAsync('git', ['-c', 'safe.directory=' + root, ...args], { cwd: root, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 5_000_000, env: createRestrictedEnvironment({ GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' }) })
     return stdout
   }
 

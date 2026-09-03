@@ -36,7 +36,7 @@ describe('CodexAppServerAdapter', () => {
     })
     const status = await adapter.connect()
     expect(['READY', 'AUTH_REQUIRED']).toContain(status.state)
-    expect(status.version).toMatch(/codex/iu)
+    expect(status.version).toMatch(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/u)
     expect(status.provider).toBe('codex-app-server')
     expect(events.some((event) => event.kind === 'STATUS')).toBe(true)
     expect(JSON.stringify(events)).not.toMatch(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/u)

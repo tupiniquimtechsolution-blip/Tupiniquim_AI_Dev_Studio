@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import * as pty from 'node-pty'
 import { resolveLexicalPath } from './path-security'
+import { createRestrictedEnvironment } from './secret-environment'
 
 export interface TerminalEvent { terminalId: string; data: string; exited?: boolean; exitCode?: number }
 
@@ -17,7 +18,7 @@ export class TerminalAdapter {
     const terminalId = randomUUID()
     const terminal = pty.spawn(shell, ['-NoLogo', '-NoProfile'], {
       name: 'xterm-256color', cols, rows, cwd,
-      env: { ...process.env, TERM: 'xterm-256color', TUPINIQUIM_WORKSPACE: root }, useConpty: true
+      env: createRestrictedEnvironment({ TERM: 'xterm-256color', TUPINIQUIM_WORKSPACE: root }), useConpty: true
     })
     terminal.onData((data) => this.onEvent({ terminalId, data }))
     const exited = new Promise<void>((resolve) => {

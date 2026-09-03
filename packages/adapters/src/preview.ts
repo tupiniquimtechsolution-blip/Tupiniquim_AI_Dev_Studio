@@ -5,6 +5,7 @@ import net from 'node:net'
 import path from 'node:path'
 import type { PreviewEvent, PreviewSession } from '@tupiniquim/contracts'
 import { resolveExistingInside } from './path-security'
+import { createRestrictedEnvironment } from './secret-environment'
 
 interface ActivePreview { session: PreviewSession; child: ChildProcessWithoutNullStreams }
 
@@ -52,7 +53,7 @@ export class PreviewAdapter {
     await access(viteCli)
     const port = await reservePort()
     const id = randomUUID()
-    const environment = { ...process.env, ELECTRON_RUN_AS_NODE: '1', BROWSER: 'none' }
+    const environment = createRestrictedEnvironment({ ELECTRON_RUN_AS_NODE: '1', BROWSER: 'none' })
     const child = spawn(process.execPath, [viteCli, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd, env: environment, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     const session: PreviewSession = { id, kind: 'VITE', url: `http://127.0.0.1:${port}/`, cwd, pid: child.pid ?? -1, startedAt: new Date().toISOString(), width, height }
     this.sessions.set(id, { session, child })
