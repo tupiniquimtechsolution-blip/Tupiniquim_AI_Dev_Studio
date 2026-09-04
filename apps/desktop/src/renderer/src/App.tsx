@@ -84,6 +84,7 @@ export const App = (): React.JSX.Element => {
     setPlanned(null)
     setProposal(null)
     setProposalStatus(null)
+    setExpiredProposals([])
     const [tree, status, context] = await Promise.all([
       window.studio.workspace.list({ relativePath: '', depth: 4 }),
       window.studio.git.status(),
@@ -204,6 +205,7 @@ export const App = (): React.JSX.Element => {
     setPlanned(null)
     setProposal(null)
     setProposalStatus(null)
+    setExpiredProposals([])
     setSelectedLocalModel('')
     if (provider !== 'ollama') { setLocalModels([]); return }
     const models = await window.studio.agent.listLocalModels()

@@ -390,6 +390,7 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
   const mockUrl = `http://127.0.0.1:${String(address.port)}`
   let application: Awaited<ReturnType<typeof electron.launch>> | null = null
   let workspaceRoot = ''
+  let workspaceRootB = ''
   const provenanceRegion = (page: Page): Locator => page.getByRole('region', { name: 'Proveniência da proposta de escrita' })
   const proposalIdOf = (region: Locator): Locator => region.locator('dt').filter({ hasText: /^Proposal$/u }).locator('..').locator('dd')
   try {
@@ -404,21 +405,26 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
     workspaceRoot = await mkdtemp(path.join(temp, 'tupiniquim-e2e-expire-'))
     await writeFile(path.join(workspaceRoot, 'README.md'), '# E2E Expiration\n', 'utf8')
     await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot })
+    workspaceRootB = await mkdtemp(path.join(temp, 'tupiniquim-e2e-isolation-'))
+    await writeFile(path.join(workspaceRootB, 'README.md'), '# E2E Isolation B\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRootB })
     const page = await application.firstWindow({ timeout: 180_000 }).catch((cause: unknown) => {
       const detail = cause instanceof Error ? cause.message : String(cause)
       throw new Error(`${detail}\nElectron stderr:\n${processErrors.join('')}`)
     })
     await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
-    await application.evaluate(({ dialog }, root) => {
+    await application.evaluate(({ dialog }, roots) => {
+      const queue = [roots.root, roots.nextRoot]
+      let pickCount = 0
       Object.defineProperty(dialog, 'showOpenDialog', {
         configurable: true,
-        value: () => Promise.resolve({ canceled: false, filePaths: [root] })
+        value: () => Promise.resolve({ canceled: false, filePaths: [queue[pickCount++ % queue.length] ?? roots.root] })
       })
       Object.defineProperty(dialog, 'showMessageBox', {
         configurable: true,
         value: () => Promise.resolve({ response: 0, checkboxChecked: false })
       })
-    }, workspaceRoot)
+    }, { root: workspaceRoot, nextRoot: workspaceRootB })
     await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
     await expect(page.locator('.notice')).toContainText('Workspace autorizado')
     await page.getByLabel('Provedor de IA').selectOption('ollama')
@@ -477,17 +483,47 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
     // 2) Conversation pública dorenderer.
     const conversation = await page.locator('.agent-conversation').innerText()
     for (const marker of markers) expect(conversation).not.toContain(marker)
-    // 3) Planning events / Flight Recorder + 4) Agent history (thread/turns/events).
-    const privilegedArtifacts = await page.evaluate(async () => {
-      const executions = await window.studio.planning.events({ executionId: '' })
-      // Eventos por execução: lê via read do plano corrente não é necessário;
-      // usa o history do agente e os eventos de execução conhecidos do DOM.
-      const history = await window.studio.agent.history({ threadId: '' })
-      return JSON.stringify({ executions, history })
+    // 3) History REAL: extrai os Thread IDs das cards de proveniência A/B e
+    // consulta cada thread real, sem pseudo-check com threadId vazio.
+    const provenanceRecords = await page.evaluate((): Array<Record<string, string>> => {
+      const records: Array<Record<string, string>> = []
+      const nodes = Array.from(document.querySelectorAll<HTMLElement>('.proposal-provenance dl'))
+      for (const dl of nodes) {
+        const fields: Record<string, string> = {}
+        for (const dt of Array.from(dl.querySelectorAll<HTMLElement>('dt'))) {
+          const label = dt.textContent?.trim() ?? ''
+          const value = dt.parentElement?.querySelector('dd')?.textContent?.trim() ?? ''
+          if (label !== '' && value !== '') fields[label] = value
+        }
+        records.push(fields)
+      }
+      return records
     })
-    for (const marker of markers) expect(privilegedArtifacts).not.toContain(marker)
-    // Varredura mais forte: Flight Recorder events de TODAS as execuções,
-    // obtidos a partir dos ids expostos nos cards de proveniência.
+    const realThreadIds = [...new Set(provenanceRecords.map((record) => record.Thread).filter((value): value is string => value !== undefined && value !== ''))]
+    expect(realThreadIds.length).toBeGreaterThanOrEqual(2)
+    const realHistory = await page.evaluate(async (threadIds) => {
+      const thread: unknown[] = []
+      const turns: unknown[][] = []
+      const events: unknown[][] = []
+      const raw: unknown[] = []
+      for (const threadId of threadIds) {
+        const history = await window.studio.agent.history({ threadId })
+        raw.push(history)
+        if (!history.ok) throw new Error(`agent.history falhou para threadId ${threadId}: ${history.error.message}`)
+        thread.push(history.value.thread)
+        turns.push(history.value.turns)
+        events.push(history.value.events)
+      }
+      return { thread, turns, events, raw }
+    }, realThreadIds)
+    for (const marker of markers) {
+      expect(JSON.stringify(realHistory.thread)).not.toContain(marker)
+      expect(JSON.stringify(realHistory.turns)).not.toContain(marker)
+      expect(JSON.stringify(realHistory.events)).not.toContain(marker)
+      expect(JSON.stringify(realHistory.raw)).not.toContain(marker)
+    }
+    // 4) Flight Recorder events de TODAS as execuções, obtidos a partir dos
+    // ids expostos nas cards de proveniência.
     const executionIds = await page.evaluate((): string[] => {
       const ids: string[] = []
       const nodes = Array.from(document.querySelectorAll<HTMLElement>('.proposal-provenance dl'))
@@ -523,6 +559,25 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
       }
     }
 
+    // ── 7) Isolamento: tombstone A não sobrevive à troca para workspace B ─────
+    const tombstoneAFields = provenanceRecords.find((record) => record.Proposal === proposalIdA)
+    if (tombstoneAFields === undefined) throw new Error('O card EXPIRED de A não foi localizado para o teste de isolamento.')
+    expect(tombstoneAFields.Target).toBe(proposalTargetA)
+    const workspaceBName = path.basename(workspaceRootB)
+    await page.locator('.project-switcher').click()
+    await expect(page.locator('.project-switcher')).toContainText(workspaceBName)
+    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await expect(provenanceRegion(page)).toHaveCount(0)
+    const isolationProvenance = await page.evaluate(() => {
+      const regions = Array.from(document.querySelectorAll<HTMLElement>('.proposal-provenance'))
+      return regions.map((node) => node.textContent ?? '').join('\n')
+    })
+    expect(isolationProvenance).not.toContain(tombstoneAFields.Proposal)
+    expect(isolationProvenance).not.toContain(tombstoneAFields.Thread)
+    expect(isolationProvenance).not.toContain(tombstoneAFields.Turn)
+    expect(isolationProvenance).not.toContain(tombstoneAFields.Target)
+    expect(isolationProvenance).not.toContain(tombstoneAFields.Hash)
+
     await page.screenshot({ path: path.join(projectRoot, 'test-results', 'expiration-flow.png'), fullPage: true })
   } finally {
     try {
@@ -530,6 +585,7 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
     } finally {
       try {
         if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
+        if (workspaceRootB !== '') await rm(workspaceRootB, { recursive: true, force: true })
       } finally {
         await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
       }
