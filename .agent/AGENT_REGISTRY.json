@@ -1,0 +1,276 @@
+{
+  "schemaVersion": "1.1.0",
+  "updatedAt": "2026-09-04",
+  "invariants": {
+    "separation": "agent != model != provider != tool != skill != source_repository",
+    "providerSelection": "user-controlled-no-automatic-priority",
+    "defaultActivation": "on-demand",
+    "defaultTrust": "untrusted-external-source",
+    "paidServices": "NOT_CONFIGURED until explicit approval",
+    "projectIsolation": true,
+    "mutationAuthority": "PolicyEngine + ApprovalStore + AuditLog"
+  },
+  "agents": [
+    {
+      "id": "AGENT-PLANNER",
+      "name": "Master Planner",
+      "status": "source-registered",
+      "modelRequirements": [
+        "reasoning",
+        "planning",
+        "tool-use"
+      ],
+      "sources": [
+        "Shubhamsaboo/awesome-llm-apps:agent_skills/advisor-orchestrator-worker",
+        "Shubhamsaboo/awesome-llm-apps:advanced_ai_agents/multi_agent_apps/agent_teams"
+      ],
+      "capabilities": [
+        "planning",
+        "dependency-mapping",
+        "handoff",
+        "prioritization",
+        "validation"
+      ],
+      "effects": []
+    },
+    {
+      "id": "AGENT-RESEARCH",
+      "name": "Researcher",
+      "status": "source-registered",
+      "modelRequirements": [
+        "research",
+        "long-context"
+      ],
+      "sources": [
+        "Shubhamsaboo/awesome-llm-apps:multi_agent_researcher",
+        "Panniantong/Agent-Reach",
+        "public-apis/public-apis",
+        "EbookFoundation/free-programming-books"
+      ],
+      "capabilities": [
+        "web-research",
+        "source-analysis",
+        "technology-research",
+        "evidence-synthesis"
+      ],
+      "effects": []
+    },
+    {
+      "id": "AGENT-ILLUSTRATOR",
+      "name": "Illustrator / Media Agent",
+      "status": "source-registered",
+      "modelRequirements": [
+        "multimodal"
+      ],
+      "sources": [
+        "Anil-matcha/Open-Generative-AI",
+        "internal:gemini-video-presets"
+      ],
+      "capabilities": [
+        "image-generation",
+        "image-editing",
+        "video-generation",
+        "media-workflows"
+      ],
+      "effects": [
+        "asset:create",
+        "asset:edit"
+      ],
+      "constraints": [
+        "local-first-when-viable",
+        "record-asset-provenance",
+        "external-paid-providers-require-approval"
+      ]
+    },
+    {
+      "id": "AGENT-UX",
+      "name": "UI/UX Designer",
+      "status": "source-registered",
+      "modelRequirements": [
+        "visual-reasoning"
+      ],
+      "sources": [
+        "nextlevelbuilder/ui-ux-pro-max-skill",
+        "emilkowalski/skills:emil-design-eng",
+        "Leonxlnx/taste-skill:design-taste-frontend"
+      ],
+      "capabilities": [
+        "ui-ux",
+        "design-system",
+        "animation-review",
+        "responsive-design",
+        "design-guidelines"
+      ],
+      "effects": []
+    },
+    {
+      "id": "AGENT-PROMPT",
+      "name": "Prompt Architect",
+      "status": "source-registered",
+      "sources": [
+        "nidhinjs/prompt-master"
+      ],
+      "capabilities": [
+        "prompt-generation",
+        "prompt-review",
+        "prompt-adaptation",
+        "tool-routing"
+      ],
+      "effects": []
+    },
+    {
+      "id": "AGENT-TOOLS",
+      "name": "Tool / CLI Integrator",
+      "status": "source-registered",
+      "sources": [
+        "HKUDS/CLI-Anything",
+        "docker/awesome-compose"
+      ],
+      "capabilities": [
+        "cli-discovery",
+        "agent-native-cli",
+        "software-tooling",
+        "environment-patterns"
+      ],
+      "effects": [
+        "workspace:write",
+        "process:execute"
+      ],
+      "constraints": [
+        "PolicyEngine-required",
+        "allowlisted-executable-and-args",
+        "e2e-before-enable"
+      ]
+    },
+    {
+      "id": "AGENT-VOICE",
+      "name": "Voice / TTS Agent",
+      "status": "source-registered",
+      "sources": [
+        "kyutai-labs/pocket-tts"
+      ],
+      "capabilities": [
+        "local-tts",
+        "streaming-audio",
+        "multilingual-voice",
+        "voice-cloning-with-consent"
+      ],
+      "effects": [
+        "asset:create"
+      ],
+      "constraints": [
+        "voice-cloning-requires-consent-and-provenance"
+      ]
+    },
+    {
+      "id": "AGENT-SOCIAL",
+      "name": "Social Automation Agent",
+      "status": "source-registered",
+      "sources": [
+        "diwenne/openreply"
+      ],
+      "capabilities": [
+        "instagram-comment-to-dm",
+        "webhooks",
+        "keyword-routing",
+        "social-automation"
+      ],
+      "effects": [
+        "network:external-write"
+      ],
+      "constraints": [
+        "official-api-only",
+        "rate-limit",
+        "terms-and-consent"
+      ]
+    },
+    {
+      "id": "AGENT-KNOWLEDGE",
+      "name": "Knowledge / RAG Agent",
+      "status": "source-registered",
+      "sources": [
+        "Shubhamsaboo/awesome-llm-apps:rag_tutorials",
+        "EbookFoundation/free-programming-books",
+        "TheAlgorithms/Python",
+        "jwasham/coding-interview-university"
+      ],
+      "capabilities": [
+        "rag",
+        "hybrid-search",
+        "knowledge-graph",
+        "citations",
+        "context-retrieval"
+      ],
+      "effects": []
+    },
+    {
+      "id": "AGENT-TRUST-QA",
+      "name": "Trust / QA Reviewer",
+      "status": "source-registered",
+      "sources": [
+        "internal:PolicyEngine",
+        "internal:AuditLog",
+        "soumatheusgomes/vibe-coding-toolkit",
+        "usestrix/strix"
+      ],
+      "capabilities": [
+        "review",
+        "quality-gates",
+        "security-gate",
+        "evidence",
+        "approval-validation"
+      ],
+      "effects": []
+    },
+    {
+      "id": "AGENT-CODER",
+      "name": "Coding Worker",
+      "status": "existing-runtime-role",
+      "modelRequirements": [
+        "coding",
+        "tool-use"
+      ],
+      "providerSelection": "user-controlled",
+      "sources": [
+        "internal:Tupiniquim-AI-Dev-Studio"
+      ],
+      "capabilities": [
+        "code",
+        "test",
+        "fix",
+        "refactor"
+      ],
+      "effects": [
+        "workspace:write"
+      ],
+      "constraints": [
+        "workspace-only",
+        "approval-for-mutating-effects"
+      ]
+    }
+  ],
+  "skillLibrary": {
+    "strategy": "global-catalog-project-loadout-agent-loadout-task-activation",
+    "allTimeTopCount": 500,
+    "trendingWatchCount": 500,
+    "pinned": [
+      "vercel-labs/skills/find-skills"
+    ],
+    "registeredDesignSources": [
+      "emilkowalski/skills:emil-design-eng",
+      "Leonxlnx/taste-skill:design-taste-frontend"
+    ],
+    "installPolicy": "metadata-first; audit-and-approve-before-activation",
+    "source": "https://skills.sh"
+  },
+  "referenceLibraries": [
+    "EbookFoundation/free-programming-books",
+    "public-apis/public-apis",
+    "docker/awesome-compose",
+    "TheAlgorithms/Python",
+    "jwasham/coding-interview-university"
+  ],
+  "optionalPlatformSources": [
+    "supabase/supabase"
+  ]
+}

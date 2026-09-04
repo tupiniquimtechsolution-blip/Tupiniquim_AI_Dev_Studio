@@ -23,6 +23,41 @@ O ambiente desta máquina usa `F:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0012 su
 - Plan/Approval/Execute, Research/Resolver, Prompt, Visual, Preferences e Preview presentes no WIP são candidatos às Waves 2–3; não constituem aceite até terem fronteiras, testes e integração confirmados.
 - Não será adicionado um provider local antes de estabilizar o contrato `AIProvider`.
 
+## Extensões aprovadas sem alterar a ordem das Waves
+
+### Wave 2
+
+- Research Agent usando padrões do Awesome LLM Apps + Agent Reach.
+- Knowledge/RAG Registry com isolamento por projeto e citations.
+- Public APIs como catálogo de descoberta, nunca allowlist automática.
+- Free Programming Books, TheAlgorithms e Coding Interview University como referências de aprendizagem/fundamentos.
+- Docker Awesome Compose como biblioteca de padrões de ambiente.
+- Skill Registry com Top 500 All-Time, Top 500 Trending e `find-skills` pinned.
+- Skill Gate com licença, custo, dependências, permissões, provenance e aprovação.
+- Metadados de UI UX Pro Max, Emil Skills e Taste Skill disponíveis para loadout sob demanda.
+- Supabase registrado como platform candidate por projeto; nenhuma adoção global implícita.
+
+### Wave 3
+
+- Avaliar seletivamente o Vibe Coding Toolkit como Engineering Playbook Source: brainstorm→plan, subagent waves, code review e quality gates.
+- Regras externas continuam referências. Limites rígidos como “350 linhas por arquivo” só viram requisito se compatíveis com a arquitetura real.
+- Hardening/dogfood permanece gate antes do Agent Runtime completo.
+
+### Wave 4
+
+- Materializar `.agent/AGENT_REGISTRY.json` em contratos Zod/runtime.
+- Provider/model selecionados separadamente do Agent.
+- Efeitos mutáveis são capabilities submetidas a PolicyEngine/ApprovalStore/AuditLog; um booleano simples não concede autoridade.
+- Equipes, memória e loadouts permanecem isolados por projeto.
+
+### Wave 5
+
+- `Anil-matcha/Open-Generative-AI` como principal capability source do Illustrator / Media Agent.
+- Gemini video presets (`/reveal`, `/teardown`, `/explodedview`) como aliases internos de prompt; provider real somente após contrato aprovado.
+- Pocket TTS para TTS local/voz.
+- OpenReply para automação social.
+- kimi-k3-in-c apenas como pesquisa experimental.
+
 ## Aceite da Wave 0
 
 1. Scripts, dados, caches e testes usam somente o volume operacional autorizado, atualmente F:.

@@ -14,8 +14,6 @@ Use esta skill em qualquer projeto da Tupiniquim quando estiver planejando, impl
 3. Baseline corporativa e esta skill.
 4. Adaptadores específicos de fornecedor.
 
-Nunca permita que um adaptador de Claude, Qwen, Gemini, Kimi, Codex, Grok, Freebuff ou outro harness contradiga o contrato do projeto.
-
 ## Método obrigatório
 
 1. Inspecione o estado real do repositório antes de editar.
@@ -29,16 +27,26 @@ Nunca permita que um adaptador de Claude, Qwen, Gemini, Kimi, Codex, Grok, Freeb
 
 ## Roteamento
 
-- UI/UX → UI UX Pro Max.
+- UI/UX geral/design system → UI UX Pro Max.
+- Motion, microinterações, animation review e design engineering → `emilkowalski/skills`.
+- Landing page, portfólio, editorial ou redesign anti-template → `Leonxlnx/taste-skill:design-taste-frontend`; não usar como padrão para dashboard/data-heavy UI.
 - Engenharia de prompts → Prompt Master.
 - Pesquisa/web/social → Agent Reach.
 - Pentest/remediação → Strix, somente alvos próprios ou autorizados.
 - Software agent-native/CLI → CLI-Anything.
 - Agentes/RAG → Awesome LLM Apps.
+- Engineering workflow/quality → Vibe Coding Toolkit como referência, não como runtime obrigatório.
 - Instagram comment-to-DM → OpenReply.
 - TTS local → Pocket TTS.
 - Mídia generativa → Open Generative AI.
+- Gemini video aliases → catálogo interno `GEMINI_VIDEO_PRESETS.md`.
+- Referências de aprendizagem/descoberta → Free Programming Books, Public APIs, Docker Awesome Compose, TheAlgorithms e Coding Interview University.
+- Supabase → capability/platform candidate por projeto, nunca dependência global.
 - Inferência Kimi experimental → kimi-k3-in-c.
+
+## Regra de carga
+
+Não empilhe skills só porque existem. Selecione a menor combinação capaz de resolver a tarefa. Popularidade ou presença no Top 500 não equivale a aprovação de segurança.
 
 ## Segurança
 
@@ -51,4 +59,4 @@ Nunca permita que um adaptador de Claude, Qwen, Gemini, Kimi, Codex, Grok, Freeb
 
 ## Portabilidade entre LLMs
 
-A skill descreve comportamento e critérios, não um modelo específico. O harness deve carregá-la no formato que suporta. Se um harness não reconhecer `.agents/skills/` automaticamente, o adaptador correspondente deve instruí-lo a ler este arquivo antes de agir.
+A skill descreve comportamento e critérios, não um modelo específico. O harness deve carregá-la no formato que suporta. Seleção de modelo/provider fica sob controle do usuário.
