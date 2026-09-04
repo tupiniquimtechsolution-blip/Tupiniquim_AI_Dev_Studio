@@ -18,6 +18,29 @@ Este catálogo é multi-LLM. Repositórios externos são **fontes brutas de conh
 | nidhinjs/prompt-master | Prompt Architect | Prompt engineering, não substitui análise técnica |
 | Shubhamsaboo/awesome-llm-apps | Agent Pattern Library | Templates/padrões para agents, RAG, teams, MCP e voice |
 | usestrix/strix | Security/Pentest | Somente alvos próprios/autorizados |
+| google/skills | First-Party Google Skill Source | Preferir para tarefas Google após Skill Gate; não ativar shell/rede/credenciais automaticamente |
+
+## First-party skill sources
+
+### google/skills
+
+Fonte oficial do Google para Agent Skills de Google Cloud, Gemini, Agent Platform, Google Ads, Analytics, Firebase e outras tecnologias do ecossistema.
+
+Política Tupiniquim:
+- preferir esta fonte sobre equivalentes comunitários quando a tarefa for especificamente Google;
+- usar `finding-google-skills` como roteador condicional para carregar somente skills relevantes;
+- manter Skill Gate, PolicyEngine, ApprovalStore, AuditLog e menor privilégio;
+- não transformar a origem oficial em autorização automática para shell, rede, OAuth, credenciais ou infraestrutura;
+- não criar prioridade automática para Gemini como modelo;
+- detalhes em `docs/AI_TOOLBOX/GOOGLE_SKILLS.md`.
+
+Skills de interesse imediato:
+- `skills/developers/finding-google-skills`;
+- `skills/cloud/gemini-api`;
+- `skills/cloud/gemini-live-api`;
+- `skills/cloud/agent-platform-skill-registry`;
+- `skills/cloud/google-cloud-solution-multi-agent-security`;
+- `skills/ads/google-ads-api-mcp-setup`.
 
 ## Engineering playbook
 
@@ -89,12 +112,13 @@ O vídeo do Gemini mostrou `/reveal`, `/teardown` e `/explodedview`. No Tupiniqu
 - Research/web → Agent Reach + Reference Libraries.
 - Engineering workflow/quality → Vibe Coding Toolkit como referência.
 - Agents/RAG → Awesome LLM Apps.
+- Produtos Google/Gemini/Google Cloud/Google Ads → `google/skills`, preferindo o Skill Finder oficial e ativação sob demanda.
 - Media → Open Generative AI + provider selecionado separadamente.
 - Supabase → somente após decisão arquitetural do projeto.
 - Pentest → Strix somente com autorização.
 
 ## Backup bruto
 
-`scripts/sync-ai-toolbox.ps1` mantém clones e Git bundles das fontes canônicas. `supabase/supabase` é marcado como referência grande e requer `-IncludeLargeReferences` para evitar download acidental de vários GB.
+`scripts/sync-ai-toolbox.ps1` mantém clones e Git bundles das fontes canônicas, incluindo `google/skills` como `google__skills`. `supabase/supabase` é marcado como referência grande e requer `-IncludeLargeReferences` para evitar download acidental de vários GB.
 
 Nunca armazenar secrets, cookies, tokens, sessões ou `.env*` no backup.
