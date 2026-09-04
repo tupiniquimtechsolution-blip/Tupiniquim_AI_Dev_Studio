@@ -1,6 +1,7 @@
 param(
     [string]$Root = (Join-Path $HOME "Tupiniquim-AI-Toolbox"),
-    [switch]$InstallRecommendedClaudeSkills
+    [switch]$InstallRecommendedClaudeSkills,
+    [switch]$InstallMultiLLMToolbox
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,6 +60,41 @@ Write-Host ""
 Write-Host "Backup bruto atualizado em: $Root"
 Write-Host "Clones completos: $ReposDir"
 Write-Host "Bundles Git:      $BundlesDir"
+
+if ($InstallMultiLLMToolbox) {
+    $RepoRoot = Split-Path $PSScriptRoot -Parent
+    $CanonicalSkill = Join-Path $RepoRoot ".agents\skills\tupiniquim-toolbox"
+
+    if (-not (Test-Path (Join-Path $CanonicalSkill "SKILL.md"))) {
+        throw "Skill canonica nao encontrada em: $CanonicalSkill"
+    }
+
+    $Destinations = @(
+        (Join-Path $HOME ".agents\skills\tupiniquim-toolbox"),
+        (Join-Path $HOME ".qwen\skills\tupiniquim-toolbox"),
+        (Join-Path $HOME ".claude\skills\tupiniquim-toolbox")
+    )
+
+    Write-Host ""
+    Write-Host "Sincronizando Tupiniquim Toolbox para os harnesses locais..."
+
+    foreach ($Destination in $Destinations) {
+        $Parent = Split-Path $Destination -Parent
+        New-Item -ItemType Directory -Force -Path $Parent | Out-Null
+        New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+        Copy-Item -Path (Join-Path $CanonicalSkill "*") -Destination $Destination -Recurse -Force
+        Write-Host "  OK: $Destination"
+    }
+
+    Write-Host ""
+    Write-Host "Cobertura:"
+    Write-Host "  ~/.agents/skills -> Gemini, Kimi, Grok, Freebuff e harnesses compativeis"
+    Write-Host "  ~/.qwen/skills   -> Qwen Code"
+    Write-Host "  ~/.claude/skills -> Claude Code"
+    Write-Host "  Codex usa o AGENTS.md versionado em cada projeto Tupiniquim"
+    Write-Host ""
+    Write-Host "Nenhum AGENTS.md global foi criado para evitar afetar projetos fora da empresa."
+}
 
 if ($InstallRecommendedClaudeSkills) {
     $ClaudeSkills = Join-Path $HOME ".claude\skills"
