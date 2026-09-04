@@ -431,17 +431,34 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
     await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
     await expect(page.locator('.availability')).toHaveText('READY')
 
-    // ── Proposal A (PENDING_REVIEW) ────────────────────────────────────────
-    await page.locator('.mode-switch').getByRole('button', { name: 'Plan', exact: true }).click()
-    await page.getByLabel('Mensagem ao agente').fill('Proposta A.')
-    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    // ── UM único plano: A/B compartilham EXATAMENTE executionId + stepId ────
+    // O renderer cria um plano a cada envio em modo PLAN; para provar
+    // substituição no slot executionId:stepId é necessário usar o mesmo slot
+    // nas duas chamadas.
+    const replacementSlot = await page.evaluate(async () => {
+      const created = await window.studio.planning.create({ objective: 'E2E proposal replacement', mode: 'PLAN' })
+      if (!created.ok) throw new Error(`planning.create falhou: ${created.error.message}`)
+      const stepId = created.value.plan.steps.find((step) => step.requiresApproval)?.id
+      if (stepId === undefined) throw new Error('Plano E2E sem passo de escrita aprovável.')
+      return { executionId: created.value.execution.id, stepId }
+    })
+    const sendReplacementProposal = async (message: 'Proposta A.' | 'Proposta B.'): Promise<void> => {
+      const sent = await page.evaluate(async (input) => await window.studio.agent.send({
+        message: input.message,
+        mode: 'PLAN',
+        proposalContext: { executionId: input.executionId, stepId: input.stepId }
+      }), { message, ...replacementSlot })
+      if (!sent.ok) throw new Error(`agent.send falhou para ${message}: ${sent.error.message}`)
+    }
+
+    // ── Proposal A (PENDING_REVIEW) no slot compartilhado ───────────────────
+    await sendReplacementProposal('Proposta A.')
     await expect(provenanceRegion(page)).toBeVisible({ timeout: 30_000 })
     const proposalIdA = await proposalIdOf(provenanceRegion(page).last()).textContent()
     if (proposalIdA === null) throw new Error('Proposal A sem ID.')
 
-    // ── Proposal B para o mesmo execution/step substitui A ─────────────────
-    await page.getByLabel('Mensagem ao agente').fill('Proposta B.')
-    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    // ── Proposal B no MESMO executionId + stepId substitui A ───────────────
+    await sendReplacementProposal('Proposta B.')
 
     // Espera até existirem DOIS cards de proveniência (tombstone de A + B).
     await expect(provenanceRegion(page)).toHaveCount(2, { timeout: 30_000 })
@@ -499,6 +516,14 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
       }
       return records
     })
+    const recordA = provenanceRecords.find((record) => record.Proposal === proposalIdA)
+    const recordB = provenanceRecords.find((record) => record.Proposal === proposalIdB)
+    if (recordA === undefined || recordB === undefined) throw new Error('Cards de proveniência A/B não localizados.')
+    // Prova explícita de que A e B usaram o MESMO slot executionId:stepId.
+    expect(recordB.Execution).toBe(recordA.Execution)
+    expect(recordB.Step).toBe(recordA.Step)
+    expect(recordA.Target).toBe(proposalTargetA)
+    expect(recordB.Target).toBe(proposalTargetB)
     const realThreadIds = [...new Set(provenanceRecords.map((record) => record.Thread).filter((value): value is string => value !== undefined && value !== ''))]
     expect(realThreadIds.length).toBeGreaterThanOrEqual(2)
     const realHistory = await page.evaluate(async (threadIds) => {
