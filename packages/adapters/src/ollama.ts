@@ -8,6 +8,7 @@ import {
   aiTurnSchema,
   localModelSchema,
   normalizedToolCallEnvelopeSchema,
+  workspaceWriteArgsSchema,
   type AIEvent,
   type AIProvider,
   type AIStatus,
@@ -95,18 +96,22 @@ const normalizeToolCall = (
   threadId: string,
   turnId: string
 ): NormalizedToolCallEnvelope => {
-  const args = parseToolArguments(toolCall.function.arguments)
+  // Ollama must send arguments as an object, not a JSON string or array.
+  const raw = toolCall.function.arguments
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error('Argumentos da ferramenta Ollama são inválidos.')
+  }
   return normalizedToolCallEnvelopeSchema.parse({
     callId: randomUUID(),
     provider: 'ollama',
     threadId,
     turnId,
     tool: 'workspace.write',
-    arguments: args as Record<string, unknown>
+    arguments: raw as Record<string, unknown>
   })
 }
-// Business-argument validation happens at the proposal service level,
-// not here — the adapter is responsible only for structural translation.
+// The adapter validates business arguments (workspaceWriteArgsSchema) after structural
+// normalization, rejecting invalid tool calls before they reach the proposal service.
 
 export interface OllamaAdapterOptions {
   onEvent: (event: AIEvent) => void
@@ -348,11 +353,14 @@ export class OllamaAdapter implements AIProvider {
         const toolCall = toolCalls[0]
         if (toolCall === undefined || toolCall.function.name !== workspaceWriteTool.function.name) throw new Error('Tool call Ollama não autorizada.')
         const normalized = normalizeToolCall(toolCall, reference.threadId, reference.turnId)
-        const proposal = await this.options.onWorkspaceWriteToolCall?.({
+        workspaceWriteArgsSchema.parse(normalized.arguments)
+        const onToolCall = this.options.onWorkspaceWriteToolCall
+        if (onToolCall === undefined) throw new Error('Ferramenta de proposta Ollama indisponível.')
+        const proposal = await onToolCall({
           envelope: normalized,
           executionId: proposalContext.executionId,
           stepId: proposalContext.stepId
-        }) as WorkspaceWriteProposal | undefined
+        })
         if (proposal === undefined) throw new Error('Ferramenta de proposta Ollama indisponível.')
         conversation.push({ role: 'assistant', content: publicProposalHistory(proposal) })
       }
@@ -406,11 +414,6 @@ const redact = (value: string): string => value
   .replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gu, '[REDACTED]')
   .replace(/(authorization|api[_-]?key|token)\s*[:=]\s*\S+/giu, '$1=[REDACTED]')
   .slice(0, 2_000)
-
-const parseToolArguments = (value: unknown): unknown => {
-  if (typeof value !== 'string') return value
-  try { return JSON.parse(value) } catch { throw new Error('Argumentos da ferramenta Ollama são inválidos.') }
-}
 
 const publicProposalHistory = (proposal: WorkspaceWriteProposal): string => [
   'Proposta workspace.write registrada para revisão humana.',

@@ -139,6 +139,20 @@ export const normalizedToolCallEnvelopeSchema = z.object({
 })
 export type NormalizedToolCallEnvelope = z.infer<typeof normalizedToolCallEnvelopeSchema>
 
+// ── Shared business-argument validation for workspace.write ────────────────
+// Every provider adapter normalizes raw tool calls into the envelope above;
+// the privileged runtime validates business arguments against this schema
+// *before* the proposal service. Provider-specific adapters never carry this
+// responsibility.
+
+const maxWorkspaceWriteContentChars = 10_000_000
+export const workspaceWriteArgsSchema = z.object({
+  relativePath: z.string().min(1).max(4_096).refine((v) => !v.includes('\0'), 'Caminho inválido.'),
+  content: z.string().max(maxWorkspaceWriteContentChars),
+  operation: z.enum(['CREATE', 'REPLACE'])
+}).strict()
+export type WorkspaceWriteArgs = z.infer<typeof workspaceWriteArgsSchema>
+
 // ── Proposal status (public, UI-facing) ─────────────────────────────────────
 export const proposalStatusValues = ['PENDING_REVIEW', 'APPROVED', 'DENIED', 'MATERIALIZED', 'FAILED', 'EXPIRED'] as const
 export const proposalStatusSchema = z.enum(proposalStatusValues)

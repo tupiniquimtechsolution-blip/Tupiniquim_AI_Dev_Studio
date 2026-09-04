@@ -224,7 +224,7 @@ describe('persistência Plan/Approval/Execute', () => {
     await database.putAIThread(thread)
     await database.putAITurn(turn)
     const planning = new PlanApprovalService(database)
-    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture)
+    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture, { inspectBaseline: () => Promise.resolve(null) })
     const planned = await planning.create('Propor escrita com proveniência', fixture, 'PLAN')
     const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
     if (step === undefined) throw new Error('Fixture sem passo aprovável.')
@@ -259,7 +259,7 @@ describe('persistência Plan/Approval/Execute', () => {
     const sourceBoundProposals = new WorkspaceWriteProposalService(planning, {
       getAIThread: (id) => Promise.resolve(id === currentSource.id ? currentSource : null),
       listAITurns: (threadId) => threadId === currentSource.id ? database.listAITurns(threadId) : Promise.resolve([])
-    }, () => fixture)
+    }, () => fixture, { inspectBaseline: () => Promise.resolve(null) })
     const expiring = await sourceBoundProposals.propose({ executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: crypto.randomUUID(), tool: 'workspace.write', relativePath: 'src/origem-expirada.ts', content: 'conteúdo que não pode ser consumido', operation: 'CREATE', targetBaselineHash: null })
     currentSource = { ...thread, provider: 'codex-app-server' }
     await expect(sourceBoundProposals.consume(expiring.id)).rejects.toThrow('obsoleta')
@@ -273,7 +273,7 @@ describe('persistência Plan/Approval/Execute', () => {
     await database.putAIThread(thread)
     await database.putAITurn(turn)
     const planning = new PlanApprovalService(database)
-    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture)
+    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture, { inspectBaseline: () => Promise.resolve(null) })
     const planned = await planning.create('Impedir replay da chamada de ferramenta', fixture, 'PLAN')
     const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
     if (step === undefined) throw new Error('Fixture sem passo aprovável.')
@@ -294,7 +294,7 @@ describe('persistência Plan/Approval/Execute', () => {
     await database.putAITurn(planTurn)
     await database.putAITurn(chatTurn)
     const planning = new PlanApprovalService(database)
-    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture)
+    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture, { inspectBaseline: () => Promise.resolve(null) })
     const planned = await planning.create('Validar baseline e payload efêmero', fixture, 'PLAN')
     const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
     if (step === undefined) throw new Error('Fixture sem passo aprovável.')
@@ -312,7 +312,7 @@ describe('persistência Plan/Approval/Execute', () => {
       expectedTargetHash: null,
       source: { kind: 'AGENT_PROPOSAL', proposalId: proposal.id, toolCallId: proposal.toolCallId }
     })
-    const restarted = new WorkspaceWriteProposalService(new PlanApprovalService(database), database, () => fixture)
+    const restarted = new WorkspaceWriteProposalService(new PlanApprovalService(database), database, () => fixture, { inspectBaseline: () => Promise.resolve(null) })
     await expect(restarted.consume(proposal.id)).rejects.toThrow('não está disponível')
     await expect(restarted.propose({ ...source, turnId: planTurn.id, toolCallId: proposal.toolCallId, relativePath: proposal.effect.target, content: privatePayload, operation: 'CREATE', targetBaselineHash: null })).rejects.toThrow('manifesto persistido')
   })
@@ -329,7 +329,7 @@ describe('persistência Plan/Approval/Execute', () => {
     const proposals = new WorkspaceWriteProposalService(planning, {
       getAIThread: (id) => Promise.resolve(id === thread.id ? thread : null),
       listAITurns: (threadId) => Promise.resolve(threadId === thread.id ? activeTurns : [])
-    }, () => activeWorkspaceRoot)
+    }, () => activeWorkspaceRoot, { inspectBaseline: () => Promise.resolve(null) })
     const planned = await planning.create('Invalidar deriva de proposta', fixture, 'PLAN')
     const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
     if (step === undefined) throw new Error('Fixture sem passo aprovável.')
@@ -368,7 +368,7 @@ describe('persistência Plan/Approval/Execute', () => {
     await database.putAIThread(thread)
     await database.putAITurn(turn)
     const planning = new PlanApprovalService(database)
-    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture)
+    const proposals = new WorkspaceWriteProposalService(planning, database, () => fixture, { inspectBaseline: () => Promise.resolve(null) })
     const planned = await planning.create('Reaprovar nova identidade causal', fixture, 'PLAN')
     const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
     if (step === undefined) throw new Error('Fixture sem passo aprovável.')

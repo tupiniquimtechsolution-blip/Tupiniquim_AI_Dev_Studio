@@ -1,7 +1,7 @@
 import Editor from '@monaco-editor/react'
 import { Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, Eye, FileSearch, GitBranch, History, LayoutDashboard, Palette, PanelBottom, Save, Search, Settings2, ShieldCheck, Sparkles, TerminalSquare } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AIEvent, AIProviderKind, AIStatus, AIThreadHistory, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, SystemInfo, UIProfile, WorkspaceContext, WorkspaceWriteProposal } from '@tupiniquim/contracts'
+import type { AIEvent, AIProviderKind, AIStatus, AIThreadHistory, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, ProposalStatus, SystemInfo, UIProfile, WorkspaceContext, WorkspaceWriteProposal } from '@tupiniquim/contracts'
 import { FileTree } from './components/FileTree'
 import { TerminalPane } from './components/TerminalPane'
 
@@ -25,7 +25,7 @@ interface ConversationMessage {
   complete: boolean
 }
 
-type ProposalStatus = 'PENDING_REVIEW' | 'APPROVED' | 'DENIED' | 'MATERIALIZED' | 'FAILED'
+// ProposalStatus imported from @tupiniquim/contracts — includes EXPIRED
 
 export const App = (): React.JSX.Element => {
   const [system, setSystem] = useState<SystemInfo | null>(null)
@@ -47,6 +47,7 @@ export const App = (): React.JSX.Element => {
   const [planned, setPlanned] = useState<PlannedExecution | null>(null)
   const [proposal, setProposal] = useState<WorkspaceWriteProposal | null>(null)
   const [proposalStatus, setProposalStatus] = useState<ProposalStatus | null>(null)
+  const previousProposalRef = useRef<WorkspaceWriteProposal | null>(null)
   const [profile, setProfile] = useState<UIProfile | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const profileRef = useRef<UIProfile | null>(null)
@@ -58,6 +59,11 @@ export const App = (): React.JSX.Element => {
     void window.studio.settings.get().then((result) => { if (result.ok) { profileRef.current = result.value; setProfile(result.value) } })
     const removeAgentListener = window.studio.agent.onEvent((event) => handleAgentEvent(event, setAIStatus, setConversation, setSending))
     const removeProposalListener = window.studio.agent.onWorkspaceWriteProposal((incoming) => {
+      const prev = previousProposalRef.current
+      if (prev !== null && prev.executionId === incoming.executionId && prev.stepId === incoming.stepId && prev.id !== incoming.id) {
+        setProposalStatus('EXPIRED')
+      }
+      previousProposalRef.current = incoming
       setProposal(incoming)
       setProposalStatus('PENDING_REVIEW')
       setConversation((current) => [...current, { id: incoming.id, role: 'assistant', text: `PROPOSTA DISPONÍVEL PARA REVISÃO\n${incoming.effect.operation} ${incoming.effect.target}\nHash ${incoming.effect.payloadHash.slice(0, 12)}…`, turnId: incoming.turnId, complete: true }])

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Result } from './result'
-import { aiProviderKindSchema, type AIEvent, type AIStatus, type AIThreadHistory, type AgentTurnReference, type LocalModel, type agentInterruptInputSchema, type agentLocalModelSelectInputSchema, type agentProviderSelectInputSchema, type agentSendInputSchema, type agentThreadIdInputSchema } from './ai'
+import { aiProviderKindSchema, type AIEvent, type AIStatus, type AIThreadHistory, type AgentTurnReference, type LocalModel, type ProposalStatus, type agentInterruptInputSchema, type agentLocalModelSelectInputSchema, type agentProviderSelectInputSchema, type agentSendInputSchema, type agentThreadIdInputSchema } from './ai'
 import { actionManifestSchema, approvalScopeSchema, modeSchema, planSchema, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan } from './domain'
 import type { researchCollectInputSchema, researchSearchInputSchema, technologyResolveInputSchema, ResearchResult, ResearchSource, TechnologyResolution } from './research'
 import type { promptCompareInputSchema, promptCompileInputSchema, promptIdInputSchema, promptLintInputSchema, promptSaveInputSchema, CompiledPrompt, PromptComparison, PromptLintIssue, PromptTemplate } from './prompt'
@@ -32,6 +32,7 @@ export const ipcChannels = {
   agentInterrupt: 'studio:agent:interrupt',
   agentEvent: 'studio:agent:event',
   agentWorkspaceWriteProposal: 'studio:agent:workspace-write-proposal',
+  agentProposalStatus: 'studio:agent:proposal-status',
   planCreate: 'studio:plan:create',
   planUpdate: 'studio:plan:update',
   executionRead: 'studio:execution:read',
@@ -86,6 +87,7 @@ export const executionWorkspaceWriteInputSchema = z.object({
   expectedHash: z.string().regex(/^[a-f0-9]{64}$/).optional()
 })
 export const executionWorkspaceWriteProposalIdInputSchema = z.object({ proposalId: z.string().uuid() })
+export const proposalStatusInputSchema = z.object({ proposalId: z.string().uuid() })
 export const approvalDecideInputSchema = z.object({ executionId: z.string().uuid(), stepId: z.string().uuid(), decision: z.enum(['APPROVED', 'DENIED']), scope: approvalScopeSchema })
 
 export interface FileEntry {
@@ -220,6 +222,7 @@ export interface StudioApi {
     interrupt(input: z.input<typeof agentInterruptInputSchema>): Promise<Result<void>>
     onEvent(listener: (event: AIEvent) => void): () => void
     onWorkspaceWriteProposal(listener: (proposal: WorkspaceWriteProposal) => void): () => void
+    lookupProposalStatus(proposalId: string): Promise<Result<ProposalStatus>>
   }
   planning: {
     create(input: z.input<typeof planCreateInputSchema>): Promise<Result<PlannedExecution>>

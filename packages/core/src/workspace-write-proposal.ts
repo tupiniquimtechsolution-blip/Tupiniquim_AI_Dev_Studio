@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import {
   agentProposalEffectSourceSchema,
   normalizedToolCallEnvelopeSchema,
+  workspaceWriteArgsSchema,
   workspaceWriteProposalSchema,
   type AIProviderKind,
   type AIThread,
@@ -41,6 +42,12 @@ export interface EnvelopeProposalInput {
   stepId: string
 }
 
+/** Injected capability: inspect an existing file in the workspace to retrieve its baseline hash. */
+export interface WorkspaceBaselineLookup {
+  /** Return the SHA-256 hash of the file at relativePath, or null if absent / non-file. */
+  inspectBaseline(relativePath: string): Promise<string | null>
+}
+
 interface StoredProposal extends WorkspaceWriteProposal {
   workspaceRoot: string
   content: string
@@ -52,15 +59,6 @@ const isPrivateEnvironmentPath = (relativePath: string): boolean => relativePath
 const contentHash = (content: string): string => createHash('sha256').update(content).digest('hex')
 const isSha256 = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value)
 
-import { z } from 'zod'
-
-const maxWorkspaceWriteContentChars = 10_000_000
-const workspaceWriteArgsSchema = z.object({
-  relativePath: z.string().min(1).max(4_096).refine((v) => !v.includes('\0'), 'Caminho inválido.'),
-  content: z.string().max(maxWorkspaceWriteContentChars),
-  operation: z.enum(['CREATE', 'REPLACE'])
-}).strict()
-
 export class WorkspaceWriteProposalService {
   private readonly proposals = new Map<string, StoredProposal>()
   private readonly slots = new Map<string, string>()
@@ -69,7 +67,8 @@ export class WorkspaceWriteProposalService {
   public constructor(
     private readonly planning: PlanApprovalService,
     private readonly history: ProposalHistory,
-    private readonly getWorkspaceRoot: () => string
+    private readonly getWorkspaceRoot: () => string,
+    private readonly baselineLookup: WorkspaceBaselineLookup
   ) {}
 
   /** Create a proposal from a provider-neutral envelope. */
@@ -221,15 +220,7 @@ export class WorkspaceWriteProposalService {
       const { execution } = await this.planning.read(executionId)
       const root = this.getWorkspaceRoot()
       if (execution.workspaceRoot !== root) return null
-      const { createHash } = await import('node:crypto')
-      const { readFile } = await import('node:fs/promises')
-      const pathMod = await import('node:path')
-      const absolute = pathMod.default.resolve(root, relativePath)
-      const { stat } = await import('node:fs/promises')
-      const info = await stat(absolute).catch(() => undefined)
-      if (info === undefined || !info.isFile()) return null
-      const content = await readFile(absolute)
-      return createHash('sha256').update(content).digest('hex')
+      return await this.baselineLookup.inspectBaseline(relativePath)
     } catch {
       return null
     }

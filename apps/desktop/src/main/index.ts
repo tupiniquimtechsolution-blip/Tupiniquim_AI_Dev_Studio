@@ -18,6 +18,7 @@ import {
   executionIdInputSchema,
   executionWorkspaceWriteInputSchema,
   executionWorkspaceWriteProposalIdInputSchema,
+  proposalStatusInputSchema,
   listFilesInputSchema,
   ok,
   readFileInputSchema,
@@ -69,7 +70,7 @@ const git = new GitAdapter(() => workspace.getRoot())
 const audit = new AuditLog(dataRoot)
 const database = new LocalDatabase(dataRoot)
 const planning = new PlanApprovalService(database)
-const writeProposals = new WorkspaceWriteProposalService(planning, database, () => workspace.getRoot())
+const writeProposals = new WorkspaceWriteProposalService(planning, database, () => workspace.getRoot(), { inspectBaseline: async (relativePath) => await workspace.inspectWriteTarget(relativePath).then((info) => info.hash) })
 const research = new HttpResearchProvider(dataRoot)
 const technology = new TechnologyResolutionEngine()
 const promptArchitect = new PromptArchitect(database)
@@ -104,24 +105,13 @@ const ollamaAgent = new OllamaAdapter({
     try {
       if (selectedAgentProvider !== 'ollama') throw new Error('O turno Ollama não é mais o provider autorizado.')
       const { envelope, executionId, stepId } = call
-      const envelopeArgs = envelope.arguments as Record<string, string>
-      const relativePath = await workspace.validateWriteTarget(envelopeArgs.relativePath ?? '')
-      const targetBaseline = await workspace.inspectWriteTarget(relativePath)
-      const operation = envelopeArgs.operation ?? ''
-      if (operation === 'CREATE' && targetBaseline.exists) throw new Error('CREATE exige que o alvo não exista no momento da proposta.')
-      if (operation === 'REPLACE' && !targetBaseline.exists) throw new Error('REPLACE exige um arquivo existente no momento da proposta.')
-      const proposal = workspaceWriteProposalSchema.parse(await writeProposals.propose({
-        provider: envelope.provider,
-        threadId: envelope.threadId,
-        turnId: envelope.turnId,
-        toolCallId: envelope.callId,
+      // Provider-neutral canonical path: the proposal service validates
+      // business arguments via workspaceWriteArgsSchema and inspects
+      // the baseline via the injected WorkspaceBaselineLookup.
+      const proposal = workspaceWriteProposalSchema.parse(await writeProposals.proposeFromEnvelope({
+        envelope,
         executionId,
-        stepId,
-        tool: 'workspace.write',
-        relativePath,
-        content: envelopeArgs.content ?? '',
-        operation: operation as 'CREATE' | 'REPLACE',
-        targetBaselineHash: targetBaseline.hash
+        stepId
       }))
       proposalId = proposal.id
       await audit.write({ requestId: envelope.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', target: redactContextMetadata(proposal.effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
@@ -455,6 +445,7 @@ const registerIpc = (): void => {
     return execution
   })
   register(ipcChannels.executionEvents, executionIdInputSchema, 'execution.events', ({ executionId }) => planning.events(executionId))
+  register(ipcChannels.agentProposalStatus, proposalStatusInputSchema, 'agent.proposal-status', ({ proposalId }) => writeProposals.lookupStatus(proposalId))
   register(ipcChannels.researchSearch, researchSearchInputSchema, 'research.search', ({ query, maxResults }) => research.search(query, maxResults))
   register(ipcChannels.researchCollect, researchCollectInputSchema, 'research.collect', ({ url }) => research.collect(url))
   register(ipcChannels.technologyResolve, technologyResolveInputSchema, 'technology.resolve', ({ requirements, platforms, availableTools }) => technology.resolve(requirements, platforms, availableTools))
