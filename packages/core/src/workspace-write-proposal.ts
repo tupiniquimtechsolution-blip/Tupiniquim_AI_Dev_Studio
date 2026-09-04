@@ -42,10 +42,10 @@ export interface EnvelopeProposalInput {
   stepId: string
 }
 
-/** Injected capability: inspect an existing file in the workspace to retrieve its baseline hash. */
+/** Injected capability: inspect a file in the workspace for baseline information. */
 export interface WorkspaceBaselineLookup {
-  /** Return the SHA-256 hash of the file at relativePath, or null if absent / non-file. */
-  inspectBaseline(relativePath: string): Promise<string | null>
+  /** Return the existence and hash of the file at relativePath. */
+  inspectBaseline(relativePath: string): Promise<{ exists: boolean; hash: string | null }>
 }
 
 interface StoredProposal extends WorkspaceWriteProposal {
@@ -76,7 +76,14 @@ export class WorkspaceWriteProposalService {
     const envelope = normalizedToolCallEnvelopeSchema.parse(input.envelope)
     if (envelope.tool !== 'workspace.write') throw new Error('Somente workspace.write é suportado por propostas.')
     const args = workspaceWriteArgsSchema.parse(envelope.arguments)
-    const baselineHash = args.operation === 'CREATE' ? null : (await this.lookupTargetBaseline(input.executionId, args.relativePath))
+    const baseline = await this.lookupTargetBaseline(input.executionId, args.relativePath)
+    if (args.operation === 'CREATE' && baseline.exists) {
+      throw new Error('CREATE exige que o alvo não exista no momento da proposta.')
+    }
+    if (args.operation === 'REPLACE' && !baseline.exists) {
+      throw new Error('REPLACE exige um arquivo existente no momento da proposta.')
+    }
+    const baselineHash = args.operation === 'CREATE' ? null : baseline.hash
     return this.propose({
       executionId: input.executionId,
       stepId: input.stepId,
@@ -167,23 +174,8 @@ export class WorkspaceWriteProposalService {
   public async consume(id: string): Promise<{ proposal: WorkspaceWriteProposal; content: string }> {
     const proposal = this.proposals.get(id)
     if (proposal === undefined) throw new Error('Proposta não está disponível; ela pode ter expirado ou sido substituída.')
-    const [{ execution, plan }, thread, turns] = await Promise.all([
-      this.planning.read(proposal.executionId),
-      this.history.getAIThread(proposal.threadId),
-      this.history.listAITurns(proposal.threadId)
-    ])
-    const step = plan.steps.find((candidate) => candidate.id === proposal.stepId)
-    const current = step?.effects.find((effect) => effect.id === proposal.effect.id)
-    const manifestMatches = current !== undefined
-      && manifestEffectsHash([current]) === manifestEffectsHash([proposal.effect])
-      && contentHash(proposal.content) === proposal.effect.payloadHash
-    const sourceMatches = execution.threadId === proposal.threadId
-      && thread?.id === proposal.threadId
-      && thread.provider === proposal.provider
-      && thread.workspaceRoot === execution.workspaceRoot
-      && turns.some((turn) => turn.id === proposal.turnId && turn.threadId === proposal.threadId && turn.mode === 'PLAN')
-      && this.toolCalls.has(toolCallKey(proposal))
-    if (execution.workspaceRoot !== this.getWorkspaceRoot() || !sourceMatches || !manifestMatches) {
+    const validity = await this.validateProposalState(proposal)
+    if (!validity.valid) {
       this.invalidate(id)
       throw new Error('Proposta obsoleta para o plano ou workspace atual.')
     }
@@ -195,17 +187,43 @@ export class WorkspaceWriteProposalService {
     const proposal = this.proposals.get(id)
     if (proposal === undefined) return 'EXPIRED'
     try {
-      const [{ execution }, thread] = await Promise.all([
-        this.planning.read(proposal.executionId),
-        this.history.getAIThread(proposal.threadId)
-      ])
-      if (execution.workspaceRoot !== this.getWorkspaceRoot()) return 'EXPIRED'
-      if (thread?.id !== proposal.threadId) return 'EXPIRED'
-      if (thread.provider !== proposal.provider) return 'EXPIRED'
+      const validity = await this.validateProposalState(proposal)
+      if (!validity.valid) {
+        this.invalidate(id)
+        return 'EXPIRED'
+      }
       return 'PENDING_REVIEW'
     } catch {
       return 'EXPIRED'
     }
+  }
+
+  /** Shared causal validation used by both lookupStatus() and consume(). */
+  private async validateProposalState(proposal: StoredProposal): Promise<{ valid: boolean; reason?: string }> {
+    const [{ execution, plan }, thread, turns] = await Promise.all([
+      this.planning.read(proposal.executionId),
+      this.history.getAIThread(proposal.threadId),
+      this.history.listAITurns(proposal.threadId)
+    ])
+    // Workspace drift
+    if (execution.workspaceRoot !== this.getWorkspaceRoot()) return { valid: false, reason: 'workspace_drift' }
+    // Slot must still be current (proposal was superseded)
+    const slot = proposalSlot(proposal.executionId, proposal.stepId)
+    if (this.slots.get(slot) !== proposal.id) return { valid: false, reason: 'superseded' }
+    // Thread/provider drift
+    if (thread?.id !== proposal.threadId || thread.provider !== proposal.provider) return { valid: false, reason: 'thread_drift' }
+    // Turn must exist in PLAN mode
+    if (!turns.some((turn) => turn.id === proposal.turnId && turn.threadId === proposal.threadId && turn.mode === 'PLAN')) return { valid: false, reason: 'turn_drift' }
+    // Tool call must still be tracked
+    if (!this.toolCalls.has(toolCallKey(proposal))) return { valid: false, reason: 'toolcall_drift' }
+    // Manifest must still match
+    const step = plan.steps.find((candidate) => candidate.id === proposal.stepId)
+    const current = step?.effects.find((effect) => effect.id === proposal.effect.id)
+    if (current === undefined) return { valid: false, reason: 'manifest_gone' }
+    if (manifestEffectsHash([current]) !== manifestEffectsHash([proposal.effect])) return { valid: false, reason: 'manifest_drift' }
+    // Payload integrity
+    if (contentHash(proposal.content) !== proposal.effect.payloadHash) return { valid: false, reason: 'payload_drift' }
+    return { valid: true }
   }
 
   public invalidate(id: string): void {
@@ -215,14 +233,14 @@ export class WorkspaceWriteProposalService {
     if (this.slots.get(proposalSlot(proposal.executionId, proposal.stepId)) === id) this.slots.delete(proposalSlot(proposal.executionId, proposal.stepId))
   }
 
-  private async lookupTargetBaseline(executionId: string, relativePath: string): Promise<string | null> {
+  private async lookupTargetBaseline(executionId: string, relativePath: string): Promise<{ exists: boolean; hash: string | null }> {
     try {
       const { execution } = await this.planning.read(executionId)
       const root = this.getWorkspaceRoot()
-      if (execution.workspaceRoot !== root) return null
+      if (execution.workspaceRoot !== root) return { exists: false, hash: null }
       return await this.baselineLookup.inspectBaseline(relativePath)
     } catch {
-      return null
+      return { exists: false, hash: null }
     }
   }
 

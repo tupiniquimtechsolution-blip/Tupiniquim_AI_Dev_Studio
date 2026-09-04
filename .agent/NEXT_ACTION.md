@@ -1,6 +1,6 @@
 # Próxima ação
 
-1. Integrar a emissão de proposta ao protocolo de ferramentas do agente no processo privilegiado, para que o conteúdo não tenha origem no renderer e continue não persistido.
-2. Exibir no painel a proveniência thread/turn e o estado da proposta, mostrando somente o manifesto revisável e sem conteúdo bruto.
-3. Estender o browser QA para a jornada de proposta do agente até a aprovação e a materialização; manter estados explícitos para proposta expirada ou reiniciada.
-4. Continuar Wave 1 com memória/contexto e browser QA. Terminal e Git mutável seguem fora do executor.
+1. **Wave 15**: Terminal controlado → tool loop → Git controlado → autonomous development loop.
+2. Executar E2E de expiração na máquina Windows real (BLOCKED neste ambiente Linux).
+3. After PR #12 merge: integrar validação de workspace content/bytes no fluxo de materialização.
+4. Expandir testes de segurança para incluir path traversal via proposal arguments.

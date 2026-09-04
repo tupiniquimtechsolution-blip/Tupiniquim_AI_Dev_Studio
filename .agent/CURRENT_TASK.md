@@ -2,14 +2,30 @@
 
 ## Objetivo
 
-Prosseguir a Wave 1 com runtime de agente e contexto seguro após a entrega do provider local Ollama.
+Fechar Wave 14: consolidar protocolo de tool calling provider-neutral, garantir proveniência causal completa, adicionar EXPIRED como status explícito, e refazer browser QA para cenários de falha/expiração.
 
 ## Estado
 
-O checkpoint wave-13 entrega o ciclo de consumo de proposta de `workspace.write`: o renderer entrega somente o id após a aprovação e o payload permanece no processo principal. Terminal e Git mutável seguem indisponíveis para o executor.
+A branch `freebuff/wave-14-proposal-tool-provenance` implementa:
 
-## Critérios de aceite da próxima unidade
+1. `NormalizedToolCallEnvelope` — contrato sem acoplamento ao Ollama
+2. `workspaceWriteArgsSchema` — validação compartilhada de business arguments
+3. `WorkspaceBaselineLookup` — injeção de dependência para inspeção de baseline
+4. `proposeFromEnvelope()` — caminho canônico provider-neutral
+5. `validateProposalState()` — validação causal unificada para lookupStatus e consume
+6. `EXPIRED` status — IPC, UI tombstone, remoção de payload
+7. E2E de expiração — escrito, BLOCKED neste ambiente
+8. 6 novos testes unit/integration — CREATE exists, REPLACE missing, EXPIRED substitution, workspace drift, thread drift, purge
 
-1. A origem da proposta é integrada ao protocolo de ferramenta do agente, sem encaminhar payload pelo renderer ou persistir conteúdo bruto.
-2. A UI identifica thread/turn de origem e mostra somente o manifesto proposto para revisão humana antes da aprovação.
-3. Todo efeito real continua passando por PolicyEngine e AuditLog, sem simulação de terminal ou Git.
+CI remoto #14 está VERDE.
+
+## Critérios de aceite desta unidade
+
+1. ✅ O runtime não depende do formato bruto do Ollama para validar propostas
+2. ✅ CREATE rejeita alvo existente; REPLACE rejeita alvo inexistente
+3. ✅ lookupStatus usa a mesma validação causal de consume
+4. ✅ Proposta substituída recebe EXPIRED via lookupProposalStatus IPC
+5. ✅ UI mostra tombstone EXPIRED com proveniência pública sem conteúdo
+6. ✅ E2E de expiração escrito e versionado
+7. ✅ Lint, typecheck, build passam
+8. ✅ Todos os testes executáveis passam

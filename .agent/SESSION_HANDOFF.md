@@ -1,34 +1,31 @@
 # SESSION HANDOFF
 
-Wave: Mestre 0 concluída; Wave 1 em andamento
-Checkpoint: checkpoint/wave-13 (consumo aprovado de propostas de escrita)
-Branch: codex/wip-waves-04-10-20260813
-Wave 0 checkpoint head: 8bab9fec6800260e7879be09a3ce6e114968cc18
+Wave: Wave 14 — Provider-neutral tool protocol + proposal provenance + expiration safety
+Checkpoint: candidato checkpoint/wave-14 (aguardando gates finais)
+Branch: freebuff/wave-14-proposal-tool-provenance
+PR: #12 (Ref #11)
 
-## Completed
+## Completed (Wave 14)
 
-- Remapeamento do mesmo projeto para F: reconciliado pelo ADR 0012; toolchain, dados e temporários permanecem em F:\CODEX.
-- AIProvider Codex consolidado com transporte controlado, persistência e retomada.
-- PolicyEngine no IPC, validação estrutural de outputs e E2E de bloqueios.
-- Gates da Wave 0 aprovados.
-- Provider Ollama local integrado ao contrato, persistência, IPC e UI; validate (17 unitários) e E2E aprovados.
-- Catálogo de contexto metadata-only integrado ao workspace, IPC, UI e providers; não persiste conteúdo bruto nem lê arquivos.
-- Execução aprovada registra baseline real de contexto e Git em Flight Recorder, sem mutação.
-- Histórico de IA recuperável via IPC e Caixa-preta; migration SQLite v4 repara tabelas de IA ausentes.
-- Manifestos de efeitos tipados e sem payload bruto vinculam aprovações ao hash canônico; mudança de alvo/efeito invalida a decisão e o renderer não pode reduzir os controles do plano.
-- `workspace.write` é a primeira materialização real: alvo e SHA-256 conferidos contra manifesto aprovado, escrita atômica, reserva única, AuditLog/Flight Recorder redigidos e E2E em fixture Git no volume operacional.
-- A leitura de execuções legadas normaliza `completedEffectIds` ausente, preservando a retomada após a atualização do schema.
-- Propostas de escrita vinculam-se a thread/turn e mantêm o payload em memória; IPC/persistência recebem somente manifesto e metadados.
-- Uma proposta aprovada é materializada por id no processo principal, após nova conferência de proveniência, workspace e manifesto integral; a escrita continua atômica, auditada e sem reenvio de conteúdo pelo renderer.
+- NormalizedToolCallEnvelope — contrato provider-neutral em contracts/ai.ts
+- workspaceWriteArgsSchema — validação compartilhada de business arguments com .strict()
+- WorkspaceBaselineLookup — injeção de dependência para inspeção de baseline segura
+- OllamaAdapter.normalizeToolCall() — traduz tool_calls Ollama → envelope normalizado
+- Adapter-level validation: workspaceWriteArgsSchema.parse() antes do callback
+- proposeFromEnvelope() — caminho canônico provider-neutral no main process
+- validateProposalState() — validação causal unificada para lookupStatus() e consume()
+- EXPIRED status — proposta substituída recebe EXPIRED via IPC lookupProposalStatus
+- Tombstone EXPIRED na UI com proveniência pública sem conteúdo
+- 6 ollama unit test regressions fixed (adapter validates args before callback)
+- E2E expiration test written (BLOCKED on Linux)
+- 6 new unit/integration tests: CREATE exists, REPLACE missing, EXPIRED substitution, workspace drift, thread drift, payload purge
 
 ## Pending
 
-- Wave 1: runtime de agente, memória/contexto e browser QA.
+- E2E execution on Windows real machine
+- Wave 15: terminal controlado → tool loop → Git controlado → autonomous development loop
 
 ## External blockers
 
 - OPENAI_API_NO_CREDITS para inferência live paga.
-
-## Exact next action
-
-Integrar a emissão da proposta ao protocolo de ferramentas do agente e exibir sua proveniência no painel, conforme NEXT_ACTION.md.
+- Persistence tests require F: drive (Windows only).

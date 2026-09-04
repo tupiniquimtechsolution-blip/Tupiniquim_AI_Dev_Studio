@@ -1,59 +1,80 @@
 # Status
 
-Atualizado em: 2026-08-20
+Atualizado em: 2026-09-04
 
 ## Estado atual
 
-- Current wave: Wave 1 do Plano Mestre — runtime local entregue; agente/contexto em andamento.
-- Current checkpoint: checkpoint/wave-13 (consumo aprovado de propostas de escrita).
-- Current branch: codex/wip-waves-04-10-20260813.
-- Wave 0 checkpoint head: 8bab9fec6800260e7879be09a3ce6e114968cc18.
-- Repositório operacional: F:\CODEX\Tupiniquim-AI-Dev-Studio.
-- Dados: F:\CODEX\Tupiniquim-AI-Dev-Studio.data.
-- Toolchain: F:\CODEX\programas.
-
-## Concluído na Wave 0
-
-- Isolamento operacional reconciliado para F: nesta máquina pelo ADR 0012, preservando o histórico das localizações anteriores.
-- Correção do início Electron ESM por fileURLToPath; a janela real abre no E2E.
-- CodexAppServerAdapter com handshake, autenticação degradável sem segredo, JSONL controlado, streaming, interrupção, encerramento e thread/resume.
-- Persistência SQLite de threads, turns (somente hash da entrada) e eventos normalizados.
-- PolicyEngine aplicado no registrador IPC; comandos absolutamente bloqueados e operações que exigem aprovação são recusados antes do adapter.
-- Respostas IPC são verificadas como dados serializáveis antes de cruzar o preload.
-- Encerramento de ConPTY aguarda a saída do processo, eliminando a corrida de limpeza.
+- Current wave: Wave 14 — Provider-neutral tool protocol + proposal provenance + expiration safety
+- Current checkpoint: candidato checkpoint/wave-14 (aguardando gates finais)
+- Current branch: freebuff/wave-14-proposal-tool-provenance
+- PR: #12 (Ref #11)
+- Repositório operacional: F:\CODEX\Tupiniquim-AI-Dev-Studio
+- Dados: F:\CODEX\Tupiniquim-AI-Dev-Studio.data
 
 ## Gates atuais
 
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-f.ps1 validate
-    powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-f.ps1 test:e2e
+    pnpm lint
+    pnpm typecheck
+    pnpm test:unit
+    pnpm test:security
+    pnpm test:integration
+    pnpm build
 
-- validate: revalidação em F: em andamento; o último checkpoint passou em lint, typecheck, 17 unitários, 15 integrações (2 opt-in ignorados), 4 testes de segurança e build na estação anterior.
-- test:e2e: PASS — Electron real, bridge preload, sandbox, política de escrita, bloqueio de git reset --hard, Ollama local, contexto, baseline, manifesto aprovado e `workspace.write` atômico.
+- lint: ✅ PASS
+- typecheck: ✅ PASS
+- build: ✅ PASS
+- unit: ✅ 37/38 (1 pre-existing F: drive failure)
+- security: ✅ 33/34 (1 pre-existing TEMP env issue)
+- integration: ✅ 11/30 (19 pre-existing F: drive failures, incluindo 6 novos testes ambientais)
 
-## Concluído na Wave 1
+## Concluído na Wave 14 (esta branch)
 
-- Adicionado OllamaAdapter local-first: somente HTTP loopback, discovery de /api/tags, seleção explícita de modelo, chat NDJSON, cancelamento e estados NOT_INSTALLED/ERROR explícitos.
-- Ollama não está instalado nesta máquina; o produto informa isso sem instalar runtime, modelos, downloads ou serviços pagos.
-- O provider é selecionável pelo renderer por IPC tipado e preload mínimo; o painel mostra modelos locais e desabilita envio até existir seleção válida.
-- Threads e turns do provider local usam a mesma persistência normalizada; a entrada fica somente como SHA-256 e eventos/modelo são redigidos antes de publicação ou reuso de contexto.
-- Contexto do workspace é um catálogo real, limitado e metadata-only (máximo de 256 entradas); ignora itens ocultos e diretórios de build/dependências, não lê conteúdo e trata nomes como dados não confiáveis.
-- Ao iniciar uma execução com aprovações válidas, a aplicação coleta e persiste evidências reais e não mutáveis do catálogo do workspace e do status Git; a UI as apresenta no fluxo do plano.
-- GitAdapter configura safe.directory somente no processo Git do workspace atual, sem alterar configurações globais.
-- Histórico de thread, turns e eventos é recuperável por IPC tipado e aparece na Caixa-preta com contagens e estados; a UI não reexibe entrada bruta.
-- Migração SQLite v4 corrige de forma idempotente bancos v3 que não possuíam tabelas de IA, sem remoção de dados.
-- Cada passo mutável agora exige um manifesto tipado e sem payload bruto (capacidade, operação, alvo, risco e hash). A aprovação é vinculada ao hash canônico do manifesto, e qualquer mudança de alvo ou efeito torna a decisão anterior inválida.
-- A atualização de plano não pode alterar a estrutura, reduzir risco, remover exigência de aprovação, mudar estado de passo ou alterar manifestos após o início da execução. A UI exibe alvo, operação e prefixo do hash antes de habilitar os botões de decisão.
-- A primeira ação mutável real é `workspace.write` por um canal de execução próprio. Ela reserva um efeito aprovado uma única vez, confere capacidade/operação, alvo exato e SHA-256 do conteúdo, reavalia a PolicyEngine, usa a escrita atômica do adapter e registra somente alvo redigido e prefixo do hash no AuditLog/Flight Recorder.
-- O executor recusa `.env*`, `DELETE`, terminal e Git mutável; uma falha de alvo/hash libera a reserva sem escrever, e um efeito concluído não pode ser repetido.
-- Execuções SQLite legadas, criadas antes de `completedEffectIds`, são normalizadas pelo schema na leitura e podem retomar sem erro de propriedade ausente.
-- O runtime pode propor `workspace.write` com vínculo obrigatório a thread/turn existentes, persistindo somente o manifesto; o conteúdo permanece no processo principal, é substituído por proposta mais nova para o mesmo passo e some no reinício.
-- O consumo da proposta usa somente seu id no renderer, relê thread/turn, workspace e manifesto integral antes de reservar o efeito aprovado. A escrita recebe o payload exclusivamente no processo principal, reavalia a política, mantém auditoria/evidência redigidas e invalida a proposta após êxito ou incoerência.
+### Provider-neutral tool call protocol
+- `NormalizedToolCallEnvelope` contrato em contracts/ai.ts — envelope sem acoplamento ao formato Ollama
+- `workspaceWriteArgsSchema` schema compartilhado para business arguments (relativePath, content, operation) com `.strict()`
+- `OllamaAdapter.normalizeToolCall()` traduz tool_calls Ollama → envelope normalizado
+- Adapter valida business arguments via `workspaceWriteArgsSchema.parse()` antes do callback
+
+### Proveniência causal completa
+- Proposal provenance: provider, thread, turn, tool call, execution, step, manifest, target, operation, hash, baseline
+- `AgentProposalEffectSourceSchema` vincula proposal → manifest → manifest effects
+- Replay protegido por toolCallId dedup
+
+### EXPIRED proposal status
+- `proposalStatusValues` inclui EXPIRED no contrato
+- `lookupStatus()` usa `validateProposalState()` — mesma validação causal de `consume()`
+- Validação causal unificada: workspace drift, slot superseded, thread drift, turn drift, toolcall drift, manifest drift, payload drift
+- Proposta expirada é removida da memória e não escreve arquivo
+
+### Segurança removida do core
+- `WorkspaceBaselineLookup` interface injetada — core não importa fs
+- `inspectWriteTarget()` do adapter usa path security (resolveLexicalPath + assertRealPathInside)
+- CREATE valida que alvo não existe; REPLACE valida que alvo existe com hash válido
+
+### Canonical propose path
+- Main process usa `proposeFromEnvelope()` em vez de `propose()` legado
+- Canvas proposal → envelope → proposal service → manifest → approval → materialization
+
+### EXPIRED na UI
+- Renderer usa `ProposalStatus` de contracts (não tipo local duplicado)
+- IPC `lookupProposalStatus` delega ao processo privilegiado
+- Propostas substituídas mostram tombstone EXPIRED com proveniência pública
+- Conteúdo privado nunca cruza IPC
+
+### Ollama unit tests
+- 24/24 passam (6 anteriormente quebradas agora corrigidas)
+
+### E2E test
+- Teste de expiração escrito em tests/e2e/desktop.spec.ts
+- BLOCKED neste ambiente (Linux, sem F:, sem display Electron)
+- Executável na máquina Windows real
 
 ## Próximo
 
-Integrar a origem de propostas ao protocolo de ferramentas do agente e exibir sua proveniência no painel sem expor conteúdo; continuar o browser QA. Terminal e Git mutável permanecem indisponíveis.
+Wave 15: terminal controlado → tool loop → Git controlado → autonomous development loop.
 
 ## Bloqueios externos
 
 - OPENAI_API_NO_CREDITS bloqueia somente inferência live paga; não invalida o transporte controlado.
 - Provedores visuais pagos permanecem NOT_CONFIGURED.
+- Persistence/security/terminal tests requerem F: drive (Windows) — BLOCKED neste ambiente Linux.

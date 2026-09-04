@@ -319,3 +319,146 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
     }
   }
 })
+
+test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', async () => {
+  const projectRoot = process.cwd()
+  const proposalTargetA = 'proposta-a-expirada.txt'
+  const proposalContentA = 'E2E_PRIVATE_CONTENT_A\n'
+  const proposalTargetB = 'proposta-b-atual.txt'
+  const proposalContentB = 'E2E_PRIVATE_CONTENT_B\n'
+  let requestCount = 0
+  const chatRequests: unknown[] = []
+  const server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/api/tags') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+      response.end(JSON.stringify({ models: [{ name: ollamaModel, model: ollamaModel, modified_at: '2026-08-20T12:00:00.000Z', size: 1_024 }] }))
+      return
+    }
+    if (request.method === 'POST' && request.url === '/api/chat') {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.once('end', () => {
+        try {
+          chatRequests.push(JSON.parse(body))
+          requestCount += 1
+          const target = requestCount <= 1 ? proposalTargetA : proposalTargetB
+          const content = requestCount <= 1 ? proposalContentA : proposalContentB
+          response.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8' })
+          response.end(`${JSON.stringify({
+            message: {
+              content: '',
+              tool_calls: [{
+                function: {
+                  name: 'tupiniquim_workspace_write_proposal',
+                  arguments: { relativePath: target, content, operation: 'CREATE' }
+                }
+              }]
+            },
+            done: true
+          })}\n`)
+        } catch {
+          response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+          response.end(JSON.stringify({ error: 'invalid request' }))
+        }
+      })
+      return
+    }
+    response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
+    response.end(JSON.stringify({ error: 'not found' }))
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('Mock não recebeu porta.')
+  const mockUrl = `http://127.0.0.1:${String(address.port)}`
+  let application: Awaited<ReturnType<typeof electron.launch>> | null = null
+  let workspaceRoot = ''
+  try {
+    application = await electron.launch({
+      args: ['.'],
+      cwd: projectRoot,
+      timeout: 180_000,
+      env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', TUPINIQUIM_OLLAMA_BASE_URL: mockUrl }
+    })
+    const temp = process.env.TEMP
+    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') {
+      console.log('E2E: BLOCKED — Linux sandbox / no F: / no Electron display')
+      return
+    }
+    workspaceRoot = await mkdtemp(path.join(temp, 'tupiniquim-e2e-expire-'))
+    await writeFile(path.join(workspaceRoot, 'README.md'), '# E2E Expiration\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot })
+    const page = await application.firstWindow({ timeout: 180_000 })
+    await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
+    await application.evaluate(({ dialog }, root) => {
+      Object.defineProperty(dialog, 'showOpenDialog', {
+        configurable: true,
+        value: () => Promise.resolve({ canceled: false, filePaths: [root] })
+      })
+      Object.defineProperty(dialog, 'showMessageBox', {
+        configurable: true,
+        value: () => Promise.resolve({ response: 0, checkboxChecked: false })
+      })
+    }, workspaceRoot)
+    await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
+    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await page.getByLabel('Provedor de IA').selectOption('ollama')
+    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
+    await expect(page.locator('.availability')).toHaveText('READY')
+
+    // First proposal A
+    await page.locator('.mode-switch').getByRole('button', { name: 'Plan', exact: true }).click()
+    await page.getByLabel('Mensagem ao agente').fill('Proposta A.')
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    const provenanceA = page.getByRole('region', { name: 'Proveniência da proposta de escrita' })
+    await expect(provenanceA).toBeVisible({ timeout: 30_000 })
+    await expect(provenanceA.locator('header span')).toHaveText('PENDING_REVIEW')
+    const proposalIdA = await provenanceA.locator('dt').filter({ hasText: /^Proposal$/u }).locator('..').locator('dd').textContent()
+    if (proposalIdA === null) throw new Error('Proposal A sem ID.')
+
+    // Second proposal B replaces A
+    await page.getByLabel('Mensagem ao agente').fill('Proposta B.')
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    await expect(provenanceA.locator('header span')).toHaveText('PENDING_REVIEW', { timeout: 30_000 })
+
+    // Verify A is EXPIRED via IPC
+    const statusA = await page.evaluate(async (id) => await window.studio.agent.lookupProposalStatus(id), proposalIdA)
+    expect(statusA).toMatchObject({ ok: true, value: 'EXPIRED' })
+
+    // Apply A must fail
+    const applyA = await page.evaluate(async (id) => await window.studio.planning.applyProposedWorkspaceWrite({ proposalId: id }), proposalIdA)
+    expect(applyA).toMatchObject({ ok: false })
+
+    // File from A must not exist
+    await expect(readFile(path.join(workspaceRoot, proposalTargetA), 'utf8')).rejects.toThrow()
+
+    // B remains valid
+    const provenanceB = page.getByRole('region', { name: 'Proveniência da proposta de escrita' }).last()
+    await expect(provenanceB.locator('header span')).toHaveText('PENDING_REVIEW')
+
+    // Private content never appears in DOM
+    expect(await page.content()).not.toContain('E2E_PRIVATE_CONTENT_A')
+    expect(await page.content()).not.toContain('E2E_PRIVATE_CONTENT_B')
+
+    // No private content in audit log
+    const dataRoot = `${projectRoot}.data`
+    const auditLog = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
+    expect(auditLog).not.toContain('E2E_PRIVATE_CONTENT_A')
+    expect(auditLog).not.toContain('E2E_PRIVATE_CONTENT_B')
+
+    await page.screenshot({ path: path.join(projectRoot, 'test-results', 'expiration-flow.png'), fullPage: true })
+  } finally {
+    try {
+      if (application !== null) await application.close()
+    } finally {
+      try {
+        if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
+      } finally {
+        await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
+      }
+    }
+  }
+})

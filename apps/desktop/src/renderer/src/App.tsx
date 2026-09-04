@@ -47,7 +47,7 @@ export const App = (): React.JSX.Element => {
   const [planned, setPlanned] = useState<PlannedExecution | null>(null)
   const [proposal, setProposal] = useState<WorkspaceWriteProposal | null>(null)
   const [proposalStatus, setProposalStatus] = useState<ProposalStatus | null>(null)
-  const previousProposalRef = useRef<WorkspaceWriteProposal | null>(null)
+  const [expiredProposals, setExpiredProposals] = useState<Array<{ proposal: WorkspaceWriteProposal; status: ProposalStatus }>>([])
   const [profile, setProfile] = useState<UIProfile | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const profileRef = useRef<UIProfile | null>(null)
@@ -59,12 +59,15 @@ export const App = (): React.JSX.Element => {
     void window.studio.settings.get().then((result) => { if (result.ok) { profileRef.current = result.value; setProfile(result.value) } })
     const removeAgentListener = window.studio.agent.onEvent((event) => handleAgentEvent(event, setAIStatus, setConversation, setSending))
     const removeProposalListener = window.studio.agent.onWorkspaceWriteProposal((incoming) => {
-      const prev = previousProposalRef.current
-      if (prev !== null && prev.executionId === incoming.executionId && prev.stepId === incoming.stepId && prev.id !== incoming.id) {
-        setProposalStatus('EXPIRED')
-      }
-      previousProposalRef.current = incoming
-      setProposal(incoming)
+      setProposal((current) => {
+        if (current !== null && current.executionId === incoming.executionId && current.stepId === incoming.stepId && current.id !== incoming.id) {
+          void window.studio.agent.lookupProposalStatus(current.id).then((result) => {
+            const status: ProposalStatus = result.ok ? result.value : 'EXPIRED'
+            setExpiredProposals((prev) => [...prev, { proposal: current, status }])
+          })
+        }
+        return incoming
+      })
       setProposalStatus('PENDING_REVIEW')
       setConversation((current) => [...current, { id: incoming.id, role: 'assistant', text: `PROPOSTA DISPONÍVEL PARA REVISÃO\n${incoming.effect.operation} ${incoming.effect.target}\nHash ${incoming.effect.payloadHash.slice(0, 12)}…`, turnId: incoming.turnId, complete: true }])
       void window.studio.planning.read({ executionId: incoming.executionId }).then((result) => { if (result.ok) setPlanned(result.value) })
@@ -364,6 +367,7 @@ export const App = (): React.JSX.Element => {
           <section className="agent-conversation">
             <div className="agent-message"><span className="message-label">SISTEMA</span><p>{aiStatus?.provider === 'ollama' ? 'Ollama usa somente o loopback local; modelos são escolhidos explicitamente e não há downloads automáticos.' : 'Codex usa stdio JSONL, dados em F:\\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.'}</p></div>
             {conversation.map((message) => <div key={message.id} className={`agent-message ${message.role}`}><span className="message-label">{message.role === 'user' ? 'VOCÊ' : message.role === 'error' ? 'ERRO' : aiStatus?.provider === 'ollama' ? 'OLLAMA' : 'CODEX'}</span><p>{message.text}{!message.complete && <span className="stream-caret">▋</span>}</p></div>)}
+            {expiredProposals.map((item) => <ProposalProvenance key={item.proposal.id} proposal={item.proposal} status={item.status} expired />)}
             {proposal !== null && <ProposalProvenance proposal={proposal} status={proposalStatus ?? 'PENDING_REVIEW'} />}
             {planned !== null ? (
               <div className="live-plan-card">
@@ -402,8 +406,8 @@ export const App = (): React.JSX.Element => {
 
 const DeckEmpty = ({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }): React.JSX.Element => <div className="deck-empty"><span>{icon}</span><div><strong>{title}</strong><p>{detail}</p></div></div>
 
-const ProposalProvenance = ({ proposal, status }: { proposal: WorkspaceWriteProposal; status: ProposalStatus }): React.JSX.Element => (
-  <section className="proposal-provenance" aria-label="Proveniência da proposta de escrita">
+const ProposalProvenance = ({ proposal, status, expired }: { proposal: WorkspaceWriteProposal; status: ProposalStatus; expired?: boolean }): React.JSX.Element => (
+  <section className={`proposal-provenance${expired === true ? ' expired' : ''}`} aria-label="Proveniência da proposta de escrita">
     <header><strong>workspace.write</strong><span>{status}</span></header>
     <dl>
       <div><dt>Provider</dt><dd>{proposal.provider}</dd></div>
