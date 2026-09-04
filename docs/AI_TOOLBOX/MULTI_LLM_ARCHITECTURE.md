@@ -21,7 +21,7 @@ O repositório central `Tupiniquim_AI_Dev_Studio` mantém as políticas corporat
 
 ## Princípio: modelo != agente
 
-Uma LLM não precisa conhecer diretamente o filesystem ou o GitHub. Claude, Qwen, Kimi, DeepSeek, Gemini, GPT e Grok podem ser o modelo por trás de diferentes agentes/harnesses. O harness é responsável por ler `AGENTS.md`, skills, MCPs, terminal e conectores.
+Claude, Qwen, Kimi, DeepSeek, Gemini, GPT e Grok podem ser modelos por trás de diferentes agentes/harnesses. O harness é responsável por ler arquivos, skills, MCPs, terminal e conectores.
 
 Assim:
 - trocar de modelo não deve trocar a fonte de verdade;
@@ -30,28 +30,60 @@ Assim:
 
 ## Contrato universal
 
-`AGENTS.md` é a primeira fonte persistente por projeto. Ele deve preservar regras específicas preexistentes. A Tupiniquim Toolbox é acrescentada sem apagar instruções de arquitetura, segurança, caminhos ou planejamento já existentes.
+`AGENTS.md` é a primeira fonte persistente por projeto. Regras específicas preexistentes continuam prioritárias. A Tupiniquim Toolbox é acrescentada sem apagar arquitetura, segurança, caminhos, planejamento ou gates já existentes.
 
 ## Skill universal
 
-`.agents/skills/tupiniquim-toolbox/SKILL.md` contém o comportamento reutilizável. Skills específicas externas continuam opcionais e são escolhidas conforme o problema.
+`.agents/skills/tupiniquim-toolbox/SKILL.md` contém o comportamento reutilizável. Skills externas continuam opcionais e são escolhidas conforme o problema.
 
-## Adaptadores
+## Compatibilidade verificada em 2026-09-04
 
-### Claude
-`.claude/CLAUDE.md` aponta para `AGENTS.md` e para a skill universal. A cópia em `.claude/skills/` pode existir por compatibilidade, mas não é a fonte canônica.
+### Claude Code
 
-### Qwen
-`QWEN.md` é fino: manda ler `AGENTS.md` e a skill universal. Nenhuma regra corporativa deve existir apenas no Qwen.
+Claude usa `.claude/CLAUDE.md` como adaptador e mantém `.claude/skills/tupiniquim-toolbox/` apenas como shim de compatibilidade. A lógica real fica em `.agents/skills/`.
 
-### Gemini
-`GEMINI.md` faz o mesmo para Gemini CLI/harnesses compatíveis.
+### Qwen Code
 
-### Kimi / Codex / Grok / Freebuff
-Quando o harness já respeita `AGENTS.md` ou `.agents/skills/`, não crie arquivo duplicado. Quando não respeitar, configure um adaptador local que aponte para os arquivos canônicos.
+Qwen lê `AGENTS.md` do repositório, além de `QWEN.md`. Skills pessoais ficam em `~/.qwen/skills/` e skills de projeto em `.qwen/skills/`. Como o contrato já está em `AGENTS.md`, não é necessário duplicar regras. O script corporativo pode espelhar a skill universal para `~/.qwen/skills/tupiniquim-toolbox/`.
+
+### Gemini CLI
+
+`GEMINI.md` importa `AGENTS.md`. Gemini reconhece `.agents/skills/` no workspace e `~/.agents/skills/` no escopo do usuário como aliases interoperáveis de skills.
+
+### Kimi Code CLI
+
+Kimi descobre skills em `.agents/skills/` no projeto e, no usuário, em `~/.agents/skills/` ou `~/.config/agents/skills/`, além de diretórios próprios/compatíveis. Portanto a skill universal é consumível sem cópia específica por projeto.
+
+### Grok Build
+
+Grok lê a família `AGENTS.md` e também skills em `~/.agents/skills/`. Ele mantém compatibilidade adicional com recursos do Claude Code, mas a Tupiniquim usa `AGENTS.md` + `.agents/skills/` como caminho principal.
+
+### Freebuff
+
+Freebuff/Codebuff descobre `AGENTS.md` como arquivo de conhecimento e carrega skills globais de `~/.agents/skills/` e de projeto em `.agents/skills/`.
+
+### Codex / ChatGPT coding
+
+Codex usa `AGENTS.md` como instrução de projeto. Skills podem existir em superfícies OpenAI, mas disponibilidade/instalação varia por produto e plano; por isso o contrato obrigatório continua no repositório, em `AGENTS.md`.
 
 ### DeepSeek
-DeepSeek é tratado principalmente como modelo. Se estiver sendo usado por Qwen Code, Freebuff, OpenHands, Cline ou outro agente, esse harness carrega o contrato Tupiniquim.
+
+DeepSeek é tratado como camada de modelo. Se executado por Qwen Code, Freebuff, OpenHands, Cline ou outro harness, esse harness deve carregar o contrato Tupiniquim.
+
+## Instalação global da skill corporativa
+
+Execute:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\sync-ai-toolbox.ps1 -InstallMultiLLMToolbox
+```
+
+O script mantém a fonte canônica no repositório e espelha a skill para:
+- `~/.agents/skills/tupiniquim-toolbox/` — Gemini, Kimi, Grok, Freebuff e outros compatíveis;
+- `~/.qwen/skills/tupiniquim-toolbox/` — Qwen Code;
+- `~/.claude/skills/tupiniquim-toolbox/` — Claude Code.
+
+Isso não cria um `AGENTS.md` global, para evitar aplicar regras corporativas por acidente em projetos pessoais ou de terceiros. Nos projetos Tupiniquim, o `AGENTS.md` versionado é o contrato obrigatório.
 
 ## Roteamento de ferramentas
 
@@ -75,3 +107,4 @@ DeepSeek é tratado principalmente como modelo. Se estiver sendo usado por Qwen 
 3. Se uma ferramenta exigir formato próprio, gerar esse formato a partir da fonte canônica.
 4. Mudanças de segurança entram primeiro na baseline central e depois são propagadas.
 5. Regras específicas de um projeto permanecem no próprio `AGENTS.md`, acima da camada corporativa.
+6. Mirrors globais da skill são artefatos gerados e podem ser sobrescritos pelo script de sincronização.
