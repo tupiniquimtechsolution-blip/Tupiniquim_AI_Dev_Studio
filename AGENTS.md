@@ -42,6 +42,7 @@ Consulte quando relevante:
 - `docs/AI_TOOLBOX/AGENT_ECOSYSTEM.md`
 - `docs/AI_TOOLBOX/SKILLS_SH_TOP500.md`
 - `docs/AI_TOOLBOX/GEMINI_VIDEO_PRESETS.md`
+- `docs/AI_TOOLBOX/GOOGLE_SKILLS.md`
 - `.agents/skills/tupiniquim-toolbox/SKILL.md`
 
 ### Fonte de verdade
@@ -69,6 +70,7 @@ Consulte quando relevante:
 - Gemini video aliases → `packages/core/src/gemini-video-presets.ts`.
 - Inferência Kimi experimental → `FareedKhan-dev/kimi-k3-in-c`.
 - Catálogos de conhecimento → Free Programming Books, Public APIs, Docker Awesome Compose, TheAlgorithms e Coding Interview University.
+- Produtos Google/Gemini/Google Cloud/Google Ads → `google/skills`; preferir skills oficiais sob demanda via Google Skill Finder, sempre subordinadas ao Skill Gate.
 - Supabase → platform source opcional por projeto, nunca dependência global automática.
 
 Repositórios externos são referências/capability sources, não dependências automáticas. Verifique licença, compatibilidade, manutenção, segurança, custo e fit antes de adotar.
