@@ -52,7 +52,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService, WorkspaceWriteProposalService, type ToolIntent } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
@@ -382,17 +382,15 @@ const registerIpc = (): void => {
     const provider = selectedAgentProvider
     const agent = agents[provider]
     try {
-      if (input.proposalContext !== undefined) {
-        if (provider !== 'ollama') throw new Error('O provider selecionado não oferece propostas de escrita pelo protocolo estável.')
-        if (input.mode !== 'PLAN') throw new Error('Propostas automáticas de escrita só podem ser solicitadas no modo PLAN.')
-        const { execution, plan } = await planning.read(input.proposalContext.executionId)
-        const targetStep = plan.steps.find((step) => step.id === input.proposalContext?.stepId)
-        if (execution.workspaceRoot !== workspace.getRoot()) throw new Error('A execução não pertence ao workspace autorizado.')
-        if (execution.state !== 'WAITING_APPROVAL') throw new Error('A execução não está aguardando aprovação e não aceita nova proposta.')
-        if (targetStep === undefined || !targetStep.requiresApproval) throw new Error('O passo selecionado não aceita proposta mutável.')
+      if (input.proposalContext !== undefined && provider !== 'ollama') {
+        throw new Error('O provider selecionado não oferece propostas de escrita pelo protocolo estável.')
       }
+      const providerInput = await prepareProviderSendInput(input, {
+        readExecution: (context) => planning.read(context.executionId),
+        getWorkspaceRoot: () => workspace.getRoot()
+      })
       return await agent.send({
-        ...input,
+        ...providerInput,
         workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3))
       })
     } finally {

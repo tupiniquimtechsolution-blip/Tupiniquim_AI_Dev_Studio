@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
   agentInterruptInputSchema,
-  agentSendInputSchema,
+  providerSendInputSchema,
   aiStatusSchema,
   aiThreadSchema,
   aiTurnSchema,
@@ -210,8 +210,8 @@ export class OllamaAdapter implements AIProvider {
     this.updateStatus({ detail: null })
   }
 
-  public async send(rawInput: z.input<typeof agentSendInputSchema>): Promise<AgentTurnReference> {
-    const input = agentSendInputSchema.parse(rawInput)
+  public async send(rawInput: z.input<typeof providerSendInputSchema>): Promise<AgentTurnReference> {
+    const input = providerSendInputSchema.parse(rawInput)
     if (input.proposalContext !== undefined && input.mode !== 'PLAN') {
       throw new Error('Contexto de proposta Ollama não autorizado.')
     }

@@ -58,6 +58,7 @@ interface Harness {
   thread: AIThread
   turn: AITurn
   setWorkspaceRoot(root: string): void
+  addTurn(turn: AITurn): void
   setup(): Promise<{ executionId: string; stepId: string }>
 }
 
@@ -70,9 +71,10 @@ const createHarness = async (): Promise<Harness> => {
   const now = new Date().toISOString()
   const thread: AIThread = { id: 'thread-prop', provider: 'ollama', workspaceRoot, model: 'modelo', createdAt: now, updatedAt: now }
   const turn: AITurn = { id: 'turn-prop', threadId: thread.id, mode: 'PLAN', inputHash: 'a'.repeat(64), createdAt: now }
+  let turns: AITurn[] = [turn]
   const history = {
     getAIThread: (id: string) => Promise.resolve(id === thread.id ? thread : null),
-    listAITurns: (threadId: string) => Promise.resolve(threadId === thread.id ? [turn] : [])
+    listAITurns: (threadId: string) => Promise.resolve(threadId === thread.id ? turns : [])
   }
   const proposals = new WorkspaceWriteProposalService(
     planning,
@@ -88,6 +90,7 @@ const createHarness = async (): Promise<Harness> => {
     thread,
     turn,
     setWorkspaceRoot: (next: string) => { root = next },
+    addTurn: (next: AITurn) => { turns = [...turns, next] },
     setup: async () => {
       const planned = await planning.create('Proveniência de proposta', workspaceRoot, 'PLAN')
       const stepId = planned.plan.steps.find((step) => step.requiresApproval)?.id
@@ -97,12 +100,12 @@ const createHarness = async (): Promise<Harness> => {
   }
 }
 
-const envelope = (harness: Harness, executionId: string, stepId: string, over: { relativePath: string; content: string; operation?: 'CREATE' | 'REPLACE' }) => ({
+const envelope = (harness: Harness, executionId: string, stepId: string, over: { relativePath: string; content: string; operation?: 'CREATE' | 'REPLACE' }, turnId = harness.turn.id) => ({
   envelope: {
     callId: randomUUID(),
     provider: harness.thread.provider,
     threadId: harness.thread.id,
-    turnId: harness.turn.id,
+    turnId,
     tool: 'workspace.write' as const,
     arguments: { relativePath: over.relativePath, content: over.content, operation: over.operation ?? 'CREATE' }
   },
@@ -193,6 +196,33 @@ describe('workspace.write proposal — expiração e purga com WorkspaceAdapter 
     await expect(harness.proposals.consume(proposal.id)).rejects.toThrow('não está disponível')
     // Nenhum arquivo foi materializado.
     await expect(readFile(path.join(workspaceRoot, 'src', 'drift.ts'), 'utf8')).rejects.toThrow()
+  })
+
+  it('continuação na MESMA thread com novo turno/toolcall substitui A por B', async () => {
+    const harness = await createHarness()
+    const { executionId, stepId } = await harness.setup()
+    const a = await harness.proposals.proposeFromEnvelope(
+      envelope(harness, executionId, stepId, { relativePath: 'src/continuacao-a.ts', content: 'CONTEUDO_CONTINUACAO_A' })
+    )
+    expect(await harness.proposals.lookupStatus(a.id)).toBe('PENDING_REVIEW')
+    const turnB: AITurn = {
+      id: randomUUID(),
+      threadId: harness.thread.id,
+      mode: 'PLAN',
+      inputHash: 'b'.repeat(64),
+      createdAt: new Date().toISOString()
+    }
+    harness.addTurn(turnB)
+    const b = await harness.proposals.proposeFromEnvelope(
+      envelope(harness, executionId, stepId, { relativePath: 'src/continuacao-b.ts', content: 'CONTEUDO_CONTINUACAO_B' }, turnB.id)
+    )
+    expect(b.threadId).toBe(a.threadId)
+    expect(b.turnId).not.toBe(a.turnId)
+    expect(b.toolCallId).not.toBe(a.toolCallId)
+    expect(await harness.proposals.lookupStatus(a.id)).toBe('EXPIRED')
+    expect(await harness.proposals.lookupStatus(b.id)).toBe('PENDING_REVIEW')
+    await expect(harness.proposals.consume(a.id)).rejects.toThrow('não está disponível')
+    await expect(harness.proposals.consume(b.id)).resolves.toMatchObject({ content: 'CONTEUDO_CONTINUACAO_B' })
   })
 
   it('substituição no mesmo slot => A EXPIRED e B PENDING_REVIEW, com payload de A irrecuperável', async () => {

@@ -519,9 +519,13 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
     const recordA = provenanceRecords.find((record) => record.Proposal === proposalIdA)
     const recordB = provenanceRecords.find((record) => record.Proposal === proposalIdB)
     if (recordA === undefined || recordB === undefined) throw new Error('Cards de proveniência A/B não localizados.')
-    // Prova explícita de que A e B usaram o MESMO slot executionId:stepId.
+    // Prova explícita de que A e B usaram o MESMO slot executionId:stepId e a
+    // MESMA thread vinculada, com turns/tool calls distintos (continuação).
     expect(recordB.Execution).toBe(recordA.Execution)
     expect(recordB.Step).toBe(recordA.Step)
+    expect(recordB.Thread).toBe(recordA.Thread)
+    expect(recordB.Turn).not.toBe(recordA.Turn)
+    expect(recordB['Tool call']).not.toBe(recordA['Tool call'])
     expect(recordA.Target).toBe(proposalTargetA)
     expect(recordB.Target).toBe(proposalTargetB)
     const realThreadIds = [...new Set(provenanceRecords.map((record) => record.Thread).filter((value): value is string => value !== undefined && value !== ''))]

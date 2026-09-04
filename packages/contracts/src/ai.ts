@@ -41,17 +41,28 @@ export const agentProposalContextSchema = z.object({
 })
 export type AgentProposalContext = z.infer<typeof agentProposalContextSchema>
 
-export const agentSendInputSchema = z.object({
+const agentSendInputFields = {
   message: z.string().trim().min(1).max(100_000),
   mode: modeSchema,
   threadId: z.string().min(1).max(200).optional(),
   workspaceContext: z.string().max(20_000).optional(),
   proposalContext: agentProposalContextSchema.optional()
-}).superRefine((input, context) => {
+}
+
+export const agentSendInputSchema = z.object(agentSendInputFields).superRefine((input, context) => {
   if (input.proposalContext !== undefined && input.threadId !== undefined) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['threadId'], message: 'Uma proposta privilegiada deve iniciar uma nova thread gerada pelo runtime.' })
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['threadId'], message: 'Uma proposta é privilegiada; o runtime cria ou continua a thread da execução e o renderer não pode escolher threadId.' })
   }
 })
+
+/**
+ * Internal input used only by the privileged main process when forwarding a
+ * validated AgentSendInput to a provider. Unlike the public AgentSendInput,
+ * it may carry a `threadId` derived from the execution already bound by the
+ * runtime. The renderer never receives this type and cannot use it as authority.
+ */
+export const providerSendInputSchema = z.object(agentSendInputFields)
+export type ProviderSendInput = z.infer<typeof providerSendInputSchema>
 
 export const agentInterruptInputSchema = z.object({
   threadId: z.string().min(1).max(200),
@@ -108,7 +119,7 @@ export type AIThreadHistory = z.infer<typeof aiThreadHistorySchema>
 export interface AIProvider {
   connect(): Promise<AIStatus>
   status(): AIStatus
-  send(input: z.input<typeof agentSendInputSchema>): Promise<AgentTurnReference>
+  send(input: z.input<typeof providerSendInputSchema>): Promise<AgentTurnReference>
   interrupt(input: z.input<typeof agentInterruptInputSchema>): Promise<void>
   close(): Promise<void>
 }

@@ -6,7 +6,7 @@ import readline from 'node:readline'
 import { z } from 'zod'
 import {
   agentInterruptInputSchema,
-  agentSendInputSchema,
+  providerSendInputSchema,
   aiEventSchema,
   aiStatusSchema,
   aiThreadSchema,
@@ -156,8 +156,8 @@ export class CodexAppServerAdapter implements AIProvider {
     return this.currentStatus
   }
 
-  public async send(rawInput: z.input<typeof agentSendInputSchema>): Promise<AgentTurnReference> {
-    const input = agentSendInputSchema.parse(rawInput)
+  public async send(rawInput: z.input<typeof providerSendInputSchema>): Promise<AgentTurnReference> {
+    const input = providerSendInputSchema.parse(rawInput)
     const status = await this.connect()
     if (status.state === 'AUTH_REQUIRED') throw new Error('Codex requer autenticação. Configure uma chave local ou faça login no Codex.')
     const workspaceRoot = this.options.getWorkspaceRoot()
