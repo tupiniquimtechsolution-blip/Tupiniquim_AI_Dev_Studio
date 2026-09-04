@@ -1,0 +1,263 @@
+{
+  "schemaVersion": "1.0.0",
+  "updatedAt": "2026-09-04",
+  "invariants": {
+    "separation": "agent != model != provider != tool != skill != source_repository",
+    "defaultActivation": "on-demand",
+    "defaultTrust": "untrusted-external-source",
+    "paidServices": "NOT_CONFIGURED until explicit approval",
+    "projectIsolation": true
+  },
+  "agents": [
+    {
+      "id": "AGENT-PLANNER",
+      "name": "Master Planner",
+      "status": "source-registered",
+      "providers": [
+        "openai-or-reasoning-provider"
+      ],
+      "sources": [
+        "Shubhamsaboo/awesome-llm-apps:agent_skills/advisor-orchestrator-worker",
+        "Shubhamsaboo/awesome-llm-apps:advanced_ai_agents/multi_agent_apps/agent_teams",
+        "Shubhamsaboo/awesome-llm-apps:advanced_ai_agents/multi_agent_apps/trust_gated_agent_team"
+      ],
+      "capabilities": [
+        "planning",
+        "dependency-mapping",
+        "handoff",
+        "prioritization",
+        "validation"
+      ],
+      "mayMutate": false
+    },
+    {
+      "id": "AGENT-RESEARCH",
+      "name": "Researcher",
+      "status": "source-registered",
+      "providers": [
+        "openai",
+        "qwen",
+        "local-provider"
+      ],
+      "sources": [
+        "Shubhamsaboo/awesome-llm-apps:starter_ai_agents/openai_research_agent",
+        "Shubhamsaboo/awesome-llm-apps:advanced_ai_agents/multi_agent_apps/multi_agent_researcher",
+        "Shubhamsaboo/awesome-llm-apps:generative_ui_agents/ai-deep-research-agent",
+        "Panniantong/Agent-Reach"
+      ],
+      "capabilities": [
+        "web-research",
+        "source-analysis",
+        "technology-research",
+        "evidence-synthesis"
+      ],
+      "mayMutate": false
+    },
+    {
+      "id": "AGENT-ILLUSTRATOR",
+      "name": "Illustrator / Media Agent",
+      "status": "source-registered",
+      "providers": [
+        "open-generative-ai-local",
+        "optional-external-media-provider"
+      ],
+      "sources": [
+        "Anil-matcha/Open-Generative-AI"
+      ],
+      "capabilities": [
+        "image-generation",
+        "image-editing",
+        "video-generation",
+        "lip-sync",
+        "media-workflows",
+        "cinema-controls"
+      ],
+      "constraints": [
+        "local-first-when-viable",
+        "record-asset-provenance",
+        "external-paid-providers-require-approval"
+      ],
+      "mayMutate": true
+    },
+    {
+      "id": "AGENT-UX",
+      "name": "UI/UX Designer",
+      "status": "source-registered",
+      "sources": [
+        "nextlevelbuilder/ui-ux-pro-max-skill"
+      ],
+      "capabilities": [
+        "ui-ux",
+        "design-system",
+        "visual-review",
+        "responsive-design",
+        "design-guidelines"
+      ],
+      "mayMutate": false
+    },
+    {
+      "id": "AGENT-PROMPT",
+      "name": "Prompt Architect",
+      "status": "source-registered",
+      "sources": [
+        "nidhinjs/prompt-master"
+      ],
+      "capabilities": [
+        "prompt-generation",
+        "prompt-review",
+        "prompt-adaptation",
+        "tool-routing"
+      ],
+      "mayMutate": false
+    },
+    {
+      "id": "AGENT-TOOLS",
+      "name": "Tool / CLI Integrator",
+      "status": "source-registered",
+      "sources": [
+        "HKUDS/CLI-Anything"
+      ],
+      "capabilities": [
+        "cli-discovery",
+        "agent-native-cli",
+        "software-tooling",
+        "tool-adapter-design"
+      ],
+      "constraints": [
+        "PolicyEngine-required",
+        "allowlisted-executable-and-args",
+        "e2e-before-enable"
+      ],
+      "mayMutate": true
+    },
+    {
+      "id": "AGENT-VOICE",
+      "name": "Voice / TTS Agent",
+      "status": "source-registered",
+      "sources": [
+        "kyutai-labs/pocket-tts"
+      ],
+      "capabilities": [
+        "local-tts",
+        "streaming-audio",
+        "multilingual-voice",
+        "voice-cloning-with-consent"
+      ],
+      "constraints": [
+        "voice-cloning-requires-consent-and-provenance"
+      ],
+      "mayMutate": true
+    },
+    {
+      "id": "AGENT-SOCIAL",
+      "name": "Social Automation Agent",
+      "status": "source-registered",
+      "sources": [
+        "diwenne/openreply"
+      ],
+      "capabilities": [
+        "instagram-comment-to-dm",
+        "webhooks",
+        "keyword-routing",
+        "social-automation"
+      ],
+      "constraints": [
+        "official-api-only",
+        "rate-limit",
+        "terms-and-consent"
+      ],
+      "mayMutate": true
+    },
+    {
+      "id": "AGENT-KNOWLEDGE",
+      "name": "Knowledge / RAG Agent",
+      "status": "source-registered",
+      "sources": [
+        "Shubhamsaboo/awesome-llm-apps:rag_tutorials/knowledge_graph_rag_citations",
+        "Shubhamsaboo/awesome-llm-apps:rag_tutorials/hybrid_search_rag",
+        "Shubhamsaboo/awesome-llm-apps:rag_tutorials/autonomous_rag",
+        "Shubhamsaboo/awesome-llm-apps:rag_tutorials/multimodal_agentic_rag",
+        "Shubhamsaboo/awesome-llm-apps:generative_ui_agents/ai-knowledge-explorer"
+      ],
+      "capabilities": [
+        "rag",
+        "hybrid-search",
+        "knowledge-graph",
+        "citations",
+        "context-retrieval"
+      ],
+      "mayMutate": false
+    },
+    {
+      "id": "AGENT-TRUST-QA",
+      "name": "Trust / QA Reviewer",
+      "status": "source-registered",
+      "sources": [
+        "Shubhamsaboo/awesome-llm-apps:advanced_ai_agents/multi_agent_apps/multi_agent_trust_layer",
+        "Shubhamsaboo/awesome-llm-apps:advanced_ai_agents/multi_agent_apps/trust_gated_agent_team",
+        "internal:PolicyEngine",
+        "internal:AuditLog"
+      ],
+      "capabilities": [
+        "review",
+        "security-gate",
+        "confidence",
+        "evidence",
+        "approval-validation"
+      ],
+      "mayMutate": false
+    },
+    {
+      "id": "AGENT-LOCAL-RESEARCH",
+      "name": "Local Model Researcher",
+      "status": "experimental",
+      "sources": [
+        "FareedKhan-dev/kimi-k3-in-c"
+      ],
+      "capabilities": [
+        "local-inference-research",
+        "c99-runtime-research",
+        "extreme-model-streaming"
+      ],
+      "constraints": [
+        "not-default-runtime",
+        "hardware-and-storage-review-required"
+      ],
+      "mayMutate": false
+    },
+    {
+      "id": "AGENT-CODER",
+      "name": "Coding Worker",
+      "status": "existing-runtime-role",
+      "providers": [
+        "qwen-code",
+        "codex-app-server",
+        "future-provider"
+      ],
+      "sources": [
+        "internal:Tupiniquim-AI-Dev-Studio"
+      ],
+      "capabilities": [
+        "code",
+        "test",
+        "fix",
+        "refactor"
+      ],
+      "constraints": [
+        "workspace-only",
+        "approval-for-mutating-effects"
+      ],
+      "mayMutate": true
+    }
+  ],
+  "skillLibrary": {
+    "strategy": "global-catalog-project-loadout-agent-loadout",
+    "allTimeTopCount": 500,
+    "trendingWatchCount": 500,
+    "pinned": [
+      "vercel-labs/skills/find-skills"
+    ],
+    "installPolicy": "metadata-first; audit and approve before activation",
+    "source": "https://skills.sh"
+  }
+}
