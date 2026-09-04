@@ -1,12 +1,15 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
   agentProposalEffectSourceSchema,
+  normalizedToolCallEnvelopeSchema,
   workspaceWriteProposalSchema,
   type AIProviderKind,
   type AIThread,
   type AITurn,
   type ActionManifest,
+  type NormalizedToolCallEnvelope,
   type Plan,
+  type ProposalStatus,
   type WorkspaceWriteProposal
 } from '@tupiniquim/contracts'
 import { manifestEffectsHash, type PlanApprovalService } from './plan-approval'
@@ -16,6 +19,7 @@ export interface ProposalHistory {
   listAITurns(threadId: string): Promise<AITurn[]>
 }
 
+/** @deprecated Legacy input format — prefer the envelope-based overload. */
 export interface WorkspaceWriteProposalInput {
   executionId: string
   stepId: string
@@ -30,6 +34,13 @@ export interface WorkspaceWriteProposalInput {
   targetBaselineHash: string | null
 }
 
+/** Provider-neutral input accepted by the proposal service. */
+export interface EnvelopeProposalInput {
+  envelope: NormalizedToolCallEnvelope
+  executionId: string
+  stepId: string
+}
+
 interface StoredProposal extends WorkspaceWriteProposal {
   workspaceRoot: string
   content: string
@@ -40,6 +51,15 @@ const toolCallKey = ({ provider, threadId, turnId, toolCallId }: Pick<WorkspaceW
 const isPrivateEnvironmentPath = (relativePath: string): boolean => relativePath.split(/[\\/]/u).some((segment) => segment.toLowerCase().startsWith('.env'))
 const contentHash = (content: string): string => createHash('sha256').update(content).digest('hex')
 const isSha256 = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value)
+
+import { z } from 'zod'
+
+const maxWorkspaceWriteContentChars = 10_000_000
+const workspaceWriteArgsSchema = z.object({
+  relativePath: z.string().min(1).max(4_096).refine((v) => !v.includes('\0'), 'Caminho inválido.'),
+  content: z.string().max(maxWorkspaceWriteContentChars),
+  operation: z.enum(['CREATE', 'REPLACE'])
+}).strict()
 
 export class WorkspaceWriteProposalService {
   private readonly proposals = new Map<string, StoredProposal>()
@@ -52,6 +72,28 @@ export class WorkspaceWriteProposalService {
     private readonly getWorkspaceRoot: () => string
   ) {}
 
+  /** Create a proposal from a provider-neutral envelope. */
+  public async proposeFromEnvelope(input: EnvelopeProposalInput): Promise<WorkspaceWriteProposal> {
+    const envelope = normalizedToolCallEnvelopeSchema.parse(input.envelope)
+    if (envelope.tool !== 'workspace.write') throw new Error('Somente workspace.write é suportado por propostas.')
+    const args = workspaceWriteArgsSchema.parse(envelope.arguments)
+    const baselineHash = args.operation === 'CREATE' ? null : (await this.lookupTargetBaseline(input.executionId, args.relativePath))
+    return this.propose({
+      executionId: input.executionId,
+      stepId: input.stepId,
+      provider: envelope.provider,
+      threadId: envelope.threadId,
+      turnId: envelope.turnId,
+      toolCallId: envelope.callId,
+      tool: envelope.tool,
+      relativePath: args.relativePath,
+      content: args.content,
+      operation: args.operation,
+      targetBaselineHash: baselineHash
+    })
+  }
+
+  /** @deprecated Use proposeFromEnvelope for provider-neutral input. */
   public async propose(input: WorkspaceWriteProposalInput): Promise<WorkspaceWriteProposal> {
     if (isPrivateEnvironmentPath(input.relativePath)) throw new Error('Arquivos .env não podem receber proposta de escrita.')
     const proposalId = randomUUID()
@@ -149,11 +191,48 @@ export class WorkspaceWriteProposalService {
     return { proposal: this.publicProposal(proposal), content: proposal.content }
   }
 
+  /** Look up the public status of a proposal. Returns EXPIRED when the payload is gone. */
+  public async lookupStatus(id: string): Promise<ProposalStatus> {
+    const proposal = this.proposals.get(id)
+    if (proposal === undefined) return 'EXPIRED'
+    try {
+      const [{ execution }, thread] = await Promise.all([
+        this.planning.read(proposal.executionId),
+        this.history.getAIThread(proposal.threadId)
+      ])
+      if (execution.workspaceRoot !== this.getWorkspaceRoot()) return 'EXPIRED'
+      if (thread?.id !== proposal.threadId) return 'EXPIRED'
+      if (thread.provider !== proposal.provider) return 'EXPIRED'
+      return 'PENDING_REVIEW'
+    } catch {
+      return 'EXPIRED'
+    }
+  }
+
   public invalidate(id: string): void {
     const proposal = this.proposals.get(id)
     if (proposal === undefined) return
     this.proposals.delete(id)
     if (this.slots.get(proposalSlot(proposal.executionId, proposal.stepId)) === id) this.slots.delete(proposalSlot(proposal.executionId, proposal.stepId))
+  }
+
+  private async lookupTargetBaseline(executionId: string, relativePath: string): Promise<string | null> {
+    try {
+      const { execution } = await this.planning.read(executionId)
+      const root = this.getWorkspaceRoot()
+      if (execution.workspaceRoot !== root) return null
+      const { createHash } = await import('node:crypto')
+      const { readFile } = await import('node:fs/promises')
+      const pathMod = await import('node:path')
+      const absolute = pathMod.default.resolve(root, relativePath)
+      const { stat } = await import('node:fs/promises')
+      const info = await stat(absolute).catch(() => undefined)
+      if (info === undefined || !info.isFile()) return null
+      const content = await readFile(absolute)
+      return createHash('sha256').update(content).digest('hex')
+    } catch {
+      return null
+    }
   }
 
   private withEffect(plan: Plan, stepId: string, effect: ActionManifest): Plan {

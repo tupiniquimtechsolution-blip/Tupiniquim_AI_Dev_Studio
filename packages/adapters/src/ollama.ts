@@ -7,12 +7,14 @@ import {
   aiThreadSchema,
   aiTurnSchema,
   localModelSchema,
+  normalizedToolCallEnvelopeSchema,
   type AIEvent,
   type AIProvider,
   type AIStatus,
   type AIThread,
   type AgentTurnReference,
   type LocalModel,
+  type NormalizedToolCallEnvelope,
   type WorkspaceWriteProposal
 } from '@tupiniquim/contracts'
 import type { AIHistoryRepository } from './codex-app-server'
@@ -49,11 +51,6 @@ const maxStreamReads = 100_000
 const maxStreamLines = 100_000
 const maxStreamChunks = 100_000
 
-const workspaceWriteToolArgumentsSchema = z.object({
-  relativePath: z.string().min(1).max(4_096).refine((value) => !value.includes('\0'), 'Caminho inválido.'),
-  content: z.string().max(maxWorkspaceWriteContentChars),
-  operation: z.enum(['CREATE', 'REPLACE'])
-}).strict()
 
 const workspaceWriteTool = {
   type: 'function',
@@ -78,6 +75,7 @@ type OllamaHistoryRepository = AIHistoryRepository & {
   getAIThread?: (id: string) => Promise<AIThread | null>
 }
 
+/** @deprecated Use NormalizedToolCallEnvelope from @tupiniquim/contracts */
 export interface OllamaWorkspaceWriteToolCall {
   callId: string
   provider: 'ollama'
@@ -91,9 +89,32 @@ export interface OllamaWorkspaceWriteToolCall {
   operation: 'CREATE' | 'REPLACE'
 }
 
+/** Translate a raw Ollama tool_call into a provider-neutral envelope. */
+const normalizeToolCall = (
+  toolCall: z.infer<typeof streamedToolCallSchema>,
+  threadId: string,
+  turnId: string
+): NormalizedToolCallEnvelope => {
+  const args = parseToolArguments(toolCall.function.arguments)
+  return normalizedToolCallEnvelopeSchema.parse({
+    callId: randomUUID(),
+    provider: 'ollama',
+    threadId,
+    turnId,
+    tool: 'workspace.write',
+    arguments: args as Record<string, unknown>
+  })
+}
+// Business-argument validation happens at the proposal service level,
+// not here — the adapter is responsible only for structural translation.
+
 export interface OllamaAdapterOptions {
   onEvent: (event: AIEvent) => void
-  onWorkspaceWriteToolCall?: (call: OllamaWorkspaceWriteToolCall) => Promise<WorkspaceWriteProposal>
+  onWorkspaceWriteToolCall?: (call: {
+    envelope: NormalizedToolCallEnvelope
+    executionId: string
+    stepId: string
+  }) => Promise<WorkspaceWriteProposal>
   baseUrl?: string
   fetchImpl?: typeof fetch
   selectedModel?: string
@@ -326,17 +347,12 @@ export class OllamaAdapter implements AIProvider {
         if (toolCalls.length !== 1) throw new Error('Quantidade de tool calls Ollama não autorizada.')
         const toolCall = toolCalls[0]
         if (toolCall === undefined || toolCall.function.name !== workspaceWriteTool.function.name) throw new Error('Tool call Ollama não autorizada.')
-        const parsedArguments = workspaceWriteToolArgumentsSchema.parse(parseToolArguments(toolCall.function.arguments))
+        const normalized = normalizeToolCall(toolCall, reference.threadId, reference.turnId)
         const proposal = await this.options.onWorkspaceWriteToolCall?.({
-          callId: randomUUID(),
-          provider: 'ollama',
-          threadId: reference.threadId,
-          turnId: reference.turnId,
+          envelope: normalized,
           executionId: proposalContext.executionId,
-          stepId: proposalContext.stepId,
-          tool: 'workspace.write',
-          ...parsedArguments
-        })
+          stepId: proposalContext.stepId
+        }) as WorkspaceWriteProposal | undefined
         if (proposal === undefined) throw new Error('Ferramenta de proposta Ollama indisponível.')
         conversation.push({ role: 'assistant', content: publicProposalHistory(proposal) })
       }

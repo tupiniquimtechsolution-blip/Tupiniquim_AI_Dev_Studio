@@ -103,20 +103,34 @@ const ollamaAgent = new OllamaAdapter({
     let proposalId: string | undefined
     try {
       if (selectedAgentProvider !== 'ollama') throw new Error('O turno Ollama não é mais o provider autorizado.')
-      const relativePath = await workspace.validateWriteTarget(call.relativePath)
+      const { envelope, executionId, stepId } = call
+      const envelopeArgs = envelope.arguments as Record<string, string>
+      const relativePath = await workspace.validateWriteTarget(envelopeArgs.relativePath ?? '')
       const targetBaseline = await workspace.inspectWriteTarget(relativePath)
-      if (call.operation === 'CREATE' && targetBaseline.exists) throw new Error('CREATE exige que o alvo não exista no momento da proposta.')
-      if (call.operation === 'REPLACE' && !targetBaseline.exists) throw new Error('REPLACE exige um arquivo existente no momento da proposta.')
-      const { callId, ...source } = call
-      const proposal = workspaceWriteProposalSchema.parse(await writeProposals.propose({ ...source, toolCallId: callId, relativePath, targetBaselineHash: targetBaseline.hash }))
+      const operation = envelopeArgs.operation ?? ''
+      if (operation === 'CREATE' && targetBaseline.exists) throw new Error('CREATE exige que o alvo não exista no momento da proposta.')
+      if (operation === 'REPLACE' && !targetBaseline.exists) throw new Error('REPLACE exige um arquivo existente no momento da proposta.')
+      const proposal = workspaceWriteProposalSchema.parse(await writeProposals.propose({
+        provider: envelope.provider,
+        threadId: envelope.threadId,
+        turnId: envelope.turnId,
+        toolCallId: envelope.callId,
+        executionId,
+        stepId,
+        tool: 'workspace.write',
+        relativePath,
+        content: envelopeArgs.content ?? '',
+        operation: operation as 'CREATE' | 'REPLACE',
+        targetBaselineHash: targetBaseline.hash
+      }))
       proposalId = proposal.id
-      await audit.write({ requestId: call.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', target: redactContextMetadata(proposal.effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
+      await audit.write({ requestId: envelope.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', target: redactContextMetadata(proposal.effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
       mainWindow?.webContents.send(ipcChannels.agentWorkspaceWriteProposal, proposal)
       return proposal
     } catch (cause) {
       if (proposalId !== undefined) writeProposals.invalidate(proposalId)
       const error = toAppError(cause, 'AGENT_PROPOSAL_ERROR')
-      await audit.write({ requestId: call.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', outcome: 'ERROR', durationMs: Date.now() - started, errorCode: error.code }).catch(() => undefined)
+      await audit.write({ requestId: call.envelope.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', outcome: 'ERROR', durationMs: Date.now() - started, errorCode: error.code }).catch(() => undefined)
       throw new Error('A proposta automática foi recusada pelo runtime privilegiado.', { cause })
     }
   },
