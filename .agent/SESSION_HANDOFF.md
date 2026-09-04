@@ -1,31 +1,63 @@
 # SESSION HANDOFF
 
-Wave: Wave 14 — Provider-neutral tool protocol + proposal provenance + expiration safety
-Checkpoint: candidato checkpoint/wave-14 (aguardando gates finais)
-Branch: freebuff/wave-14-proposal-tool-provenance
-PR: #12 (Ref #11)
+Master Wave: 1 — Dev AI local autônomo (EM ANDAMENTO, ver .agent/MASTER_PLAN.md)
+Checkpoint candidate: wave-14 — Provider-neutral tool protocol + proposal provenance + expiration safety
+Branch: arena/01a06d79-tupiniquim-ai-dev-studio (continuação corretiva)
+Base de auditoria: 312c674 (freebuff/wave-14-proposal-tool-provenance, PR #12)
+Refs: Issue #11, PR #12 (PR de continuação referencia ambos)
 
-## Completed (Wave 14)
+## Contexto
 
-- NormalizedToolCallEnvelope — contrato provider-neutral em contracts/ai.ts
-- workspaceWriteArgsSchema — validação compartilhada de business arguments com .strict()
-- WorkspaceBaselineLookup — injeção de dependência para inspeção de baseline segura
-- OllamaAdapter.normalizeToolCall() — traduz tool_calls Ollama → envelope normalizado
-- Adapter-level validation: workspaceWriteArgsSchema.parse() antes do callback
-- proposeFromEnvelope() — caminho canônico provider-neutral no main process
-- validateProposalState() — validação causal unificada para lookupStatus() e consume()
-- EXPIRED status — proposta substituída recebe EXPIRED via IPC lookupProposalStatus
-- Tombstone EXPIRED na UI com proveniência pública sem conteúdo
-- 6 ollama unit test regressions fixed (adapter validates args before callback)
-- E2E expiration test written (BLOCKED on Linux)
-- 6 new unit/integration tests: CREATE exists, REPLACE missing, EXPIRED substitution, workspace drift, thread drift, payload purge
+O GitHub é a fonte de verdade. Esta sessão NÃO recomeçou o projeto: partiu do
+HEAD auditado 312c674 e aplicou apenas as correções da 4ª auditoria. A
+arquitetura já aprovada foi preservada.
 
-## Pending
+## Correções aplicadas (5 bloqueios da 4ª auditoria)
 
-- E2E execution on Windows real machine
-- Wave 15: terminal controlado → tool loop → Git controlado → autonomous development loop
+1. **Baseline FAIL CLOSED** — `WorkspaceWriteProposalService.lookupTargetBaseline()`
+   não engole mais exceções. Erro de inspeção/path do
+   `WorkspaceAdapter.inspectWriteTarget()` propaga e recusa a proposta; só
+   `{exists:false,hash:null}` real significa inexistente.
+2. **Purge no EXPIRED** — `lookupStatus()` chama `invalidate(id)` também no catch;
+   nenhum payload efêmero fica em memória após EXPIRED.
+3. **Testes de persistência** — workspace drift usa a MESMA instância com
+   getWorkspaceRoot() mutável; purge provoca expiração real antes de lookup/consume.
+4. **E2E de expiração** — gate `test.skip(condição, motivo)` explícito (sem retorno
+   silencioso/PASS falso); tombstone de A localizado por ID; B separado; marcadores
+   privados A/B varridos em DOM, conversation, Flight Recorder/events, agent
+   history, AuditLog e SQLite.
+5. **Documentação** — CHANGELOG_AGENT.md restaurado integralmente do origin/main
+   com a Wave 14 adicionada no topo; STATUS/NEXT_ACTION/HANDOFF reconciliados para
+   distinguir Master Wave 1 de checkpoint candidate wave-14.
+
+## Testes novos cross-platform (executados verdes no Linux/Arena)
+
+- packages/core/src/workspace-write-proposal.unit.test.ts (8 testes, unit)
+- tests/integration/workspace-write-proposal.test.ts (7 testes, integration,
+  WorkspaceAdapter REAL + diretório temporário real)
+
+## Resultados no Arena (Linux)
+
+- lint ✅, typecheck ✅, build ✅.
+- unit: suíte nova 8/8; suíte total com 1 falha PRÉ-EXISTENTE (visual-intelligence
+  exige F:\CODEX) fora de escopo.
+- security: 33/34, 1 falha PRÉ-EXISTENTE (TEMP indisponível no Linux).
+- integration: novos 7/7 verdes; legados F:-gated seguem BLOCKED no Linux.
+
+## Pending — BLOCKED para máquina Windows real (F:)
+
+- `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-f.ps1 validate`
+- `pnpm test:e2e` (inclui E2E de expiração)
+- tests/integration/persistence.test.ts (SQLite em F:)
+- Quinta auditoria externa; depois merge/checkpoint se aprovado.
+
+## Fora de escopo (NÃO implementar agora)
+
+Novos providers (Qwen, Kimi, Gemini, DeepSeek, Claude, Grok), Model/Provider
+Registry completo, Agent Registry runtime, Google Skills runtime (PR #13
+separado), Terminal mutável, Git mutável, voz, multimodal, autonomous loop.
 
 ## External blockers
 
 - OPENAI_API_NO_CREDITS para inferência live paga.
-- Persistence tests require F: drive (Windows only).
+- Persistence/E2E tests require F: drive (Windows only).

@@ -4,14 +4,21 @@ Atualizado em: 2026-09-04
 
 ## Estado atual
 
-- Current wave: Wave 14 — Provider-neutral tool protocol + proposal provenance + expiration safety
-- Current checkpoint: candidato checkpoint/wave-14 (aguardando gates finais)
-- Current branch: freebuff/wave-14-proposal-tool-provenance
-- PR: #12 (Ref #11)
-- Repositório operacional: F:\CODEX\Tupiniquim-AI-Dev-Studio
+- Master Wave: 1 — Dev AI local autônomo (EM ANDAMENTO, ver .agent/MASTER_PLAN.md)
+- Checkpoint candidate: wave-14 — Provider-neutral tool protocol + proposal provenance + expiration safety
+- Current branch: arena/01a06d79-tupiniquim-ai-dev-studio (continuação corretiva do PR #12; HEAD de auditoria 312c674)
+- PR de continuação: aberto a partir desta branch; referencia Issue #11 e PR #12
+- Repositório operacional (máquina real): F:\CODEX\Tupiniquim-AI-Dev-Studio
 - Dados: F:\CODEX\Tupiniquim-AI-Dev-Studio.data
 
-## Gates atuais
+## Contexto de onda
+
+- O MASTER_PLAN mantém a **Master Wave 1 em andamento**. "wave-14" é o candidato a
+  checkpoint interno dessa Master Wave 1, NÃO uma nova wave mestre.
+- Terminal mutável e Git mutável continuam INDISPONÍVEIS. Não se avança para
+  "Wave 15 / autonomous loop" antes de fechar este checkpoint.
+
+## Gates atuais (comandos oficiais)
 
     pnpm lint
     pnpm typecheck
@@ -19,62 +26,66 @@ Atualizado em: 2026-09-04
     pnpm test:security
     pnpm test:integration
     pnpm build
+    (Windows F:) powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-f.ps1 validate
+    (Windows F:) pnpm test:e2e
+
+### Resultados no Arena (Linux) — execução real
 
 - lint: ✅ PASS
 - typecheck: ✅ PASS
 - build: ✅ PASS
-- unit: ✅ 37/38 (1 pre-existing F: drive failure)
-- security: ✅ 33/34 (1 pre-existing TEMP env issue)
-- integration: ✅ 11/30 (19 pre-existing F: drive failures, incluindo 6 novos testes ambientais)
+- unit: 38/38 no núcleo novo; suíte total 45/46 (1 falha PRÉ-EXISTENTE F:\CODEX do visual-intelligence, fora de escopo)
+- security: 33/34 (1 falha PRÉ-EXISTENTE TEMP indisponível no Linux, fora de escopo)
+- integration: 7/7 novos testes cross-platform PASSAM no Linux; suíte legada permanece com falhas F:-gated (pré-existentes)
+- Novos testes cross-platform (rodam em qualquer SO, sem F:/SQLite):
+  - packages/core/src/workspace-write-proposal.unit.test.ts (8 testes)
+  - tests/integration/workspace-write-proposal.test.ts (7 testes, WorkspaceAdapter real)
 
-## Concluído na Wave 14 (esta branch)
+### BLOCKED — requer máquina Windows real (F:)
 
-### Provider-neutral tool call protocol
-- `NormalizedToolCallEnvelope` contrato em contracts/ai.ts — envelope sem acoplamento ao formato Ollama
-- `workspaceWriteArgsSchema` schema compartilhado para business arguments (relativePath, content, operation) com `.strict()`
-- `OllamaAdapter.normalizeToolCall()` traduz tool_calls Ollama → envelope normalizado
-- Adapter valida business arguments via `workspaceWriteArgsSchema.parse()` antes do callback
+- tests/integration/persistence.test.ts (SQLite em F:; inclui os testes de drift/purge
+  agora corrigidos, mas gated por F:)
+- E2E completo (tests/e2e/desktop.spec.ts), incluindo o E2E de expiração.
+  No Linux o E2E de expiração reporta SKIP explícito (não PASS falso).
+- Estes NÃO foram executados no Arena; status aceitável é BLOCKED.
 
-### Proveniência causal completa
-- Proposal provenance: provider, thread, turn, tool call, execution, step, manifest, target, operation, hash, baseline
-- `AgentProposalEffectSourceSchema` vincula proposal → manifest → manifest effects
-- Replay protegido por toolCallId dedup
+## Correções aplicadas nesta continuação (4ª auditoria, HEAD 312c674)
 
-### EXPIRED proposal status
-- `proposalStatusValues` inclui EXPIRED no contrato
-- `lookupStatus()` usa `validateProposalState()` — mesma validação causal de `consume()`
-- Validação causal unificada: workspace drift, slot superseded, thread drift, turn drift, toolcall drift, manifest drift, payload drift
-- Proposta expirada é removida da memória e não escreve arquivo
+1. **Baseline FAIL CLOSED** — removido o catch genérico que transformava erro de
+   inspeção/path em "alvo inexistente". Erros de WorkspaceAdapter.inspectWriteTarget()
+   (traversal, absoluto, symlink, namespace, permissão, inesperado) agora recusam a
+   proposta. Somente {exists:false,hash:null} real significa inexistente.
+2. **Purge garantido no EXPIRED** — lookupStatus() chama invalidate(id) também no
+   caminho de exceção; payload efêmero nunca permanece na memória após EXPIRED.
+3. **Testes de persistência** — workspace drift agora usa a mesma instância com
+   getWorkspaceRoot() mutável; teste de purge provoca expiração real antes de
+   lookup/consume.
+4. **E2E de expiração** — gate vira test.skip explícito (sem retorno silencioso);
+   tombstone de A localizado por ID (A=EXPIRED, B=PENDING_REVIEW); marcadores
+   privados A/B varridos em DOM, conversation, Flight Recorder/events, agent
+   history, AuditLog e SQLite.
+5. **Documentação** — CHANGELOG_AGENT.md restaurado com todo o histórico de
+   origin/main + Wave 14 adicionada; STATUS/NEXT_ACTION/HANDOFF reconciliados.
 
-### Segurança removida do core
-- `WorkspaceBaselineLookup` interface injetada — core não importa fs
-- `inspectWriteTarget()` do adapter usa path security (resolveLexicalPath + assertRealPathInside)
-- CREATE valida que alvo não existe; REPLACE valida que alvo existe com hash válido
+## Preservado (arquitetura já aprovada — não refatorado)
 
-### Canonical propose path
-- Main process usa `proposeFromEnvelope()` em vez de `propose()` legado
-- Canvas proposal → envelope → proposal service → manifest → approval → materialization
+NormalizedToolCallEnvelope; workspaceWriteArgsSchema strict; protocolo
+provider-neutral; proposeFromEnvelope(); WorkspaceBaselineLookup via DI;
+WorkspaceAdapter.inspectWriteTarget(); ProposalStatus com EXPIRED;
+lookupProposalStatus IPC; tombstone público; validação do adapter Ollama;
+PolicyEngine; ApprovalStore/PlanApprovalService; AuditLog; payload privado só em
+memória; Terminal mutável indisponível; Git mutável indisponível.
 
-### EXPIRED na UI
-- Renderer usa `ProposalStatus` de contracts (não tipo local duplicado)
-- IPC `lookupProposalStatus` delega ao processo privilegiado
-- Propostas substituídas mostram tombstone EXPIRED com proveniência pública
-- Conteúdo privado nunca cruza IPC
+## Próximo (ordem estrita, sem avanço de escopo)
 
-### Ollama unit tests
-- 24/24 passam (6 anteriormente quebradas agora corrigidas)
-
-### E2E test
-- Teste de expiração escrito em tests/e2e/desktop.spec.ts
-- BLOCKED neste ambiente (Linux, sem F:, sem display Electron)
-- Executável na máquina Windows real
-
-## Próximo
-
-Wave 15: terminal controlado → tool loop → Git controlado → autonomous development loop.
+1. Executar na máquina Windows real F: `scripts\pnpm-f.ps1 validate`.
+2. Executar `pnpm test:e2e` na máquina Windows real.
+3. Quinta auditoria externa sobre os resultados.
+4. Somente se aprovado: merge/checkpoint wave-14.
+5. Só então definir a próxima unidade conforme o MASTER_PLAN (Master Wave 1 segue).
 
 ## Bloqueios externos
 
 - OPENAI_API_NO_CREDITS bloqueia somente inferência live paga; não invalida o transporte controlado.
 - Provedores visuais pagos permanecem NOT_CONFIGURED.
-- Persistence/security/terminal tests requerem F: drive (Windows) — BLOCKED neste ambiente Linux.
+- Persistence/E2E requerem F: drive (Windows) — BLOCKED no ambiente Linux do Arena.

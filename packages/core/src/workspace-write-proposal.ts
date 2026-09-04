@@ -194,6 +194,9 @@ export class WorkspaceWriteProposalService {
       }
       return 'PENDING_REVIEW'
     } catch {
+      // Fail closed: any error during causal revalidation (DB/history/persistence
+      // failure) must purge the ephemeral payload, never keep it resident in memory.
+      this.invalidate(id)
       return 'EXPIRED'
     }
   }
@@ -233,15 +236,24 @@ export class WorkspaceWriteProposalService {
     if (this.slots.get(proposalSlot(proposal.executionId, proposal.stepId)) === id) this.slots.delete(proposalSlot(proposal.executionId, proposal.stepId))
   }
 
+  /**
+   * Inspect the real baseline through the injected WorkspaceBaselineLookup.
+   *
+   * FAIL CLOSED: this method never swallows an error. Path-traversal, absolute
+   * path, symlink-outside-workspace, invalid namespace, permission or any
+   * unexpected error raised by WorkspaceAdapter.inspectWriteTarget() must
+   * propagate and reject the proposal — they must never be translated into a
+   * fake "target does not exist" result. Only a genuine
+   * `{ exists:false, hash:null }` produced by the adapter means missing.
+   */
   private async lookupTargetBaseline(executionId: string, relativePath: string): Promise<{ exists: boolean; hash: string | null }> {
-    try {
-      const { execution } = await this.planning.read(executionId)
-      const root = this.getWorkspaceRoot()
-      if (execution.workspaceRoot !== root) return { exists: false, hash: null }
-      return await this.baselineLookup.inspectBaseline(relativePath)
-    } catch {
-      return { exists: false, hash: null }
+    const { execution } = await this.planning.read(executionId)
+    const root = this.getWorkspaceRoot()
+    if (execution.workspaceRoot !== root) {
+      throw new Error('A execução não pertence ao workspace atualmente autorizado; baseline não pode ser inspecionado.')
     }
+    // Propagate every inspection/path error to the caller (proposal rejected).
+    return await this.baselineLookup.inspectBaseline(relativePath)
   }
 
   private withEffect(plan: Plan, stepId: string, effect: ActionManifest): Plan {

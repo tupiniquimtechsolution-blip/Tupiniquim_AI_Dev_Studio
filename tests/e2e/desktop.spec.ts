@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { _electron as electron, expect, test } from '@playwright/test'
+import { _electron as electron, expect, test, type Locator, type Page } from '@playwright/test'
 
 const execFileAsync = promisify(execFile)
 const ollamaModel = 'tupiniquim-e2e-model'
@@ -323,9 +323,23 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
 test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', async () => {
   const projectRoot = process.cwd()
   const proposalTargetA = 'proposta-a-expirada.txt'
-  const proposalContentA = 'E2E_PRIVATE_CONTENT_A\n'
+  const proposalContentA = 'E2E_PRIVATE_CONTENT_A'
   const proposalTargetB = 'proposta-b-atual.txt'
-  const proposalContentB = 'E2E_PRIVATE_CONTENT_B\n'
+  const proposalContentB = 'E2E_PRIVATE_CONTENT_B'
+
+  // Gate explícito e VISÍVEL: este cenário roda apenas no ambiente suportado
+  // (Windows real com TEMP em F: e display Electron). Nunca fazer `return`
+  // silencioso que produz PASS falso — fora do ambiente suportado o teste é
+  // reportado como SKIPPED (não como passado) com a razão explícita abaixo.
+  // A máquina Windows F: é o gate real (scripts/pnpm-f.ps1 validate + pnpm test:e2e).
+  const tempEnv = process.env.TEMP
+  test.skip(
+    process.platform !== 'win32' || tempEnv === undefined || path.parse(tempEnv).root.toUpperCase() !== 'F:\\',
+    `E2E de expiração requer Windows real com TEMP em F: e display Electron (plataforma=${process.platform}, TEMP=${tempEnv ?? 'ausente'}). Executar na máquina Windows F: via pnpm test:e2e.`
+  )
+  // Após o gate, TEMP está garantido em F: (Windows real).
+  const temp = tempEnv as string
+
   let requestCount = 0
   const chatRequests: unknown[] = []
   const server = createServer((request, response) => {
@@ -351,7 +365,7 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
               tool_calls: [{
                 function: {
                   name: 'tupiniquim_workspace_write_proposal',
-                  arguments: { relativePath: target, content, operation: 'CREATE' }
+                  arguments: { relativePath: target, content: `${content}\n`, operation: 'CREATE' }
                 }
               }]
             },
@@ -376,6 +390,8 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
   const mockUrl = `http://127.0.0.1:${String(address.port)}`
   let application: Awaited<ReturnType<typeof electron.launch>> | null = null
   let workspaceRoot = ''
+  const provenanceRegion = (page: Page): Locator => page.getByRole('region', { name: 'Proveniência da proposta de escrita' })
+  const proposalIdOf = (region: Locator): Locator => region.locator('dt').filter({ hasText: /^Proposal$/u }).locator('..').locator('dd')
   try {
     application = await electron.launch({
       args: ['.'],
@@ -383,15 +399,15 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
       timeout: 180_000,
       env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', TUPINIQUIM_OLLAMA_BASE_URL: mockUrl }
     })
-    const temp = process.env.TEMP
-    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') {
-      console.log('E2E: BLOCKED — Linux sandbox / no F: / no Electron display')
-      return
-    }
+    const processErrors: string[] = []
+    application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
     workspaceRoot = await mkdtemp(path.join(temp, 'tupiniquim-e2e-expire-'))
     await writeFile(path.join(workspaceRoot, 'README.md'), '# E2E Expiration\n', 'utf8')
     await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot })
-    const page = await application.firstWindow({ timeout: 180_000 })
+    const page = await application.firstWindow({ timeout: 180_000 }).catch((cause: unknown) => {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(`${detail}\nElectron stderr:\n${processErrors.join('')}`)
+    })
     await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
     await application.evaluate(({ dialog }, root) => {
       Object.defineProperty(dialog, 'showOpenDialog', {
@@ -409,45 +425,103 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
     await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
     await expect(page.locator('.availability')).toHaveText('READY')
 
-    // First proposal A
+    // ── Proposal A (PENDING_REVIEW) ────────────────────────────────────────
     await page.locator('.mode-switch').getByRole('button', { name: 'Plan', exact: true }).click()
     await page.getByLabel('Mensagem ao agente').fill('Proposta A.')
     await page.getByRole('button', { name: 'Enviar', exact: true }).click()
-    const provenanceA = page.getByRole('region', { name: 'Proveniência da proposta de escrita' })
-    await expect(provenanceA).toBeVisible({ timeout: 30_000 })
-    await expect(provenanceA.locator('header span')).toHaveText('PENDING_REVIEW')
-    const proposalIdA = await provenanceA.locator('dt').filter({ hasText: /^Proposal$/u }).locator('..').locator('dd').textContent()
+    await expect(provenanceRegion(page)).toBeVisible({ timeout: 30_000 })
+    const proposalIdA = await proposalIdOf(provenanceRegion(page).last()).textContent()
     if (proposalIdA === null) throw new Error('Proposal A sem ID.')
 
-    // Second proposal B replaces A
+    // ── Proposal B para o mesmo execution/step substitui A ─────────────────
     await page.getByLabel('Mensagem ao agente').fill('Proposta B.')
     await page.getByRole('button', { name: 'Enviar', exact: true }).click()
-    await expect(provenanceA.locator('header span')).toHaveText('PENDING_REVIEW', { timeout: 30_000 })
 
-    // Verify A is EXPIRED via IPC
-    const statusA = await page.evaluate(async (id) => await window.studio.agent.lookupProposalStatus(id), proposalIdA)
+    // Espera até existirem DOIS cards de proveniência (tombstone de A + B).
+    await expect(provenanceRegion(page)).toHaveCount(2, { timeout: 30_000 })
+
+    // Localiza EXPLICITAMENTE o card cujo Proposal == proposalIdA.
+    const tombstoneA = provenanceRegion(page).filter({ has: page.locator('dd', { hasText: proposalIdA }) })
+    await expect(tombstoneA).toHaveCount(1)
+    await expect(tombstoneA.locator('header span')).toHaveText('EXPIRED')
+
+    // Localiza B separadamente: o card que NÃO contém o id de A é o corrente.
+    const cardB = provenanceRegion(page).filter({ hasNot: page.locator('dd', { hasText: proposalIdA }) })
+    await expect(cardB).toHaveCount(1)
+    await expect(cardB.locator('header span')).toHaveText('PENDING_REVIEW')
+    const proposalIdB = await proposalIdOf(cardB).textContent()
+    if (proposalIdB === null) throw new Error('Proposal B sem ID.')
+    expect(proposalIdB).not.toBe(proposalIdA)
+
+    // ── IPC: lookupProposalStatus(A) => EXPIRED; (B) => PENDING_REVIEW ──────
+    const statusA = await page.evaluate(async (id: string) => await window.studio.agent.lookupProposalStatus(id), proposalIdA)
     expect(statusA).toMatchObject({ ok: true, value: 'EXPIRED' })
+    const statusB = await page.evaluate(async (id: string) => await window.studio.agent.lookupProposalStatus(id), proposalIdB)
+    expect(statusB).toMatchObject({ ok: true, value: 'PENDING_REVIEW' })
+    // Segunda consulta de A continua EXPIRED.
+    const statusAAgain = await page.evaluate(async (id: string) => await window.studio.agent.lookupProposalStatus(id), proposalIdA)
+    expect(statusAAgain).toMatchObject({ ok: true, value: 'EXPIRED' })
 
-    // Apply A must fail
+    // ── applyProposedWorkspaceWrite(A) => erro ─────────────────────────────
     const applyA = await page.evaluate(async (id) => await window.studio.planning.applyProposedWorkspaceWrite({ proposalId: id }), proposalIdA)
     expect(applyA).toMatchObject({ ok: false })
 
-    // File from A must not exist
+    // ── Arquivo de A nunca é escrito ───────────────────────────────────────
     await expect(readFile(path.join(workspaceRoot, proposalTargetA), 'utf8')).rejects.toThrow()
 
-    // B remains valid
-    const provenanceB = page.getByRole('region', { name: 'Proveniência da proposta de escrita' }).last()
-    await expect(provenanceB.locator('header span')).toHaveText('PENDING_REVIEW')
+    // ── Marcadores privados A/B ausentes de TODOS os artefatos públicos ─────
+    const markers = [proposalContentA, proposalContentB]
+    // 1) DOM.
+    const dom = await page.content()
+    for (const marker of markers) expect(dom).not.toContain(marker)
+    // 2) Conversation pública dorenderer.
+    const conversation = await page.locator('.agent-conversation').innerText()
+    for (const marker of markers) expect(conversation).not.toContain(marker)
+    // 3) Planning events / Flight Recorder + 4) Agent history (thread/turns/events).
+    const privilegedArtifacts = await page.evaluate(async () => {
+      const executions = await window.studio.planning.events({ executionId: '' })
+      // Eventos por execução: lê via read do plano corrente não é necessário;
+      // usa o history do agente e os eventos de execução conhecidos do DOM.
+      const history = await window.studio.agent.history({ threadId: '' })
+      return JSON.stringify({ executions, history })
+    })
+    for (const marker of markers) expect(privilegedArtifacts).not.toContain(marker)
+    // Varredura mais forte: Flight Recorder events de TODAS as execuções,
+    // obtidos a partir dos ids expostos nos cards de proveniência.
+    const executionIds = await page.evaluate((): string[] => {
+      const ids: string[] = []
+      const nodes = Array.from(document.querySelectorAll<HTMLElement>('.proposal-provenance dl'))
+      for (const dl of nodes) {
+        const dts = Array.from(dl.querySelectorAll<HTMLElement>('dt'))
+        const executionDt = dts.find((dt) => dt.textContent?.trim() === 'Execution')
+        const dd = executionDt?.parentElement?.querySelector('dd')?.textContent
+        if (dd !== null && dd !== undefined && dd !== '') ids.push(dd)
+      }
+      return ids
+    })
+    const flightRecorder = await page.evaluate(async (ids) => {
+      const collected: unknown[] = []
+      for (const executionId of ids) {
+        const events = await window.studio.planning.events({ executionId })
+        collected.push(events)
+      }
+      return JSON.stringify(collected)
+    }, executionIds)
+    for (const marker of markers) expect(flightRecorder).not.toContain(marker)
 
-    // Private content never appears in DOM
-    expect(await page.content()).not.toContain('E2E_PRIVATE_CONTENT_A')
-    expect(await page.content()).not.toContain('E2E_PRIVATE_CONTENT_B')
-
-    // No private content in audit log
+    // 5) AuditLog.
     const dataRoot = `${projectRoot}.data`
     const auditLog = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
-    expect(auditLog).not.toContain('E2E_PRIVATE_CONTENT_A')
-    expect(auditLog).not.toContain('E2E_PRIVATE_CONTENT_B')
+    for (const marker of markers) expect(auditLog).not.toContain(marker)
+
+    // 6) SQLite (arquivos studio.sqlite*).
+    const databaseFiles = (await readdir(path.join(dataRoot, 'database'))).filter((name) => name.startsWith('studio.sqlite'))
+    for (const marker of markers) {
+      const needle = Buffer.from(marker, 'utf8')
+      for (const databaseFile of databaseFiles) {
+        expect((await readFile(path.join(dataRoot, 'database', databaseFile))).includes(needle)).toBe(false)
+      }
+    }
 
     await page.screenshot({ path: path.join(projectRoot, 'test-results', 'expiration-flow.png'), fullPage: true })
   } finally {
