@@ -529,7 +529,8 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
     expect(recordA.Target).toBe(proposalTargetA)
     expect(recordB.Target).toBe(proposalTargetB)
     const realThreadIds = [...new Set(provenanceRecords.map((record) => record.Thread).filter((value): value is string => value !== undefined && value !== ''))]
-    expect(realThreadIds.length).toBeGreaterThanOrEqual(2)
+    expect(realThreadIds).toHaveLength(1)
+    expect(realThreadIds[0]).toBe(recordA.Thread)
     const realHistory = await page.evaluate(async (threadIds) => {
       const thread: unknown[] = []
       const turns: unknown[][] = []
