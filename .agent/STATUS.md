@@ -5,7 +5,7 @@ Atualizado em: 2026-09-06
 ## Estado atual
 
 - Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-- Checkpoint candidate: wave-14 — Provider-neutral tool protocol + proposal provenance + expiration safety
+- Checkpoint: wave-14 — Provider-neutral tool protocol + proposal provenance + expiration safety
 - **wave-14: APROVADO/FECHADO** (checkpoint interno da Master Wave 1; **NÃO** é uma nova Master Wave)
 - Current branch: `arena/01a06dcc-tupiniquim-ai-dev-studio`
 - PR atual: #15
