@@ -2,47 +2,55 @@
 
 ## Objetivo
 
-Fechar as correções finais da Wave 14 (Master Wave 1 em andamento; checkpoint
-candidate wave-14) apontadas pela 4ª auditoria do PR #12 (Ref #11), sem recomeçar
-o projeto e sem mudar a arquitetura já aprovada.
+Fechamento documental do checkpoint wave-14 (Master Wave 1 em andamento; checkpoint
+**APROVADO/FECHADO**). Nenhuma mudança de código, runtime ou teste. Nenhum merge.
 
-## Correções aplicadas nesta continuação
+## Identificação
 
-1. **Baseline FAIL CLOSED (bloqueante)** — `lookupTargetBaseline()` não tem mais
-   catch genérico. Erro de inspeção/path (traversal, absoluto, symlink fora do
-   workspace, namespace inválido, permissão, inesperado) propaga e recusa a
-   proposta; apenas `{exists:false,hash:null}` real do WorkspaceAdapter significa
-   alvo inexistente.
-2. **Purge garantido no EXPIRED** — `lookupStatus()` chama `invalidate(id)` também
-   quando `validateProposalState()` lança; após EXPIRED o payload não fica
-   residente, a segunda consulta segue EXPIRED e `consume()` falha.
-3. **Testes de persistência** — workspace drift na MESMA instância (getWorkspaceRoot
-   mutável); purge com expiração real antes de lookup/consume.
-4. **E2E de expiração** — gate `test.skip` explícito (fim do PASS falso por retorno
-   silencioso); A identificada por ID com EXPIRED, B separada com PENDING_REVIEW;
-   `lookupProposalStatus(A)=EXPIRED`; `applyProposedWorkspaceWrite(A)` falha; arquivo
-   de A não existe; marcadores privados A/B ausentes de DOM, conversation, Flight
-   Recorder/events, agent history, AuditLog e SQLite.
-5. **Documentação** — CHANGELOG_AGENT.md restaurado do origin/main (histórico
-   completo) com a Wave 14 adicionada; STATUS/NEXT_ACTION/HANDOFF reconciliados
-   (Master Wave 1 ≠ checkpoint wave-14; sem avanço para Terminal/Git).
+- Branch: `arena/01a06dcc-tupiniquim-ai-dev-studio`
+- PR: #15
+- Issue: #11
+- HEAD validado no Windows F: `2703ed5cef0188e9b9e548bcdca84a7d7328c6e0`
 
-## Evidência coletada no Arena (Linux)
+## Estado
 
-- lint ✅, typecheck ✅, build ✅.
-- 8 testes unitários novos cross-platform: todos PASSAM.
-- 7 testes de integração novos cross-platform com WorkspaceAdapter real: todos PASSAM.
-- E2E de expiração: SKIP explícito no Linux (não PASS falso).
+- Master Wave 1: **EM ANDAMENTO** (ver `.agent/MASTER_PLAN.md`).
+- Checkpoint wave-14: **APROVADO/FECHADO**; não é uma nova Master Wave.
+- Terminal mutável: **indisponível**.
+- Git mutável: **indisponível**.
+- Nenhuma atividade pendente na Wave 14.
 
-## BLOCKED — executar na máquina Windows real (F:)
+## Evidência real — Windows F:
 
-- `scripts\pnpm-f.ps1 validate`
-- `pnpm test:e2e`
-- tests/integration/persistence.test.ts (SQLite em F:)
-- Quinta auditoria externa; merge/checkpoint somente após aprovação.
+| Gate | Resultado |
+|---|---|
+| `pnpm-f.ps1 validate` | PASS integral |
+| `pnpm test:unit` | 52/52 PASS |
+| `pnpm test:integration` | 42 passed / 2 skipped |
+| `tests/integration/persistence.test.ts` | 22/22 PASS |
+| `pnpm test:security` | 34/34 PASS |
+| `pnpm build` | PASS |
+| `pnpm-f.ps1 test:e2e` | 2/2 PASS (executado DUAS vezes) |
 
-## Critérios de aceite restantes
+Status antigo BLOCKED para Windows `F:`, persistence e E2E: **removido** (resolvido com
+as execuções reais na máquina Windows).
 
-1. Gates Windows F: verdes (validate + e2e).
-2. Quinta auditoria externa aprovar.
-3. Nenhuma mudança fora de escopo (providers, Terminal/Git mutável, voz, etc.).
+## Fluxo final comprovado
+
+- provider-neutral tool protocol
+- proposal provenance
+- EXPIRED
+- replacement A→B
+- mesma Execution/Step/Thread
+- Turn/ToolCall distintos
+- `apply(A)` recusado
+- arquivo A ausente
+- payload privado ausente de: DOM, conversation, agent history, Flight Recorder, AuditLog e SQLite
+- isolamento entre workspaces
+- baseline fail-closed
+- purge do payload efêmero
+
+## Próxima ação
+
+Definir a próxima unidade da Master Wave 1 a partir de `.agent/MASTER_PLAN.md`.
+Não avançar escopo nesta alteração; não fazer merge do PR #15.

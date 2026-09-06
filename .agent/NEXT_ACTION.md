@@ -1,32 +1,29 @@
 # Próxima ação
 
-Master Wave: **1 (EM ANDAMENTO)** · Checkpoint candidate: **wave-14**.
-Não avançar para Terminal/Git/autonomous loop antes de fechar este checkpoint.
+Master Wave: **1 (EM ANDAMENTO)**.
 
-1. **Máquina Windows real (F:)**: executar
-   `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\pnpm-f.ps1 validate`
-   (lint + typecheck + unit + integration + security + build sob o gate F:).
-2. **Máquina Windows real (F:)**: executar `pnpm test:e2e` (ou o wrapper E2E
-   vigente), incluindo o E2E de expiração (A→B substituição, A=EXPIRED,
-   apply(A) falha, sem escrita de A, marcadores privados ausentes de DOM,
-   conversation, Flight Recorder/events, agent history, AuditLog e SQLite).
-3. Rodar os testes de persistência gated por F: (drift na mesma instância e
-   purge com expiração real) na máquina Windows.
-4. Solicitar a **quinta auditoria externa** sobre os resultados reais.
-5. Somente se aprovado: merge/checkpoint de wave-14.
-6. Só então definir a próxima unidade de trabalho conforme `.agent/MASTER_PLAN.md`
-   (a Master Wave 1 continua; Waves 2–3 vêm antes de Agent Runtime/hardening
-   avançado). Terminal mutável e Git mutável seguem INDISPONÍVEIS.
+Checkpoint wave-14: **APROVADO/FECHADO** (checkpoint interno da Master Wave 1; NÃO é
+uma nova Master Wave). Os gates Windows `F:` passaram; o E2E foi executado duas vezes.
 
-## Evidência já coletada no Arena (Linux)
+## Próxima unidade
 
-- lint ✅, typecheck ✅, build ✅.
-- Novos testes cross-platform (rodam sem F:/SQLite): 8 unitários + 7 de
-  integração com WorkspaceAdapter real — todos PASSAM no Linux.
-- E2E de expiração reporta SKIP explícito no Linux (não há PASS falso).
+1. Abrir `.agent/MASTER_PLAN.md`.
+2. Definir a **próxima unidade da Master Wave 1** com base no Plano Mestre.
+3. Executar o protocolo padrão de wave do MASTER_PLAN para a unidade escolhida.
 
-## Status BLOCKED (não alegar PASS)
+## Regras mantidas
 
-- `tests/integration/persistence.test.ts` e os E2E (tests/e2e/desktop.spec.ts)
-  não foram executados no Windows F: pelo Arena — única saída aceitável é
-  **BLOCKED** até a execução real na máquina Windows.
+- NÃO avançar escopo nesta alteração.
+- NÃO fazer merge do PR #15.
+- Terminal mutável: **indisponível**.
+- Git mutável: **indisponível**.
+- O checkpoint wave-14 já está fechado; não é início de uma nova Master Wave.
+
+## Estado do checkpoint wave-14 (referência)
+
+- Branch: `arena/01a06dcc-tupiniquim-ai-dev-studio`
+- PR: #15
+- Issue: #11
+- HEAD validado no Windows F: `2703ed5cef0188e9b9e548bcdca84a7d7328c6e0`
+- `git status --short` no momento do fechamento: limpo.
+```
