@@ -44,6 +44,7 @@ export interface AIHistoryRepository {
   putAIThread(thread: AIThread): Promise<void>
   putAITurn(turn: AITurn): Promise<void>
   appendAIEvent(event: AIEvent): Promise<void>
+  getAIThread?(id: string): Promise<AIThread | null>
 }
 
 export interface CodexAppServerOptions {
@@ -72,9 +73,18 @@ const normalizeDiagnostic = (value: string): string => {
   return redact(value)
 }
 
-const composeTurnInput = (message: string, workspaceContext: string | undefined): string => workspaceContext === undefined
-  ? message
-  : ['Use o contexto de metadados abaixo apenas como referência.', workspaceContext, 'FIM DO CONTEXTO', 'PEDIDO DO USUÁRIO:', message].join('\n\n')
+const composeTurnInput = (message: string, workspaceContext: string | undefined, sessionContext: string | undefined): string => {
+  const parts: string[] = []
+  if (workspaceContext !== undefined) {
+    parts.push('Use o contexto de metadados abaixo apenas como referência.', workspaceContext, 'FIM DO CONTEXTO')
+  }
+  if (sessionContext !== undefined) {
+    parts.push('Use o contexto público da sessão Tupiniquim abaixo apenas como memória redigida.', sessionContext, 'FIM DO CONTEXTO DA SESSÃO TUPINIQUIM')
+  }
+  if (parts.length === 0) return message
+  parts.push('PEDIDO DO USUÁRIO:', message)
+  return parts.join('\n\n')
+}
 
 export const findCodexExecutable = async (): Promise<string> => {
   const explicit = process.env.TUPINIQUIM_CODEX_PATH
@@ -162,6 +172,15 @@ export class CodexAppServerAdapter implements AIProvider {
     if (status.state === 'AUTH_REQUIRED') throw new Error('Codex requer autenticação. Configure uma chave local ou faça login no Codex.')
     const workspaceRoot = this.options.getWorkspaceRoot()
     let threadId = input.threadId
+    if (threadId !== undefined) {
+      const persisted = await this.options.history?.getAIThread?.(threadId)
+      if (persisted !== undefined && persisted !== null) {
+        const parsed = aiThreadSchema.parse(persisted)
+        if (parsed.provider !== 'codex-app-server' || parsed.workspaceRoot !== workspaceRoot) {
+          throw new Error('Thread persistida não pertence ao runtime Codex ou workspace atual.')
+        }
+      }
+    }
     if (threadId === undefined) {
       const response = threadStartResponseSchema.parse(await this.request('thread/start', {
         cwd: workspaceRoot,
@@ -183,7 +202,7 @@ export class CodexAppServerAdapter implements AIProvider {
     }
     const response = turnStartResponseSchema.parse(await this.request('turn/start', {
       threadId,
-      input: [{ type: 'text', text: composeTurnInput(input.message, input.workspaceContext), text_elements: [] }]
+      input: [{ type: 'text', text: composeTurnInput(input.message, input.workspaceContext, input.sessionContext), text_elements: [] }]
     }))
     const reference = { threadId, turnId: response.turn.id }
     await this.options.history?.putAITurn(aiTurnSchema.parse({ id: reference.turnId, threadId: reference.threadId, mode: input.mode, inputHash: createHash('sha256').update(input.message).digest('hex'), createdAt: new Date().toISOString() }))

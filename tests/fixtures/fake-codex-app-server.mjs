@@ -4,6 +4,12 @@ let turnIndex = 0
 
 const send = (message) => process.stdout.write(JSON.stringify(message) + '\n')
 
+const turnInputText = (params) => {
+  const input = params?.input
+  if (!Array.isArray(input)) return ''
+  return input.map((item) => typeof item?.text === 'string' ? item.text : '').join('\n')
+}
+
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const request = JSON.parse(line)
   if (request.id === undefined) return
@@ -26,9 +32,12 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
   if (request.method === 'turn/start') {
     turnIndex += 1
     const turnId = 'turn-controlled-' + turnIndex
+    const text = turnInputText(request.params)
+    const sawSession = text.includes('CONTEXTO DA SESSÃO TUPINIQUIM')
+    const delta = sawSession ? 'CONTROLLED_STREAM_OK CONTEXTO_TUPINIQUIM_OK' : 'CONTROLLED_STREAM_OK'
     send({ id: request.id, result: { turn: { id: turnId } } })
     send({ method: 'turn/started', params: { threadId: request.params.threadId, turn: { id: turnId } } })
-    send({ method: 'item/agentMessage/delta', params: { threadId: request.params.threadId, turnId, itemId: 'item-' + turnIndex, delta: 'CONTROLLED_STREAM_OK' } })
+    send({ method: 'item/agentMessage/delta', params: { threadId: request.params.threadId, turnId, itemId: 'item-' + turnIndex, delta } })
     send({ method: 'turn/completed', params: { threadId: request.params.threadId, turn: { id: turnId, status: 'completed', error: null } } })
     return
   }

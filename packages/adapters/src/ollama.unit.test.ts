@@ -395,6 +395,36 @@ describe('OllamaAdapter', () => {
     await adapter.close()
   })
 
+  it('injeta sessionContext no request sem persistir no histórico local', async () => {
+    const chatBodies: string[] = []
+    const fetchImpl: typeof fetch = (input, init) => {
+      if (urlFor(input).endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local' }] })))
+      if (typeof init?.body === 'string') chatBodies.push(init.body)
+      return Promise.resolve(ndjsonResponse({ message: { content: 'OLLAMA_SESSION_OK' }, done: true }))
+    }
+    const adapter = new OllamaAdapter({ onEvent: () => undefined, fetchImpl })
+    await adapter.connect()
+    adapter.selectModel('qwen-local')
+    const sessionContext = [
+      'CONTEXTO DA SESSÃO TUPINIQUIM — SOMENTE TURNS PÚBLICOS REDIGIDOS',
+      '[codex-app-server / codex-test-model] user: Meu projeto usa arquitetura X'
+    ].join('\n')
+    const reference = await adapter.send({ message: 'Continue a análise', mode: 'CHAT', sessionContext })
+    await waitFor(() => adapter.status().state === 'READY')
+    expect(chatBodies[0]).toContain('CONTEXTO DA SESSÃO TUPINIQUIM')
+    expect(chatBodies[0]).toContain('arquitetura X')
+    expect(chatBodies[0]).toContain('Continue a análise')
+
+    await adapter.send({ message: 'segunda mensagem local', mode: 'CHAT', threadId: reference.threadId })
+    await waitFor(() => adapter.status().state === 'READY')
+    expect(chatBodies[1]).toContain('Continue a análise')
+    expect(chatBodies[1]).toContain('OLLAMA_SESSION_OK')
+    expect(chatBodies[1]).toContain('segunda mensagem local')
+    expect(chatBodies[1]).not.toContain('CONTEXTO DA SESSÃO TUPINIQUIM')
+    expect(chatBodies[1]).not.toContain('arquitetura X')
+    await adapter.close()
+  })
+
   it('rejeita hosts Ollama remotos', () => {
     expect(() => new OllamaAdapter({ onEvent: () => undefined, baseUrl: 'https://ollama.com' })).toThrow('loopback')
   })
