@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { maxTupiniquimSessionContextChars, type AIStatus } from '@tupiniquim/contracts'
-import { PrivilegedRuntimeGate, TupiniquimSessionService, agentRuntimeBusyMessage, assertIdleForWorkspaceSwitch, workspaceSwitchBusyMessage } from './tupiniquim-session'
+import { PrivilegedRuntimeGate, TupiniquimSessionService, agentRuntimeBusyMessage, assertIdleForWorkspaceSwitch, shouldCompleteTurnFromError, workspaceSwitchBusyMessage } from './tupiniquim-session'
 
 const statusFor = (activeThreadId: string | null, activeTurnId: string | null = null): AIStatus => ({
   provider: 'ollama',
@@ -547,5 +547,81 @@ describe('TupiniquimSessionService', () => {
     expect(gate.locked()).toBe(false)
     expect(() => gate.beginWorkspaceSwitch()).not.toThrow()
     gate.endWorkspaceSwitch()
+  })
+
+  it('não finaliza lifecycle Codex em ERROR/RETRYING e reconhece só no TURN_COMPLETED', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'qwen-local')
+    sessions.appendTurn({
+      role: 'user',
+      text: 'Meu projeto usa arquitetura X',
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: 'thread-ollama',
+      turnId: 'turn-ollama-user'
+    })
+    const pending = sessions.unseenPublicContext('codex-app-server')
+    expect(pending.turnIds).toHaveLength(1)
+    expect(shouldCompleteTurnFromError('codex-app-server', 'RETRYING')).toBe(false)
+    sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-retry', pending.turnIds)
+    if (shouldCompleteTurnFromError('codex-app-server', 'RETRYING')) {
+      sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-retry', 'RETRYING')
+    }
+    sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-retry', 'RETRYING')
+    expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(pending.turnIds)
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 1, settledSuccess: 0, settledFailure: 0 })
+
+    sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-retry', 'COMPLETED')
+    expect(sessions.unseenPublicContext('codex-app-server')).toEqual({ text: undefined, turnIds: [] })
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
+  })
+
+  it('Codex ERROR/FAILED depois TURN_COMPLETED/FAILED não reconhece contexto e não deixa resíduo', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'qwen-local')
+    sessions.appendTurn({
+      role: 'user',
+      text: 'contexto para retry Codex',
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: 'thread-ollama',
+      turnId: 'turn-ollama-user'
+    })
+    const pending = sessions.unseenPublicContext('codex-app-server')
+    expect(shouldCompleteTurnFromError('codex-app-server', 'FAILED')).toBe(false)
+    sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-fail', pending.turnIds)
+    if (shouldCompleteTurnFromError('codex-app-server', 'FAILED')) {
+      sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-fail', 'FAILED')
+    }
+    expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(pending.turnIds)
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 1, settledSuccess: 0, settledFailure: 0 })
+
+    sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-fail', 'FAILED')
+    sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-fail', 'FAILED')
+    expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(pending.turnIds)
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
+  })
+
+  it('Ollama ERROR/FAILED é terminal, não reconhece o delta e zera o resíduo', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('codex-app-server', 'thread-codex', 'codex-test-model')
+    sessions.appendTurn({
+      role: 'user',
+      text: 'contexto para Ollama',
+      provider: 'codex-app-server',
+      model: 'codex-test-model',
+      threadId: 'thread-codex',
+      turnId: 'turn-codex-user'
+    })
+    const pending = sessions.unseenPublicContext('ollama')
+    expect(pending.turnIds).toHaveLength(1)
+    expect(shouldCompleteTurnFromError('ollama', 'FAILED')).toBe(true)
+    sessions.notePendingContext('ollama', 'thread-ollama', 'turn-fail', pending.turnIds)
+    sessions.completeTurn('ollama', 'thread-ollama', 'turn-fail', 'FAILED')
+    expect(sessions.unseenPublicContext('ollama').turnIds).toEqual(pending.turnIds)
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
   })
 })

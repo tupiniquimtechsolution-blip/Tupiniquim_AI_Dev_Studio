@@ -54,7 +54,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionService, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, type ToolIntent } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionService, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, shouldCompleteTurnFromError, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
@@ -113,7 +113,11 @@ const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
     } else if (event.kind === 'TURN_COMPLETED' && event.threadId !== undefined && event.turnId !== undefined) {
       tupiniquimSession.completeTurn(provider, event.threadId, event.turnId, event.status)
     } else if (event.kind === 'ERROR') {
-      if (event.threadId !== undefined && event.turnId !== undefined) {
+      if (
+        event.threadId !== undefined &&
+        event.turnId !== undefined &&
+        shouldCompleteTurnFromError(provider, event.status ?? 'FAILED')
+      ) {
         tupiniquimSession.completeTurn(provider, event.threadId, event.turnId, event.status ?? 'FAILED')
       }
       tupiniquimSession.appendTurn({

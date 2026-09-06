@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AIEvent, AIThread, AITurn, ApprovalDecision, Execution, FlightRecorderEvent, Plan } from '@tupiniquim/contracts'
 import { CodexAppServerAdapter, OllamaAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, TupiniquimSessionService, WorkspaceWriteProposalService, assertIdleForWorkspaceSwitch, type PlanRepository } from '@tupiniquim/core'
+import { PlanApprovalService, TupiniquimSessionService, WorkspaceWriteProposalService, assertIdleForWorkspaceSwitch, shouldCompleteTurnFromError, type PlanRepository } from '@tupiniquim/core'
 
 /**
  * Cross-platform Wave 15 invariants: Tupiniquim Session != Provider Thread.
@@ -315,7 +315,12 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
           })
         } else if (event.kind === 'TURN_COMPLETED' && event.threadId !== undefined && event.turnId !== undefined) {
           sessions.completeTurn('codex-app-server', event.threadId, event.turnId, event.status)
-        } else if (event.kind === 'ERROR' && event.threadId !== undefined && event.turnId !== undefined) {
+        } else if (
+          event.kind === 'ERROR' &&
+          event.threadId !== undefined &&
+          event.turnId !== undefined &&
+          shouldCompleteTurnFromError('codex-app-server', event.status ?? 'FAILED')
+        ) {
           sessions.completeTurn('codex-app-server', event.threadId, event.turnId, event.status ?? 'FAILED')
         }
       },

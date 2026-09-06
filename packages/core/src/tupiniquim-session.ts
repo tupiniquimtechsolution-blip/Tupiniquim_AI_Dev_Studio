@@ -22,6 +22,12 @@ export const assertIdleForWorkspaceSwitch = (locked: boolean): void => {
 export const turnLifecycleKey = (provider: AIProviderKind, threadId: string, turnId: string): string =>
   `${provider}\u001f${threadId}\u001f${turnId}`
 
+export const isTransientTurnStatus = (status?: string): boolean =>
+  status !== undefined && status.trim().toUpperCase() === 'RETRYING'
+
+export const shouldCompleteTurnFromError = (provider: AIProviderKind, status?: string): boolean =>
+  !isTransientTurnStatus(status) && provider !== 'codex-app-server'
+
 export class PrivilegedRuntimeGate {
   private workspaceTransitioning = false
   private providerTransitioning = false
@@ -89,6 +95,7 @@ interface WorkspaceSessionState {
   pendingByTurn: Map<string, PendingContextDelivery>
   settledSuccess: Set<string>
   settledFailure: Set<string>
+  finalizedTurns: Set<string>
 }
 
 export class TupiniquimSessionService {
@@ -121,7 +128,8 @@ export class TupiniquimSessionService {
       seenByProvider: new Map(),
       pendingByTurn: new Map(),
       settledSuccess: new Set(),
-      settledFailure: new Set()
+      settledFailure: new Set(),
+      finalizedTurns: new Set()
     }
     this.sessionsByWorkspace.set(workspaceRoot, created)
     this.activeWorkspaceRoot = workspaceRoot
@@ -320,23 +328,28 @@ export class TupiniquimSessionService {
   public completeTurn(provider: AIProviderKind, threadId: string, turnId: string, status?: string): void {
     const state = this.activeOrNull()
     if (state === null) return
+    if (isTransientTurnStatus(status)) return
     const key = turnLifecycleKey(provider, threadId, turnId)
     state.inProgress.delete(key)
+    if (state.finalizedTurns.has(key)) return
     const pending = state.pendingByTurn.get(key)
     const success = status !== undefined && isSuccessfulTurnStatus(status)
     if (pending !== undefined) {
       state.pendingByTurn.delete(key)
       if (success && pending.turnIds.length !== 0) this.markTurnsSeen(state, pending.provider, pending.turnIds)
+      state.finalizedTurns.add(key)
       return
     }
     if (success) {
       state.settledSuccess.add(key)
       state.settledFailure.delete(key)
+      state.finalizedTurns.add(key)
       return
     }
     if (status !== undefined) {
       state.settledFailure.add(key)
       state.settledSuccess.delete(key)
+      state.finalizedTurns.add(key)
     }
   }
 
