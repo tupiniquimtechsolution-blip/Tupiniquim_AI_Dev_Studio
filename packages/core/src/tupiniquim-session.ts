@@ -13,9 +13,52 @@ import {
 } from '@tupiniquim/contracts'
 
 export const workspaceSwitchBusyMessage = 'Aguarde o turno do agente terminar antes de trocar de workspace.'
+export const agentRuntimeBusyMessage = 'Aguarde o turno ou a transição de provider em andamento.'
 
 export const assertIdleForWorkspaceSwitch = (locked: boolean): void => {
   if (locked) throw new Error(workspaceSwitchBusyMessage)
+}
+
+export const turnLifecycleKey = (provider: AIProviderKind, threadId: string, turnId: string): string =>
+  `${provider}\u001f${threadId}\u001f${turnId}`
+
+export class PrivilegedRuntimeGate {
+  private workspaceTransitioning = false
+  private providerTransitioning = false
+  private sendPreparing = false
+
+  public constructor(private readonly agentBusy: () => boolean = () => false) {}
+
+  public locked(): boolean {
+    return this.workspaceTransitioning || this.providerTransitioning || this.sendPreparing || this.agentBusy()
+  }
+
+  public beginWorkspaceSwitch(): void {
+    assertIdleForWorkspaceSwitch(this.locked())
+    this.workspaceTransitioning = true
+  }
+
+  public endWorkspaceSwitch(): void {
+    this.workspaceTransitioning = false
+  }
+
+  public beginSend(): void {
+    if (this.locked()) throw new Error(agentRuntimeBusyMessage)
+    this.sendPreparing = true
+  }
+
+  public endSend(): void {
+    this.sendPreparing = false
+  }
+
+  public beginProviderSelect(): void {
+    if (this.locked()) throw new Error(agentRuntimeBusyMessage)
+    this.providerTransitioning = true
+  }
+
+  public endProviderSelect(): void {
+    this.providerTransitioning = false
+  }
 }
 
 const sessionContextHeader = [
@@ -136,17 +179,28 @@ export class TupiniquimSessionService {
 
   public notePendingContext(provider: AIProviderKind, threadId: string, turnId: string, turnIds: string[]): void {
     const state = this.activeOrNull()
-    if (state === null || turnIds.length === 0) return
-    if (state.settledSuccess.has(turnId)) {
-      this.markTurnsSeen(state, provider, turnIds)
-      state.settledSuccess.delete(turnId)
+    if (state === null) return
+    const key = turnLifecycleKey(provider, threadId, turnId)
+    if (state.settledSuccess.has(key)) {
+      if (turnIds.length !== 0) this.markTurnsSeen(state, provider, turnIds)
+      state.settledSuccess.delete(key)
       return
     }
-    if (state.settledFailure.has(turnId)) {
-      state.settledFailure.delete(turnId)
+    if (state.settledFailure.has(key)) {
+      state.settledFailure.delete(key)
       return
     }
-    state.pendingByTurn.set(turnId, { provider, threadId, turnIds })
+    state.pendingByTurn.set(key, { provider, threadId, turnIds })
+  }
+
+  public lifecycleResidue(): { pending: number; settledSuccess: number; settledFailure: number } {
+    const state = this.activeOrNull()
+    if (state === null) return { pending: 0, settledSuccess: 0, settledFailure: 0 }
+    return {
+      pending: state.pendingByTurn.size,
+      settledSuccess: state.settledSuccess.size,
+      settledFailure: state.settledFailure.size
+    }
   }
 
   public modelFor(provider: AIProviderKind): string | null {
@@ -242,7 +296,8 @@ export class TupiniquimSessionService {
     text: string
   }): TupiniquimTurn {
     const state = this.requireActive()
-    const existing = state.inProgress.get(input.turnId)
+    const key = turnLifecycleKey(input.provider, input.threadId, input.turnId)
+    const existing = state.inProgress.get(key)
     const model = input.model ?? state.bindings.get(input.provider)?.model ?? existing?.model ?? null
     if (existing !== undefined) {
       existing.text = redact(`${existing.text}${input.text}`)
@@ -258,29 +313,30 @@ export class TupiniquimSessionService {
       threadId: input.threadId,
       turnId: input.turnId
     })
-    state.inProgress.set(input.turnId, turn)
+    state.inProgress.set(key, turn)
     return turn
   }
 
-  public completeTurn(turnId: string, status?: string): void {
+  public completeTurn(provider: AIProviderKind, threadId: string, turnId: string, status?: string): void {
     const state = this.activeOrNull()
     if (state === null) return
-    state.inProgress.delete(turnId)
-    const pending = state.pendingByTurn.get(turnId)
+    const key = turnLifecycleKey(provider, threadId, turnId)
+    state.inProgress.delete(key)
+    const pending = state.pendingByTurn.get(key)
     const success = status !== undefined && isSuccessfulTurnStatus(status)
     if (pending !== undefined) {
-      state.pendingByTurn.delete(turnId)
-      if (success) this.markTurnsSeen(state, pending.provider, pending.turnIds)
+      state.pendingByTurn.delete(key)
+      if (success && pending.turnIds.length !== 0) this.markTurnsSeen(state, pending.provider, pending.turnIds)
       return
     }
     if (success) {
-      state.settledSuccess.add(turnId)
-      state.settledFailure.delete(turnId)
+      state.settledSuccess.add(key)
+      state.settledFailure.delete(key)
       return
     }
     if (status !== undefined) {
-      state.settledFailure.add(turnId)
-      state.settledSuccess.delete(turnId)
+      state.settledFailure.add(key)
+      state.settledSuccess.delete(key)
     }
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { maxTupiniquimSessionContextChars, type AIStatus } from '@tupiniquim/contracts'
-import { TupiniquimSessionService, assertIdleForWorkspaceSwitch, workspaceSwitchBusyMessage } from './tupiniquim-session'
+import { PrivilegedRuntimeGate, TupiniquimSessionService, agentRuntimeBusyMessage, assertIdleForWorkspaceSwitch, workspaceSwitchBusyMessage } from './tupiniquim-session'
 
 const statusFor = (activeThreadId: string | null, activeTurnId: string | null = null): AIStatus => ({
   provider: 'ollama',
@@ -137,7 +137,7 @@ describe('TupiniquimSessionService', () => {
       turnId: 'turn-assistant',
       text: 'parte-2'
     })
-    sessions.completeTurn('turn-assistant')
+    sessions.completeTurn('ollama', 'thread-ollama', 'turn-assistant')
     expect(sessions.snapshot()?.turns.map((turn) => turn.text)).toEqual([
       user.text,
       'parte-1 parte-2'
@@ -415,16 +415,19 @@ describe('TupiniquimSessionService', () => {
     expect(pending.turnIds).toHaveLength(1)
 
     sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-error', pending.turnIds)
-    sessions.completeTurn('turn-error', 'FAILED')
+    sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-error', 'FAILED')
     expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(pending.turnIds)
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
 
     sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-cancel', pending.turnIds)
-    sessions.completeTurn('turn-cancel', 'CANCELLED')
+    sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-cancel', 'CANCELLED')
     expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(pending.turnIds)
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
 
     sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-ok', pending.turnIds)
-    sessions.completeTurn('turn-ok', 'completed')
+    sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-ok', 'completed')
     expect(sessions.unseenPublicContext('codex-app-server')).toEqual({ text: undefined, turnIds: [] })
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
   })
 
   it('reconhece contexto pendente mesmo se TURN_COMPLETED chegar antes do notePending', () => {
@@ -440,9 +443,109 @@ describe('TupiniquimSessionService', () => {
       turnId: 'turn-ollama-user'
     })
     const pending = sessions.unseenPublicContext('codex-app-server')
-    sessions.completeTurn('turn-race', 'COMPLETED')
+    sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-race', 'COMPLETED')
     expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(pending.turnIds)
     sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-race', pending.turnIds)
     expect(sessions.unseenPublicContext('codex-app-server')).toEqual({ text: undefined, turnIds: [] })
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
+  })
+
+  it('não deixa settlement residual em turnos sem sessionContext', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'qwen-local')
+    for (let index = 0; index < 5; index += 1) {
+      const turnId = `turn-local-${String(index)}`
+      sessions.notePendingContext('ollama', 'thread-ollama', turnId, [])
+      sessions.completeTurn('ollama', 'thread-ollama', turnId, index % 2 === 0 ? 'COMPLETED' : 'FAILED')
+    }
+    sessions.completeTurn('ollama', 'thread-ollama', 'turn-race-empty', 'SUCCESS')
+    sessions.notePendingContext('ollama', 'thread-ollama', 'turn-race-empty', [])
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
+  })
+
+  it('isola lifecycle e inProgress quando dois providers reutilizam o mesmo turnId', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-a', 'qwen-local')
+    sessions.bindProviderThread('codex-app-server', 'thread-b', 'codex-test-model')
+    sessions.appendTurn({
+      role: 'user',
+      text: 'contexto exclusivo de A',
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: 'thread-a',
+      turnId: 'turn-user-a'
+    })
+    const pendingA = sessions.unseenPublicContext('codex-app-server')
+    sessions.notePendingContext('codex-app-server', 'thread-b', 'turn-1', pendingA.turnIds)
+    sessions.applyAssistantDelta({
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: 'thread-a',
+      turnId: 'turn-1',
+      text: 'delta-A'
+    })
+    sessions.applyAssistantDelta({
+      provider: 'codex-app-server',
+      model: 'codex-test-model',
+      threadId: 'thread-b',
+      turnId: 'turn-1',
+      text: 'delta-B'
+    })
+    sessions.notePendingContext('ollama', 'thread-a', 'turn-1', [])
+    sessions.completeTurn('ollama', 'thread-a', 'turn-1', 'COMPLETED')
+    expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(expect.arrayContaining(pendingA.turnIds))
+    sessions.applyAssistantDelta({
+      provider: 'codex-app-server',
+      model: 'codex-test-model',
+      threadId: 'thread-b',
+      turnId: 'turn-1',
+      text: '+ainda-B'
+    })
+    const snapshot = sessions.snapshot()
+    expect(snapshot?.turns.some((turn) => turn.provider === 'ollama' && turn.text === 'delta-A')).toBe(true)
+    expect(snapshot?.turns.some((turn) => turn.provider === 'codex-app-server' && turn.text === 'delta-B+ainda-B')).toBe(true)
+    sessions.completeTurn('codex-app-server', 'thread-b', 'turn-1', 'COMPLETED')
+    const unseenAfterAck = sessions.unseenPublicContext('codex-app-server').turnIds
+    expect(pendingA.turnIds.every((turnId) => !unseenAfterAck.includes(turnId))).toBe(true)
+    expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
+  })
+
+  it('recusa send, troca de provider e segundo configure enquanto a troca de workspace está suspensa', async () => {
+    const gate = new PrivilegedRuntimeGate()
+    let release = (): void => undefined
+    const suspended = new Promise<string>((resolve) => { release = () => resolve(workspaceB) })
+    gate.beginWorkspaceSwitch()
+    const configure = (async (): Promise<string> => {
+      try {
+        return await suspended
+      } finally {
+        gate.endWorkspaceSwitch()
+      }
+    })()
+    expect(() => gate.beginSend()).toThrow(agentRuntimeBusyMessage)
+    expect(() => gate.beginProviderSelect()).toThrow(agentRuntimeBusyMessage)
+    expect(() => gate.beginWorkspaceSwitch()).toThrow(workspaceSwitchBusyMessage)
+    release()
+    await expect(configure).resolves.toBe(workspaceB)
+    expect(gate.locked()).toBe(false)
+    expect(() => gate.beginSend()).not.toThrow()
+    gate.endSend()
+  })
+
+  it('libera o lock de workspace mesmo se configure falhar', () => {
+    const gate = new PrivilegedRuntimeGate()
+    gate.beginWorkspaceSwitch()
+    try {
+      throw new Error('stat falhou')
+    } catch {
+      // expected
+    } finally {
+      gate.endWorkspaceSwitch()
+    }
+    expect(gate.locked()).toBe(false)
+    expect(() => gate.beginWorkspaceSwitch()).not.toThrow()
+    gate.endWorkspaceSwitch()
   })
 })

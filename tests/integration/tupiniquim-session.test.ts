@@ -251,10 +251,10 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
             turnId: event.turnId,
             text: event.text ?? ''
           })
-        } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
-          sessions.completeTurn(event.turnId, event.status)
-        } else if (event.kind === 'ERROR' && event.turnId !== undefined) {
-          sessions.completeTurn(event.turnId, event.status ?? 'FAILED')
+        } else if (event.kind === 'TURN_COMPLETED' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.completeTurn('ollama', event.threadId, event.turnId, event.status)
+        } else if (event.kind === 'ERROR' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.completeTurn('ollama', event.threadId, event.turnId, event.status ?? 'FAILED')
         }
       },
       fetchImpl: (input, init) => {
@@ -313,10 +313,10 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
             turnId: event.turnId,
             text: event.text ?? ''
           })
-        } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
-          sessions.completeTurn(event.turnId, event.status)
-        } else if (event.kind === 'ERROR' && event.turnId !== undefined) {
-          sessions.completeTurn(event.turnId, event.status ?? 'FAILED')
+        } else if (event.kind === 'TURN_COMPLETED' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.completeTurn('codex-app-server', event.threadId, event.turnId, event.status)
+        } else if (event.kind === 'ERROR' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.completeTurn('codex-app-server', event.threadId, event.turnId, event.status ?? 'FAILED')
         }
       },
       codexPath: process.execPath,
@@ -435,10 +435,10 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
             turnId: event.turnId,
             text: event.text ?? ''
           })
-        } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
-          sessions.completeTurn(event.turnId, event.status)
-        } else if (event.kind === 'ERROR' && event.turnId !== undefined) {
-          sessions.completeTurn(event.turnId, event.status ?? 'FAILED')
+        } else if (event.kind === 'TURN_COMPLETED' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.completeTurn('ollama', event.threadId, event.turnId, event.status)
+        } else if (event.kind === 'ERROR' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.completeTurn('ollama', event.threadId, event.turnId, event.status ?? 'FAILED')
         }
       },
       fetchImpl: (input, init) => {
@@ -478,6 +478,7 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
       await ollama.connect()
       ollama.selectModel('qwen-local')
       const firstA = await ollama.send({ message: architecture, mode: 'CHAT' })
+      sessions.notePendingContext('ollama', firstA.threadId, firstA.turnId, [])
       sessions.appendTurn({
         role: 'user',
         text: architecture,
@@ -530,6 +531,7 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
       const pending = sessions.unseenPublicContext('codex-app-server')
       expect(pending.turnIds.length).toBeGreaterThan(0)
       const unseenBeforeError = [...pending.turnIds]
+      sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-ack', pending.turnIds)
       chatMode = 'fail'
       const errorRef = await ollama.send({
         message: 'retry após erro',
@@ -537,9 +539,9 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
         threadId: firstA.threadId,
         ...(pending.text === undefined ? {} : { sessionContext: pending.text })
       })
-      sessions.notePendingContext('codex-app-server', errorRef.threadId, errorRef.turnId, pending.turnIds)
+      sessions.notePendingContext('ollama', errorRef.threadId, errorRef.turnId, [])
       await waitFor(() => ollama.status().state === 'ERROR')
-      expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(unseenBeforeError)
+      expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(expect.arrayContaining(unseenBeforeError))
 
       await ollama.connect()
       chatMode = 'hang'
@@ -551,7 +553,7 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
         threadId: firstA.threadId,
         ...(cancelPending.text === undefined ? {} : { sessionContext: cancelPending.text })
       })
-      sessions.notePendingContext('codex-app-server', cancelRef.threadId, cancelRef.turnId, cancelPending.turnIds)
+      sessions.notePendingContext('ollama', cancelRef.threadId, cancelRef.turnId, [])
       await hangStarted
       await ollama.interrupt(cancelRef)
       await waitFor(() => ollama.status().state === 'READY')
@@ -565,10 +567,13 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
         threadId: firstA.threadId,
         ...(successPending.text === undefined ? {} : { sessionContext: successPending.text })
       })
-      sessions.notePendingContext('codex-app-server', successRef.threadId, successRef.turnId, successPending.turnIds)
+      sessions.notePendingContext('ollama', successRef.threadId, successRef.turnId, [])
       await waitFor(() => ollama.status().state === 'READY')
+      expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(expect.arrayContaining(unseenBeforeError))
+      sessions.completeTurn('codex-app-server', 'thread-codex', 'turn-ack', 'COMPLETED')
       const unseenAfterSuccess = sessions.unseenPublicContext('codex-app-server').turnIds
       expect(unseenBeforeError.every((turnId) => !unseenAfterSuccess.includes(turnId))).toBe(true)
+      expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
     } finally {
       await ollama.close()
     }

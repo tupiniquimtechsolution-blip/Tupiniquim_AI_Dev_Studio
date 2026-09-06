@@ -54,7 +54,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionService, VisualIntelligenceService, WorkspaceWriteProposalService, assertIdleForWorkspaceSwitch, prepareProviderSendInput, type ToolIntent } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionService, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
@@ -86,8 +86,6 @@ const terminal = new TerminalAdapter(
   (event) => mainWindow?.webContents.send(ipcChannels.terminalData, event)
 )
 let selectedAgentProvider: AIProviderKind = 'codex-app-server'
-let agentProviderTransitioning = false
-let agentSendPreparing = false
 const tupiniquimSession = new TupiniquimSessionService()
 const controlledCodexArgs = ((): string[] | undefined => {
   const raw = process.env.TUPINIQUIM_CODEX_SERVER_ARGS
@@ -112,10 +110,12 @@ const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
         turnId: event.turnId,
         text: event.text ?? ''
       })
-    } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
-      tupiniquimSession.completeTurn(event.turnId, event.status)
+    } else if (event.kind === 'TURN_COMPLETED' && event.threadId !== undefined && event.turnId !== undefined) {
+      tupiniquimSession.completeTurn(provider, event.threadId, event.turnId, event.status)
     } else if (event.kind === 'ERROR') {
-      if (event.turnId !== undefined) tupiniquimSession.completeTurn(event.turnId, event.status ?? 'FAILED')
+      if (event.threadId !== undefined && event.turnId !== undefined) {
+        tupiniquimSession.completeTurn(provider, event.threadId, event.turnId, event.status ?? 'FAILED')
+      }
       tupiniquimSession.appendTurn({
         role: 'error',
         text: event.detail ?? 'Falha no provider.',
@@ -181,10 +181,10 @@ const ollamaAgent = new OllamaAdapter({
 })
 const agents: Record<AIProviderKind, AIProvider> = { 'codex-app-server': codexAgent, ollama: ollamaAgent }
 const activeAgent = (): AIProvider => agents[selectedAgentProvider]
-const agentRuntimeLocked = (): boolean => agentProviderTransitioning || agentSendPreparing || Object.values(agents).some((agent) => {
+const runtimeGate = new PrivilegedRuntimeGate(() => Object.values(agents).some((agent) => {
   const state = agent.status().state
   return state === 'STARTING' || state === 'BUSY'
-})
+}))
 const redactContextMetadata = (value: string): string => value
   .replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gu, '[REDACTED]')
   .replace(/(authorization|api[_-]?key|token)\s*[:=]\s*\S+/giu, '$1=[REDACTED]')
@@ -388,10 +388,14 @@ const registerIpc = (): void => {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
   register(ipcChannels.workspaceConfigure, configureWorkspaceInputSchema, 'workspace.configure', async ({ root }) => {
-    assertIdleForWorkspaceSwitch(agentRuntimeLocked())
-    const configured = await workspace.configure(root)
-    for (const id of tupiniquimSession.switchWorkspace(configured)) writeProposals.invalidate(id)
-    return configured
+    runtimeGate.beginWorkspaceSwitch()
+    try {
+      const configured = await workspace.configure(root)
+      for (const id of tupiniquimSession.switchWorkspace(configured)) writeProposals.invalidate(id)
+      return configured
+    } finally {
+      runtimeGate.endWorkspaceSwitch()
+    }
   })
   register(ipcChannels.workspaceList, listFilesInputSchema, 'workspace.list', ({ relativePath, depth }) => workspace.list(relativePath, depth))
   register(ipcChannels.workspaceRead, readFileInputSchema, 'workspace.read', ({ relativePath }) => workspace.read(relativePath))
@@ -408,9 +412,11 @@ const registerIpc = (): void => {
   register(ipcChannels.terminalKill, terminalKillInputSchema, 'terminal.kill', ({ terminalId }) => terminal.kill(terminalId))
   register(ipcChannels.agentStatus, z.undefined(), 'agent.status', () => tupiniquimSession.scopedStatus(activeAgent().status()))
   register(ipcChannels.agentProviderSelect, agentProviderSelectInputSchema, 'agent.provider.select', async ({ provider }) => {
-    if (agentRuntimeLocked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
-    if (provider === selectedAgentProvider) return tupiniquimSession.scopedStatus(activeAgent().status())
-    agentProviderTransitioning = true
+    if (provider === selectedAgentProvider) {
+      if (runtimeGate.locked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
+      return tupiniquimSession.scopedStatus(activeAgent().status())
+    }
+    runtimeGate.beginProviderSelect()
     try {
       const status = await agents[provider].connect()
       const previous = selectedAgentProvider
@@ -418,7 +424,7 @@ const registerIpc = (): void => {
       for (const id of tupiniquimSession.switchProvider(previous, provider)) writeProposals.invalidate(id)
       return tupiniquimSession.scopedStatus(status)
     } finally {
-      agentProviderTransitioning = false
+      runtimeGate.endProviderSelect()
     }
   })
   register(ipcChannels.agentLocalModels, z.undefined(), 'agent.local-models', async () => {
@@ -443,8 +449,7 @@ const registerIpc = (): void => {
   }, aiThreadHistorySchema)
   register(ipcChannels.agentSession, z.undefined(), 'agent.session', () => tupiniquimSession.snapshot(), tupiniquimConversationSchema.nullable())
   register(ipcChannels.agentSend, agentSendInputSchema, 'agent.send', async (input) => {
-    if (agentRuntimeLocked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
-    agentSendPreparing = true
+    runtimeGate.beginSend()
     const provider = selectedAgentProvider
     const agent = agents[provider]
     try {
@@ -503,7 +508,7 @@ const registerIpc = (): void => {
       })
       return reference
     } finally {
-      agentSendPreparing = false
+      runtimeGate.endSend()
     }
   })
   register(ipcChannels.agentInterrupt, agentInterruptInputSchema, 'agent.interrupt', (input) => activeAgent().interrupt(input))
