@@ -168,3 +168,55 @@ export type WorkspaceWriteArgs = z.infer<typeof workspaceWriteArgsSchema>
 export const proposalStatusValues = ['PENDING_REVIEW', 'APPROVED', 'DENIED', 'MATERIALIZED', 'FAILED', 'EXPIRED'] as const
 export const proposalStatusSchema = z.enum(proposalStatusValues)
 export type ProposalStatus = z.infer<typeof proposalStatusSchema>
+
+// ── Tupiniquim Session (provider-neutral conversation ownership) ────────────
+// Tupiniquim Session != Provider Thread. The session belongs to the workspace
+// and survives provider/model switches. Each turn records the provider/thread
+// used for that turn; threads are never reused across providers.
+
+export const tupiniquimTurnRoles = ['user', 'assistant', 'error', 'system'] as const
+export const tupiniquimTurnRoleSchema = z.enum(tupiniquimTurnRoles)
+export type TupiniquimTurnRole = z.infer<typeof tupiniquimTurnRoleSchema>
+
+export const tupiniquimSessionSchema = z.object({
+  id: z.string().uuid(),
+  workspaceRoot: z.string().min(3).max(4096),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime()
+})
+export type TupiniquimSession = z.infer<typeof tupiniquimSessionSchema>
+
+export const tupiniquimTurnSchema = z.object({
+  id: z.string().uuid(),
+  sessionId: z.string().uuid(),
+  role: tupiniquimTurnRoleSchema,
+  text: z.string().max(100_000),
+  provider: aiProviderKindSchema.nullable(),
+  model: z.string().min(1).max(300).nullable(),
+  threadId: z.string().min(1).max(200).nullable(),
+  turnId: z.string().min(1).max(200).nullable(),
+  createdAt: z.string().datetime()
+})
+export type TupiniquimTurn = z.infer<typeof tupiniquimTurnSchema>
+
+export const tupiniquimProviderBindingSchema = z.object({
+  provider: aiProviderKindSchema,
+  threadId: z.string().min(1).max(200),
+  model: z.string().min(1).max(300).nullable()
+})
+export type TupiniquimProviderBinding = z.infer<typeof tupiniquimProviderBindingSchema>
+
+export const tupiniquimProposalAuthoritySchema = z.object({
+  provider: aiProviderKindSchema,
+  threadId: z.string().min(1).max(200),
+  proposalIds: z.array(z.string().uuid())
+})
+export type TupiniquimProposalAuthority = z.infer<typeof tupiniquimProposalAuthoritySchema>
+
+export const tupiniquimConversationSchema = z.object({
+  session: tupiniquimSessionSchema,
+  turns: z.array(tupiniquimTurnSchema),
+  providerThreads: z.array(tupiniquimProviderBindingSchema),
+  proposalAuthority: tupiniquimProposalAuthoritySchema.nullable()
+})
+export type TupiniquimConversation = z.infer<typeof tupiniquimConversationSchema>

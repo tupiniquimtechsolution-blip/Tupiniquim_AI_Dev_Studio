@@ -43,8 +43,10 @@ import {
   visualAssetUseInputSchema,
   visualProviderOpenInputSchema,
   toAppError,
+  tupiniquimConversationSchema,
   writeFileInputSchema,
   workspaceWriteProposalSchema,
+  type AIEvent,
   type AIProvider,
   type AIProviderKind,
   type AppliedWorkspaceEffect,
@@ -52,7 +54,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, type ToolIntent } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionService, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
@@ -86,14 +88,51 @@ const terminal = new TerminalAdapter(
 let selectedAgentProvider: AIProviderKind = 'codex-app-server'
 let agentProviderTransitioning = false
 let agentSendPreparing = false
+const tupiniquimSession = new TupiniquimSessionService()
+const controlledCodexArgs = ((): string[] | undefined => {
+  const raw = process.env.TUPINIQUIM_CODEX_SERVER_ARGS
+  if (raw === undefined || raw === '') return undefined
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed) || !parsed.every((item): item is string => typeof item === 'string')) return undefined
+    return parsed
+  } catch {
+    return undefined
+  }
+})()
+const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
+  if (tupiniquimSession.current() !== null) {
+    if (event.kind === 'MESSAGE_DELTA' && event.threadId !== undefined && event.turnId !== undefined) {
+      tupiniquimSession.applyAssistantDelta({
+        provider,
+        model: null,
+        threadId: event.threadId,
+        turnId: event.turnId,
+        text: event.text ?? ''
+      })
+    } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
+      tupiniquimSession.completeTurn(event.turnId)
+    } else if (event.kind === 'ERROR') {
+      tupiniquimSession.appendTurn({
+        role: 'error',
+        text: event.detail ?? 'Falha no provider.',
+        provider,
+        model: null,
+        threadId: event.threadId ?? null,
+        turnId: event.turnId ?? null
+      })
+    }
+  }
+  if (selectedAgentProvider === provider) mainWindow?.webContents.send(ipcChannels.agentEvent, event)
+}
 const codexAgent = new CodexAppServerAdapter({
   dataRoot,
   projectRoot: process.cwd(),
   getWorkspaceRoot: () => workspace.getRoot(),
   history: database,
-  onEvent: (event) => {
-    if (selectedAgentProvider === 'codex-app-server') mainWindow?.webContents.send(ipcChannels.agentEvent, event)
-  }
+  ...(process.env.TUPINIQUIM_CODEX_PATH !== undefined && process.env.TUPINIQUIM_CODEX_PATH !== '' ? { codexPath: process.env.TUPINIQUIM_CODEX_PATH } : {}),
+  ...(controlledCodexArgs === undefined ? {} : { serverArgs: controlledCodexArgs, skipApiKeyLogin: true }),
+  onEvent: (event) => { publishAgentEvent('codex-app-server', event) }
 })
 const ollamaAgent = new OllamaAdapter({
   baseUrl: process.env.TUPINIQUIM_OLLAMA_BASE_URL ?? 'http://127.0.0.1:11434',
@@ -114,6 +153,15 @@ const ollamaAgent = new OllamaAdapter({
         stepId
       }))
       proposalId = proposal.id
+      tupiniquimSession.grantProposalAuthority('ollama', envelope.threadId, proposal.id)
+      tupiniquimSession.appendTurn({
+        role: 'assistant',
+        text: `PROPOSTA DISPONÍVEL PARA REVISÃO\n${proposal.effect.operation} ${proposal.effect.target}\nHash ${proposal.effect.payloadHash.slice(0, 12)}…`,
+        provider: 'ollama',
+        model: null,
+        threadId: proposal.threadId,
+        turnId: proposal.turnId
+      })
       await audit.write({ requestId: envelope.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', target: redactContextMetadata(proposal.effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
       mainWindow?.webContents.send(ipcChannels.agentWorkspaceWriteProposal, proposal)
       return proposal
@@ -124,9 +172,7 @@ const ollamaAgent = new OllamaAdapter({
       throw new Error('A proposta automática foi recusada pelo runtime privilegiado.', { cause })
     }
   },
-  onEvent: (event) => {
-    if (selectedAgentProvider === 'ollama') mainWindow?.webContents.send(ipcChannels.agentEvent, event)
-  }
+  onEvent: (event) => { publishAgentEvent('ollama', event) }
 })
 const agents: Record<AIProviderKind, AIProvider> = { 'codex-app-server': codexAgent, ollama: ollamaAgent }
 const activeAgent = (): AIProvider => agents[selectedAgentProvider]
@@ -336,7 +382,11 @@ const registerIpc = (): void => {
     const result = await dialog.showOpenDialog(mainWindow!, { properties: ['openDirectory', 'createDirectory'], title: 'Selecione um workspace' })
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
-  register(ipcChannels.workspaceConfigure, configureWorkspaceInputSchema, 'workspace.configure', ({ root }) => workspace.configure(root))
+  register(ipcChannels.workspaceConfigure, configureWorkspaceInputSchema, 'workspace.configure', async ({ root }) => {
+    const configured = await workspace.configure(root)
+    tupiniquimSession.open(configured)
+    return configured
+  })
   register(ipcChannels.workspaceList, listFilesInputSchema, 'workspace.list', ({ relativePath, depth }) => workspace.list(relativePath, depth))
   register(ipcChannels.workspaceRead, readFileInputSchema, 'workspace.read', ({ relativePath }) => workspace.read(relativePath))
   register(ipcChannels.workspaceWrite, writeFileInputSchema, 'workspace.write', ({ relativePath, content, expectedHash }) => workspace.write(relativePath, content, expectedHash))
@@ -353,10 +403,13 @@ const registerIpc = (): void => {
   register(ipcChannels.agentStatus, z.undefined(), 'agent.status', () => activeAgent().status())
   register(ipcChannels.agentProviderSelect, agentProviderSelectInputSchema, 'agent.provider.select', async ({ provider }) => {
     if (agentRuntimeLocked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
+    if (provider === selectedAgentProvider) return activeAgent().status()
     agentProviderTransitioning = true
     try {
       const status = await agents[provider].connect()
+      const previous = selectedAgentProvider
       selectedAgentProvider = provider
+      for (const id of tupiniquimSession.switchProvider(previous, provider)) writeProposals.invalidate(id)
       return status
     } finally {
       agentProviderTransitioning = false
@@ -376,6 +429,7 @@ const registerIpc = (): void => {
     turns: await database.listAITurns(threadId),
     events: await database.listAIEvents(threadId)
   }), aiThreadHistorySchema)
+  register(ipcChannels.agentSession, z.undefined(), 'agent.session', () => tupiniquimSession.snapshot(), tupiniquimConversationSchema.nullable())
   register(ipcChannels.agentSend, agentSendInputSchema, 'agent.send', async (input) => {
     if (agentRuntimeLocked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
     agentSendPreparing = true
@@ -385,14 +439,47 @@ const registerIpc = (): void => {
       if (input.proposalContext !== undefined && provider !== 'ollama') {
         throw new Error('O provider selecionado não oferece propostas de escrita pelo protocolo estável.')
       }
-      const providerInput = await prepareProviderSendInput(input, {
+      tupiniquimSession.assertProposalProvider(provider)
+      if (input.proposalContext !== undefined) {
+        const { execution } = await planning.read(input.proposalContext.executionId)
+        if (execution.threadId !== null) {
+          const persisted = await database.getAIThread(execution.threadId)
+          if (persisted !== null && persisted.provider !== provider) {
+            throw new Error('A autoridade da proposta não transfere de provider.')
+          }
+        }
+      }
+      const boundThread = tupiniquimSession.resolveChatThread(provider, input.threadId)
+      const routedInput = input.proposalContext !== undefined
+        ? { message: input.message, mode: input.mode, proposalContext: input.proposalContext }
+        : boundThread === undefined
+          ? { message: input.message, mode: input.mode }
+          : { message: input.message, mode: input.mode, threadId: boundThread }
+      const providerInput = await prepareProviderSendInput(routedInput, {
         readExecution: (context) => planning.read(context.executionId),
         getWorkspaceRoot: () => workspace.getRoot()
       })
-      return await agent.send({
+      if (providerInput.threadId !== undefined) {
+        const persisted = await database.getAIThread(providerInput.threadId)
+        if (persisted !== null && persisted.provider !== provider) {
+          throw new Error('A autoridade da proposta não transfere de provider.')
+        }
+      }
+      const reference = await agent.send({
         ...providerInput,
         workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3))
       })
+      const persistedThread = await database.getAIThread(reference.threadId)
+      tupiniquimSession.bindProviderThread(provider, reference.threadId, persistedThread?.model ?? null)
+      tupiniquimSession.appendTurn({
+        role: 'user',
+        text: input.message,
+        provider,
+        model: persistedThread?.model ?? null,
+        threadId: reference.threadId,
+        turnId: reference.turnId
+      })
+      return reference
     } finally {
       agentSendPreparing = false
     }

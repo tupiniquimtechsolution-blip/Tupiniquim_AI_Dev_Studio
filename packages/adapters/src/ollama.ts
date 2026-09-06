@@ -12,7 +12,6 @@ import {
   type AIEvent,
   type AIProvider,
   type AIStatus,
-  type AIThread,
   type AgentTurnReference,
   type LocalModel,
   type NormalizedToolCallEnvelope,
@@ -72,9 +71,7 @@ const workspaceWriteTool = {
 } as const
 
 type LocalMessage = { role: 'system' | 'user' | 'assistant'; content: string }
-type OllamaHistoryRepository = AIHistoryRepository & {
-  getAIThread?: (id: string) => Promise<AIThread | null>
-}
+type OllamaHistoryRepository = AIHistoryRepository
 
 /** @deprecated Use NormalizedToolCallEnvelope from @tupiniquim/contracts */
 export interface OllamaWorkspaceWriteToolCall {
@@ -146,6 +143,7 @@ export class OllamaAdapter implements AIProvider {
   private readonly baseUrl: URL
   private readonly fetchImpl: typeof fetch
   private readonly conversations = new Map<string, LocalMessage[]>()
+  private readonly conversationWorkspaces = new Map<string, string>()
   private readonly controllers = new Map<string, AbortController>()
   private models: LocalModel[] = []
   private selectedModel: string | null
@@ -220,17 +218,20 @@ export class OllamaAdapter implements AIProvider {
     if (this.selectedModel === null) throw new Error('Selecione um modelo Ollama local antes de enviar uma mensagem.')
 
     const threadId = input.threadId ?? randomUUID()
+    const workspaceRoot = this.options.getWorkspaceRoot?.() ?? 'local://ollama'
     const isNewThread = !this.conversations.has(threadId)
     if (isNewThread) {
       const persistedThread = await this.options.history?.getAIThread?.(threadId)
       if (persistedThread !== undefined && persistedThread !== null) {
         const parsedThread = aiThreadSchema.parse(persistedThread)
-        const workspaceRoot = this.options.getWorkspaceRoot?.() ?? 'local://ollama'
         if (parsedThread.provider !== 'ollama' || parsedThread.workspaceRoot !== workspaceRoot) {
           throw new Error('Thread persistida não pertence ao runtime Ollama ou workspace atual.')
         }
         throw new Error('Thread Ollama persistida não pode ser retomada sem o histórico em memória desta sessão.')
       }
+      this.conversationWorkspaces.set(threadId, workspaceRoot)
+    } else if (this.conversationWorkspaces.get(threadId) !== workspaceRoot) {
+      throw new Error('Thread Ollama não pertence ao workspace atual.')
     }
     const conversation = this.conversations.get(threadId) ?? []
     if (isNewThread && input.workspaceContext !== undefined) conversation.push({ role: 'system', content: input.workspaceContext })
@@ -283,6 +284,7 @@ export class OllamaAdapter implements AIProvider {
     for (const controller of this.controllers.values()) controller.abort()
     this.controllers.clear()
     this.conversations.clear()
+    this.conversationWorkspaces.clear()
     this.updateStatus({ state: 'STOPPED', activeThreadId: null, activeTurnId: null, detail: null })
     return Promise.resolve()
   }

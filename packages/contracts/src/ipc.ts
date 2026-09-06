@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Result } from './result'
-import { aiProviderKindSchema, type AIEvent, type AIStatus, type AIThreadHistory, type AgentTurnReference, type LocalModel, type ProposalStatus, type agentInterruptInputSchema, type agentLocalModelSelectInputSchema, type agentProviderSelectInputSchema, type agentSendInputSchema, type agentThreadIdInputSchema } from './ai'
+import { aiProviderKindSchema, type AIEvent, type AIStatus, type AIThreadHistory, type AgentTurnReference, type LocalModel, type ProposalStatus, type TupiniquimConversation, type agentInterruptInputSchema, type agentLocalModelSelectInputSchema, type agentProviderSelectInputSchema, type agentSendInputSchema, type agentThreadIdInputSchema } from './ai'
 import { actionManifestSchema, approvalScopeSchema, modeSchema, planSchema, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan } from './domain'
 import type { researchCollectInputSchema, researchSearchInputSchema, technologyResolveInputSchema, ResearchResult, ResearchSource, TechnologyResolution } from './research'
 import type { promptCompareInputSchema, promptCompileInputSchema, promptIdInputSchema, promptLintInputSchema, promptSaveInputSchema, CompiledPrompt, PromptComparison, PromptLintIssue, PromptTemplate } from './prompt'
@@ -28,6 +28,7 @@ export const ipcChannels = {
   agentLocalModels: 'studio:agent:local-models',
   agentLocalModelSelect: 'studio:agent:local-model:select',
   agentHistory: 'studio:agent:history',
+  agentSession: 'studio:agent:session',
   agentSend: 'studio:agent:send',
   agentInterrupt: 'studio:agent:interrupt',
   agentEvent: 'studio:agent:event',
@@ -218,6 +219,7 @@ export interface StudioApi {
     listLocalModels(): Promise<Result<LocalModel[]>>
     selectLocalModel(input: z.input<typeof agentLocalModelSelectInputSchema>): Promise<Result<AIStatus>>
     history(input: z.input<typeof agentThreadIdInputSchema>): Promise<Result<AIThreadHistory>>
+    session(): Promise<Result<TupiniquimConversation | null>>
     send(input: z.input<typeof agentSendInputSchema>): Promise<Result<AgentTurnReference>>
     interrupt(input: z.input<typeof agentInterruptInputSchema>): Promise<Result<void>>
     onEvent(listener: (event: AIEvent) => void): () => void

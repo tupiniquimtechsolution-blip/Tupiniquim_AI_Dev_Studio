@@ -44,6 +44,7 @@ export interface AIHistoryRepository {
   putAIThread(thread: AIThread): Promise<void>
   putAITurn(turn: AITurn): Promise<void>
   appendAIEvent(event: AIEvent): Promise<void>
+  getAIThread?(id: string): Promise<AIThread | null>
 }
 
 export interface CodexAppServerOptions {
@@ -162,6 +163,15 @@ export class CodexAppServerAdapter implements AIProvider {
     if (status.state === 'AUTH_REQUIRED') throw new Error('Codex requer autenticação. Configure uma chave local ou faça login no Codex.')
     const workspaceRoot = this.options.getWorkspaceRoot()
     let threadId = input.threadId
+    if (threadId !== undefined) {
+      const persisted = await this.options.history?.getAIThread?.(threadId)
+      if (persisted !== undefined && persisted !== null) {
+        const parsed = aiThreadSchema.parse(persisted)
+        if (parsed.provider !== 'codex-app-server' || parsed.workspaceRoot !== workspaceRoot) {
+          throw new Error('Thread persistida não pertence ao runtime Codex ou workspace atual.')
+        }
+      }
+    }
     if (threadId === undefined) {
       const response = threadStartResponseSchema.parse(await this.request('thread/start', {
         cwd: workspaceRoot,
