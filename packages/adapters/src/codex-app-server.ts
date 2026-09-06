@@ -108,6 +108,7 @@ export class CodexAppServerAdapter implements AIProvider {
   private readonly pending = new Map<number | string, PendingRequest>()
   private readonly streamedItems = new Set<string>()
   private readonly resumedThreads = new Set<string>()
+  private readonly terminalTurns = new Set<string>()
   private currentStatus: AIStatus = aiStatusSchema.parse({ provider: 'codex-app-server', state: 'DISCONNECTED', account: 'NONE', version: null, activeThreadId: null, activeTurnId: null, detail: null })
   private connectPromise: Promise<AIStatus> | null = null
 
@@ -206,7 +207,9 @@ export class CodexAppServerAdapter implements AIProvider {
     }))
     const reference = { threadId, turnId: response.turn.id }
     await this.options.history?.putAITurn(aiTurnSchema.parse({ id: reference.turnId, threadId: reference.threadId, mode: input.mode, inputHash: createHash('sha256').update(input.message).digest('hex'), createdAt: new Date().toISOString() }))
-    this.updateStatus({ state: 'BUSY', activeThreadId: threadId, activeTurnId: response.turn.id, detail: null })
+    if (!this.terminalTurns.has(reference.turnId)) {
+      this.updateStatus({ state: 'BUSY', activeThreadId: threadId, activeTurnId: reference.turnId, detail: null })
+    }
     return reference
   }
 
@@ -219,6 +222,7 @@ export class CodexAppServerAdapter implements AIProvider {
     const child = this.child
     this.child = null
     this.resumedThreads.clear()
+    this.terminalTurns.clear()
     this.rejectPending(new Error('Codex App Server encerrado.'))
     this.updateStatus({ state: 'STOPPED', activeTurnId: null, detail: null })
     if (child !== null && !child.killed && child.exitCode === null) {
@@ -287,6 +291,7 @@ export class CodexAppServerAdapter implements AIProvider {
     } else if (method === 'turn/completed') {
       const event = turnCompletedSchema.safeParse(params)
       if (event.success) {
+        this.terminalTurns.add(event.data.turn.id)
         this.emit({ kind: 'TURN_COMPLETED', threadId: event.data.threadId, turnId: event.data.turn.id, status: event.data.turn.status })
         this.updateStatus({ state: 'READY', activeTurnId: null, detail: null })
       }
@@ -329,6 +334,9 @@ export class CodexAppServerAdapter implements AIProvider {
   }
 
   private updateStatus(update: Partial<AIStatus>): void {
+    if (update.state === 'BUSY' && typeof update.activeTurnId === 'string' && this.terminalTurns.has(update.activeTurnId)) {
+      return
+    }
     this.currentStatus = aiStatusSchema.parse({ ...this.currentStatus, ...update })
     this.emit({ kind: 'STATUS', status: this.currentStatus.state, detail: this.currentStatus.detail ?? undefined, threadId: this.currentStatus.activeThreadId ?? undefined, turnId: this.currentStatus.activeTurnId ?? undefined })
   }
@@ -344,6 +352,7 @@ export class CodexAppServerAdapter implements AIProvider {
     if (this.child === null) return
     this.child = null
     this.resumedThreads.clear()
+    this.terminalTurns.clear()
     const detail = `Codex App Server encerrou (code=${String(code)}, signal=${String(signal)}).`
     this.rejectPending(new Error(detail))
     this.updateStatus({ state: 'ERROR', activeTurnId: null, detail })
