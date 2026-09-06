@@ -476,7 +476,7 @@ describe('persistência Plan/Approval/Execute', () => {
     await expect(proposals.consume(proposal.id)).rejects.toThrow('não está disponível')
   })
 
-  it('lookupStatus retorna EXPIRED quando thread muda', async () => {
+  it('lookupStatus retorna EXPIRED quando provider da thread de origem deriva', async () => {
     const now = new Date().toISOString()
     const thread = { id: 't-thread-drift', provider: 'ollama' as const, workspaceRoot: fixture, model: 'm', createdAt: now, updatedAt: now }
     const turn = { id: 'turn-td', threadId: thread.id, mode: 'PLAN' as const, inputHash: '10'.repeat(32), createdAt: now }
@@ -487,9 +487,17 @@ describe('persistência Plan/Approval/Execute', () => {
     const planned = await planning.create('Teste thread drift', fixture, 'PLAN')
     const step = planned.plan.steps.find((candidate) => candidate.requiresApproval)
     if (step === undefined) throw new Error('Fixture sem passo.')
-    const proposal = await proposals.propose({ executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: crypto.randomUUID(), tool: 'workspace.write', relativePath: 'src/tdrift.ts', content: 'x', operation: 'CREATE', targetBaselineHash: null })
-    await database.putAIThread({ ...thread, id: 'outra-thread', provider: 'codex-app-server' })
+    const proposal = await proposals.propose({ executionId: planned.execution.id, stepId: step.id, provider: thread.provider, threadId: thread.id, turnId: turn.id, toolCallId: crypto.randomUUID(), tool: 'workspace.write', relativePath: 'src/tdrift.ts', content: 'PRIVATE_THREAD_DRIFT', operation: 'CREATE', targetBaselineHash: null })
+    expect(await proposals.lookupStatus(proposal.id)).toBe('PENDING_REVIEW')
+    // Upsert na MESMA row consultada por validateProposalState(): mantém o id,
+    // apenas muda o provider. A troca de id criava uma segunda thread e não
+    // alterava a origem da proposta, então o teste não provocava drift real.
+    await database.putAIThread({ ...thread, provider: 'codex-app-server', updatedAt: new Date().toISOString() })
     expect(await proposals.lookupStatus(proposal.id)).toBe('EXPIRED')
+    // Segunda consulta continua EXPIRED (payload purgado).
+    expect(await proposals.lookupStatus(proposal.id)).toBe('EXPIRED')
+    // Consumir falha e o payload não é mais recuperável.
+    await expect(proposals.consume(proposal.id)).rejects.toThrow('não está disponível')
   })
 
   it('purga o payload efêmero quando a proposta expira por drift real, antes de lookup/consume', async () => {
