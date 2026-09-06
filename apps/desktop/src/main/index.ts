@@ -385,7 +385,7 @@ const registerIpc = (): void => {
   })
   register(ipcChannels.workspaceConfigure, configureWorkspaceInputSchema, 'workspace.configure', async ({ root }) => {
     const configured = await workspace.configure(root)
-    tupiniquimSession.open(configured)
+    for (const id of tupiniquimSession.switchWorkspace(configured)) writeProposals.invalidate(id)
     return configured
   })
   register(ipcChannels.workspaceList, listFilesInputSchema, 'workspace.list', ({ relativePath, depth }) => workspace.list(relativePath, depth))
@@ -466,12 +466,13 @@ const registerIpc = (): void => {
           throw new Error('A autoridade da proposta não transfere de provider.')
         }
       }
-      const sessionContext = tupiniquimSession.publicProviderContext()
+      const pendingContext = tupiniquimSession.unseenPublicContext(provider)
       const reference = await agent.send({
         ...providerInput,
         workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3)),
-        ...(sessionContext === undefined ? {} : { sessionContext })
+        ...(pendingContext.text === undefined ? {} : { sessionContext: pendingContext.text })
       })
+      tupiniquimSession.acknowledgeProviderContext(provider, pendingContext.turnIds)
       const persistedThread = await database.getAIThread(reference.threadId)
       const model = persistedThread?.model ?? tupiniquimSession.modelFor(provider)
       tupiniquimSession.bindProviderThread(provider, reference.threadId, model)

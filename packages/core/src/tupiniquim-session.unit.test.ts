@@ -261,4 +261,105 @@ describe('TupiniquimSessionService', () => {
     expect(limited).toContain('bloco-7-')
     expect(limited).not.toContain('bloco-0-')
   })
+
+  it('A → B devolve ids de proposta expirada e A restaurada não recupera autoridade', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-a', 'modelo-a')
+    const proposalId = '11111111-1111-4111-8111-111111111111'
+    sessions.grantProposalAuthority('ollama', 'thread-a', proposalId)
+    const expired = sessions.switchWorkspace(workspaceB)
+    expect(expired).toEqual([proposalId])
+    expect(sessions.proposalAuthority()).toBeNull()
+    expect(sessions.current()?.workspaceRoot).toBe(workspaceB)
+    const restored = sessions.open(workspaceA)
+    expect(restored.workspaceRoot).toBe(workspaceA)
+    expect(sessions.proposalAuthority()).toBeNull()
+  })
+
+  it('insere o turno de usuário imediatamente antes do assistente do mesmo turnId', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.applyAssistantDelta({
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: 'thread-ollama',
+      turnId: 'turn-race',
+      text: 'resposta antecipada'
+    })
+    sessions.appendTurn({
+      role: 'user',
+      text: 'pergunta que chegou depois',
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: 'thread-ollama',
+      turnId: 'turn-race'
+    })
+    const snapshot = sessions.snapshot()
+    expect(snapshot?.turns.map((turn) => turn.role)).toEqual(['user', 'assistant'])
+    expect(snapshot?.turns.map((turn) => turn.text)).toEqual([
+      'pergunta que chegou depois',
+      'resposta antecipada'
+    ])
+    const context = sessions.publicProviderContext() ?? ''
+    expect(context.indexOf('user: pergunta que chegou depois')).toBeGreaterThanOrEqual(0)
+    expect(context.indexOf('assistant: resposta antecipada')).toBeGreaterThan(
+      context.indexOf('user: pergunta que chegou depois')
+    )
+  })
+
+  it('entrega somente o delta não visto por provider e não reenvia após acknowledge', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'qwen-local')
+    sessions.appendTurn({
+      role: 'user',
+      text: 'Meu projeto usa arquitetura X',
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: 'thread-ollama',
+      turnId: 'turn-ollama-user'
+    })
+    sessions.appendTurn({
+      role: 'assistant',
+      text: 'TUPINIQUIM_SESSION_OK',
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: 'thread-ollama',
+      turnId: 'turn-ollama-assistant'
+    })
+
+    expect(sessions.unseenPublicContext('ollama')).toEqual({ text: undefined, turnIds: [] })
+    const firstCodex = sessions.unseenPublicContext('codex-app-server')
+    expect(firstCodex.text).toContain('arquitetura X')
+    expect(firstCodex.text).toContain('TUPINIQUIM_SESSION_OK')
+    expect(firstCodex.turnIds).toHaveLength(2)
+    const retryBeforeAck = sessions.unseenPublicContext('codex-app-server')
+    expect(retryBeforeAck.turnIds).toEqual(firstCodex.turnIds)
+    sessions.acknowledgeProviderContext('codex-app-server', firstCodex.turnIds)
+
+    sessions.appendTurn({
+      role: 'user',
+      text: 'Continue a análise',
+      provider: 'codex-app-server',
+      model: 'codex-test-model',
+      threadId: 'thread-codex',
+      turnId: 'turn-codex-user'
+    })
+    sessions.appendTurn({
+      role: 'assistant',
+      text: 'CONTEXTO_TUPINIQUIM_OK',
+      provider: 'codex-app-server',
+      model: 'codex-test-model',
+      threadId: 'thread-codex',
+      turnId: 'turn-codex-assistant'
+    })
+    expect(sessions.unseenPublicContext('codex-app-server')).toEqual({ text: undefined, turnIds: [] })
+
+    const backToOllama = sessions.unseenPublicContext('ollama')
+    expect(backToOllama.text).toContain('Continue a análise')
+    expect(backToOllama.text).toContain('CONTEXTO_TUPINIQUIM_OK')
+    expect(backToOllama.text).not.toContain('arquitetura X')
+    expect(sessions.publicProviderContext()).toContain('arquitetura X')
+  })
 })

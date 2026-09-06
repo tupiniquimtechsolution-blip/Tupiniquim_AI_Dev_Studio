@@ -135,8 +135,11 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
       threadId: 'thread-a',
       turnId: 'turn-a'
     })
-    sessions.grantProposalAuthority('ollama', 'thread-a', randomUUID())
+    const proposalId = randomUUID()
+    sessions.grantProposalAuthority('ollama', 'thread-a', proposalId)
     const otherRoot = `${workspaceRoot}-b`
+    const expiredOnLeave = sessions.switchWorkspace(otherRoot)
+    expect(expiredOnLeave).toEqual([proposalId])
     const second = sessions.open(otherRoot)
     expect(second.id).not.toBe(first.id)
     const snapshot = sessions.snapshot()
@@ -154,6 +157,66 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
     expect(sessions.proposalAuthority()).toBeNull()
     expect(sessions.publicProviderContext()).toContain('conversa do workspace A')
     expect(sessions.publicProviderContext()).not.toContain(privateMarker)
+  })
+
+  it('A PENDING → A→B→A invalida a proposta imediatamente e impede ressurreição', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceRoot)
+    const repository = new InMemoryPlanRepository()
+    const planning = new PlanApprovalService(repository)
+    const now = new Date().toISOString()
+    const thread: AIThread = {
+      id: 'thread-ollama-resurrect',
+      provider: 'ollama',
+      workspaceRoot,
+      model: 'modelo',
+      createdAt: now,
+      updatedAt: now
+    }
+    const turn: AITurn = { id: 'turn-resurrect', threadId: thread.id, mode: 'PLAN', inputHash: 'a'.repeat(64), createdAt: now }
+    const history = {
+      getAIThread: (id: string): Promise<AIThread | null> => Promise.resolve(id === thread.id ? thread : null),
+      listAITurns: (threadId: string): Promise<AITurn[]> => Promise.resolve(threadId === thread.id ? [turn] : [])
+    }
+    let currentRoot = workspaceRoot
+    const proposals = new WorkspaceWriteProposalService(
+      planning,
+      history,
+      () => currentRoot,
+      { inspectBaseline: () => Promise.resolve({ exists: false, hash: null }) }
+    )
+    const planned = await planning.create('Proposta não pode ressuscitar', workspaceRoot, 'PLAN')
+    const stepId = planned.plan.steps.find((step) => step.requiresApproval)?.id
+    if (stepId === undefined) throw new Error('Plano sem passo aprovável.')
+    sessions.bindProviderThread('ollama', thread.id, thread.model)
+    const proposal = await proposals.proposeFromEnvelope({
+      envelope: {
+        callId: randomUUID(),
+        provider: 'ollama',
+        threadId: thread.id,
+        turnId: turn.id,
+        tool: 'workspace.write',
+        arguments: { relativePath: 'src/nao-ressuscita.ts', content: privateMarker, operation: 'CREATE' }
+      },
+      executionId: planned.execution.id,
+      stepId
+    })
+    sessions.grantProposalAuthority('ollama', thread.id, proposal.id)
+    expect(await proposals.lookupStatus(proposal.id)).toBe('PENDING_REVIEW')
+
+    const otherRoot = `${workspaceRoot}-b`
+    currentRoot = otherRoot
+    const expired = sessions.switchWorkspace(otherRoot)
+    for (const id of expired) proposals.invalidate(id)
+    expect(expired).toEqual([proposal.id])
+    expect(await proposals.lookupStatus(proposal.id)).toBe('EXPIRED')
+    await expect(proposals.consume(proposal.id)).rejects.toThrow('não está disponível')
+
+    currentRoot = workspaceRoot
+    sessions.switchWorkspace(workspaceRoot)
+    expect(await proposals.lookupStatus(proposal.id)).toBe('EXPIRED')
+    await expect(proposals.consume(proposal.id)).rejects.toThrow('não está disponível')
+    expect(sessions.proposalAuthority()).toBeNull()
   })
 
   it('transfere contexto público Ollama → Codex fake, isola workspace B e registra o modelo real', async () => {
@@ -225,9 +288,11 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
 
     const expired = sessions.switchProvider('ollama', 'codex-app-server')
     expect(expired).toEqual([])
-    const sessionContext = sessions.publicProviderContext()
-    expect(sessionContext).toContain(architecture)
-    expect(sessionContext).not.toContain(privateMarker)
+    expect(sessions.unseenPublicContext('ollama')).toEqual({ text: undefined, turnIds: [] })
+    const pendingCodex = sessions.unseenPublicContext('codex-app-server')
+    expect(pendingCodex.text).toContain(architecture)
+    expect(pendingCodex.text).not.toContain(privateMarker)
+    expect(sessions.publicProviderContext()).toContain(architecture)
 
     const codexEvents: AIEvent[] = []
     const temp = process.env.TEMP ?? process.env.TMP ?? os.tmpdir()
@@ -267,8 +332,9 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
       const codexRef = await codex.send({
         message: 'Continue a análise',
         mode: 'CHAT',
-        ...(sessionContext === undefined ? {} : { sessionContext })
+        ...(pendingCodex.text === undefined ? {} : { sessionContext: pendingCodex.text })
       })
+      sessions.acknowledgeProviderContext('codex-app-server', pendingCodex.turnIds)
       sessions.appendTurn({
         role: 'user',
         text: 'Continue a análise',
@@ -286,6 +352,7 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
       expect(sessions.modelFor('codex-app-server')).toBe('codex-test-model')
       expect(sessions.snapshot()?.turns.some((turn) => turn.provider === 'codex-app-server' && turn.role === 'assistant' && turn.model === 'codex-test-model')).toBe(true)
       expect(JSON.stringify(sessions.snapshot())).not.toContain(privateMarker)
+      expect(sessions.unseenPublicContext('codex-app-server')).toEqual({ text: undefined, turnIds: [] })
 
       const otherRoot = `${workspaceRoot}-b`
       const sessionB = sessions.open(otherRoot)
@@ -299,17 +366,23 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
       expect(sessions.threadFor('ollama')).toBe(ollamaRef.threadId)
       expect(sessions.threadFor('codex-app-server')).toBe(codexRef.threadId)
 
-      const followUpContext = sessions.publicProviderContext()
+      const followUpContext = sessions.unseenPublicContext('ollama')
+      expect(followUpContext.text).toContain('Continue a análise')
+      expect(followUpContext.text).not.toContain(architecture)
       await ollama.send({
         message: 'Retome no Ollama.',
         mode: 'CHAT',
         threadId: ollamaRef.threadId,
-        ...(followUpContext === undefined ? {} : { sessionContext: followUpContext })
+        ...(followUpContext.text === undefined ? {} : { sessionContext: followUpContext.text })
       })
+      sessions.acknowledgeProviderContext('ollama', followUpContext.turnIds)
       await waitFor(() => ollama.status().state === 'READY')
-      expect(ollamaBodies.at(-1)).toContain('CONTEXTO DA SESSÃO TUPINIQUIM')
-      expect(ollamaBodies.at(-1)).toContain(architecture)
-      expect(ollamaBodies.at(-1)).not.toContain(privateMarker)
+      const lastOllama = JSON.parse(ollamaBodies.at(-1) ?? '{}') as { messages?: Array<{ role?: string; content?: string }> }
+      const sessionMessage = lastOllama.messages?.find((message) => message.content?.includes('CONTEXTO DA SESSÃO TUPINIQUIM'))
+      expect(sessionMessage?.content).toContain('Continue a análise')
+      expect(sessionMessage?.content).not.toContain(architecture)
+      expect(sessionMessage?.content).not.toContain(privateMarker)
+      expect(sessions.unseenPublicContext('ollama')).toEqual({ text: undefined, turnIds: [] })
     } finally {
       await ollama.close()
       await codex.close()

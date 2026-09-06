@@ -816,6 +816,7 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     await expect(page.locator('.agent-conversation')).toContainText('Retome no Ollama.', { timeout: 30_000 })
     const resumedOllama = JSON.stringify(chatRequests.at(-1) ?? {})
     expect(resumedOllama).toContain('CONTEXTO DA SESSÃO TUPINIQUIM')
+    expect(resumedOllama).toContain('Continue a análise')
     expect(resumedOllama).toContain(continuityMessage)
     expect(resumedOllama).not.toContain(sessionProposalContent)
 
