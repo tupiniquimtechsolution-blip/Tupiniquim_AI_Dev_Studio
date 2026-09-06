@@ -3,7 +3,8 @@ import os from 'node:os'
 import { mkdtemp, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { AIThread, AITurn, ApprovalDecision, Execution, FlightRecorderEvent, Plan } from '@tupiniquim/contracts'
+import type { AIEvent, AIThread, AITurn, ApprovalDecision, Execution, FlightRecorderEvent, Plan } from '@tupiniquim/contracts'
+import { CodexAppServerAdapter, OllamaAdapter } from '@tupiniquim/adapters'
 import { PlanApprovalService, TupiniquimSessionService, WorkspaceWriteProposalService, type PlanRepository } from '@tupiniquim/core'
 
 /**
@@ -118,9 +119,11 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
     expect(JSON.stringify(snapshot)).not.toContain(privateMarker)
     expect(snapshot?.turns.some((item) => item.text.includes('Preserve esta conversa'))).toBe(true)
     expect(snapshot?.proposalAuthority).toBeNull()
+    expect(sessions.publicProviderContext()).toContain('Preserve esta conversa')
+    expect(sessions.publicProviderContext()).not.toContain(privateMarker)
   })
 
-  it('troca de workspace cria sessão nova e não herda conversa, thread ou autoridade', () => {
+  it('troca de workspace cria sessão nova e A → B → A recupera a sessão A', () => {
     const sessions = new TupiniquimSessionService()
     const first = sessions.open(workspaceRoot)
     sessions.bindProviderThread('ollama', 'thread-a', 'modelo-a')
@@ -143,5 +146,174 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
     expect(snapshot?.proposalAuthority).toBeNull()
     expect(JSON.stringify(snapshot)).not.toContain('conversa do workspace A')
     expect(JSON.stringify(snapshot)).not.toContain('thread-a')
+
+    const restored = sessions.open(workspaceRoot)
+    expect(restored.id).toBe(first.id)
+    expect(sessions.snapshot()?.turns.map((turn) => turn.text)).toEqual(['conversa do workspace A'])
+    expect(sessions.threadFor('ollama')).toBe('thread-a')
+    expect(sessions.proposalAuthority()).toBeNull()
+    expect(sessions.publicProviderContext()).toContain('conversa do workspace A')
+    expect(sessions.publicProviderContext()).not.toContain(privateMarker)
   })
+
+  it('transfere contexto público Ollama → Codex fake, isola workspace B e registra o modelo real', async () => {
+    const sessions = new TupiniquimSessionService()
+    const sessionA = sessions.open(workspaceRoot)
+    const architecture = 'Meu projeto usa arquitetura X'
+    const ollamaBodies: string[] = []
+    const delay = async (): Promise<void> => await new Promise((resolve) => setTimeout(resolve, 20))
+    const waitFor = async (predicate: () => boolean): Promise<void> => {
+      for (let attempt = 0; attempt < 80; attempt += 1) {
+        if (predicate()) return
+        await delay()
+      }
+      throw new Error('Timeout aguardando adapter.')
+    }
+    const ndjsonResponse = (...chunks: unknown[]): Response => {
+      const encoder = new TextEncoder()
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(encoder.encode(JSON.stringify(chunk) + '\n'))
+          controller.close()
+        }
+      }))
+    }
+    const ollama = new OllamaAdapter({
+      onEvent: (event) => {
+        if (event.kind === 'MESSAGE_DELTA' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.applyAssistantDelta({
+            provider: 'ollama',
+            model: sessions.modelFor('ollama'),
+            threadId: event.threadId,
+            turnId: event.turnId,
+            text: event.text ?? ''
+          })
+        } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
+          sessions.completeTurn(event.turnId)
+        }
+      },
+      fetchImpl: (input, init) => {
+        const url = input instanceof URL ? input.href : typeof input === 'string' ? input : input.url
+        if (url.endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local', model: 'qwen-local' }] })))
+        if (typeof init?.body === 'string') ollamaBodies.push(init.body)
+        return Promise.resolve(ndjsonResponse({ message: { content: 'TUPINIQUIM_SESSION_OK' }, done: true }))
+      },
+      getWorkspaceRoot: () => workspaceRoot,
+      history: {
+        putAIThread: (thread) => {
+          sessions.bindProviderThread('ollama', thread.id, thread.model)
+          return Promise.resolve()
+        },
+        putAITurn: () => Promise.resolve(),
+        appendAIEvent: () => Promise.resolve()
+      }
+    })
+    await ollama.connect()
+    ollama.selectModel('qwen-local')
+    const ollamaRef = await ollama.send({ message: architecture, mode: 'CHAT' })
+    sessions.appendTurn({
+      role: 'user',
+      text: architecture,
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: ollamaRef.threadId,
+      turnId: ollamaRef.turnId
+    })
+    await waitFor(() => ollama.status().state === 'READY')
+    expect(sessions.modelFor('ollama')).toBe('qwen-local')
+    expect(sessions.snapshot()?.turns.some((turn) => turn.role === 'assistant' && turn.model === 'qwen-local' && turn.text.includes('TUPINIQUIM_SESSION_OK'))).toBe(true)
+
+    const expired = sessions.switchProvider('ollama', 'codex-app-server')
+    expect(expired).toEqual([])
+    const sessionContext = sessions.publicProviderContext()
+    expect(sessionContext).toContain(architecture)
+    expect(sessionContext).not.toContain(privateMarker)
+
+    const codexEvents: AIEvent[] = []
+    const temp = process.env.TEMP ?? process.env.TMP ?? os.tmpdir()
+    const dataRoot = await mkdtemp(path.join(temp, 'tupiniquim-session-codex-'))
+    const codex = new CodexAppServerAdapter({
+      dataRoot,
+      projectRoot: process.cwd(),
+      getWorkspaceRoot: () => workspaceRoot,
+      onEvent: (event) => {
+        codexEvents.push(event)
+        if (event.kind === 'MESSAGE_DELTA' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.applyAssistantDelta({
+            provider: 'codex-app-server',
+            model: sessions.modelFor('codex-app-server'),
+            threadId: event.threadId,
+            turnId: event.turnId,
+            text: event.text ?? ''
+          })
+        } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
+          sessions.completeTurn(event.turnId)
+        }
+      },
+      codexPath: process.execPath,
+      serverArgs: [path.join(process.cwd(), 'tests', 'fixtures', 'fake-codex-app-server.mjs')],
+      skipApiKeyLogin: true,
+      history: {
+        putAIThread: (thread) => {
+          sessions.bindProviderThread('codex-app-server', thread.id, thread.model)
+          return Promise.resolve()
+        },
+        putAITurn: () => Promise.resolve(),
+        appendAIEvent: () => Promise.resolve()
+      }
+    })
+    try {
+      await codex.connect()
+      const codexRef = await codex.send({
+        message: 'Continue a análise',
+        mode: 'CHAT',
+        ...(sessionContext === undefined ? {} : { sessionContext })
+      })
+      sessions.appendTurn({
+        role: 'user',
+        text: 'Continue a análise',
+        provider: 'codex-app-server',
+        model: sessions.modelFor('codex-app-server'),
+        threadId: codexRef.threadId,
+        turnId: codexRef.turnId
+      })
+      await waitFor(() => codexEvents.some((event) => event.kind === 'TURN_COMPLETED' && event.turnId === codexRef.turnId))
+      expect(codexRef.threadId).not.toBe(ollamaRef.threadId)
+      expect(sessions.current()?.id).toBe(sessionA.id)
+      expect(sessions.threadFor('ollama')).toBe(ollamaRef.threadId)
+      expect(sessions.threadFor('codex-app-server')).toBe(codexRef.threadId)
+      expect(codexEvents.some((event) => event.kind === 'MESSAGE_DELTA' && (event.text ?? '').includes('CONTEXTO_TUPINIQUIM_OK'))).toBe(true)
+      expect(sessions.modelFor('codex-app-server')).toBe('codex-test-model')
+      expect(sessions.snapshot()?.turns.some((turn) => turn.provider === 'codex-app-server' && turn.role === 'assistant' && turn.model === 'codex-test-model')).toBe(true)
+      expect(JSON.stringify(sessions.snapshot())).not.toContain(privateMarker)
+
+      const otherRoot = `${workspaceRoot}-b`
+      const sessionB = sessions.open(otherRoot)
+      expect(sessionB.id).not.toBe(sessionA.id)
+      expect(sessions.publicProviderContext()).toBeUndefined()
+      expect(JSON.stringify(sessions.snapshot())).not.toContain(architecture)
+
+      const restored = sessions.open(workspaceRoot)
+      expect(restored.id).toBe(sessionA.id)
+      expect(sessions.publicProviderContext()).toContain(architecture)
+      expect(sessions.threadFor('ollama')).toBe(ollamaRef.threadId)
+      expect(sessions.threadFor('codex-app-server')).toBe(codexRef.threadId)
+
+      const followUpContext = sessions.publicProviderContext()
+      await ollama.send({
+        message: 'Retome no Ollama.',
+        mode: 'CHAT',
+        threadId: ollamaRef.threadId,
+        ...(followUpContext === undefined ? {} : { sessionContext: followUpContext })
+      })
+      await waitFor(() => ollama.status().state === 'READY')
+      expect(ollamaBodies.at(-1)).toContain('CONTEXTO DA SESSÃO TUPINIQUIM')
+      expect(ollamaBodies.at(-1)).toContain(architecture)
+      expect(ollamaBodies.at(-1)).not.toContain(privateMarker)
+    } finally {
+      await ollama.close()
+      await codex.close()
+      await rm(dataRoot, { recursive: true, force: true })
+    }
+  }, 30_000)
 })

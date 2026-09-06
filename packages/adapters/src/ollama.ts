@@ -237,6 +237,7 @@ export class OllamaAdapter implements AIProvider {
     if (isNewThread && input.workspaceContext !== undefined) conversation.push({ role: 'system', content: input.workspaceContext })
     conversation.push({ role: 'user', content: input.message })
     this.conversations.set(threadId, conversation)
+    const requestMessages = withSessionContext(conversation, input.sessionContext)
     const turnId = randomUUID()
     const reference = { threadId, turnId }
     if (isNewThread) {
@@ -267,7 +268,7 @@ export class OllamaAdapter implements AIProvider {
       this.updateStatus({ state: 'ERROR', activeTurnId: null, detail: 'Ferramenta de proposta Ollama indisponível.' })
       throw new Error('Ferramenta de proposta Ollama indisponível.')
     }
-    void this.streamTurn(reference, conversation, controller, proposalContext)
+    void this.streamTurn(reference, conversation, requestMessages, controller, proposalContext)
     return reference
   }
 
@@ -291,7 +292,8 @@ export class OllamaAdapter implements AIProvider {
 
   private async streamTurn(
     reference: AgentTurnReference,
-    conversation: LocalMessage[],
+    stored: LocalMessage[],
+    requestMessages: LocalMessage[],
     controller: AbortController,
     proposalContext?: { executionId: string; stepId: string }
   ): Promise<void> {
@@ -308,7 +310,7 @@ export class OllamaAdapter implements AIProvider {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           model: this.selectedModel,
-          messages: conversation,
+          messages: requestMessages,
           stream: true,
           ...(proposalContext === undefined ? {} : { tools: [workspaceWriteTool] })
         }),
@@ -349,7 +351,7 @@ export class OllamaAdapter implements AIProvider {
       if (terminalChunks !== 1) throw new Error('Ollama encerrou o streaming sem um único chunk terminal.')
       if (proposalContext === undefined) {
         if (toolCalls.length !== 0) throw new Error('Tool call Ollama sem contexto autorizado.')
-        if (assistantText !== '') conversation.push({ role: 'assistant', content: redact(assistantText) })
+        if (assistantText !== '') stored.push({ role: 'assistant', content: redact(assistantText) })
       } else {
         if (toolCalls.length !== 1) throw new Error('Quantidade de tool calls Ollama não autorizada.')
         const toolCall = toolCalls[0]
@@ -364,7 +366,7 @@ export class OllamaAdapter implements AIProvider {
           stepId: proposalContext.stepId
         })
         if (proposal === undefined) throw new Error('Ferramenta de proposta Ollama indisponível.')
-        conversation.push({ role: 'assistant', content: publicProposalHistory(proposal) })
+        stored.push({ role: 'assistant', content: publicProposalHistory(proposal) })
       }
       this.emit({ kind: 'TURN_COMPLETED', threadId: reference.threadId, turnId: reference.turnId, status: 'COMPLETED' })
       this.updateStatus({ state: 'READY', activeTurnId: null, detail: null })
@@ -410,6 +412,13 @@ export class OllamaAdapter implements AIProvider {
       ...(this.currentStatus.activeTurnId === null ? {} : { turnId: this.currentStatus.activeTurnId })
     })
   }
+}
+
+const withSessionContext = (stored: LocalMessage[], sessionContext: string | undefined): LocalMessage[] => {
+  if (sessionContext === undefined) return stored
+  const last = stored.at(-1)
+  if (last === undefined || last.role !== 'user') return [...stored, { role: 'system', content: sessionContext }]
+  return [...stored.slice(0, -1), { role: 'system', content: sessionContext }, last]
 }
 
 const redact = (value: string): string => value

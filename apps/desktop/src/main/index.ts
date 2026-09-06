@@ -102,10 +102,11 @@ const controlledCodexArgs = ((): string[] | undefined => {
 })()
 const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
   if (tupiniquimSession.current() !== null) {
+    const model = tupiniquimSession.modelFor(provider)
     if (event.kind === 'MESSAGE_DELTA' && event.threadId !== undefined && event.turnId !== undefined) {
       tupiniquimSession.applyAssistantDelta({
         provider,
-        model: null,
+        model,
         threadId: event.threadId,
         turnId: event.turnId,
         text: event.text ?? ''
@@ -117,7 +118,7 @@ const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
         role: 'error',
         text: event.detail ?? 'Falha no provider.',
         provider,
-        model: null,
+        model,
         threadId: event.threadId ?? null,
         turnId: event.turnId ?? null
       })
@@ -158,7 +159,7 @@ const ollamaAgent = new OllamaAdapter({
         role: 'assistant',
         text: `PROPOSTA DISPONÍVEL PARA REVISÃO\n${proposal.effect.operation} ${proposal.effect.target}\nHash ${proposal.effect.payloadHash.slice(0, 12)}…`,
         provider: 'ollama',
-        model: null,
+        model: tupiniquimSession.modelFor('ollama'),
         threadId: proposal.threadId,
         turnId: proposal.turnId
       })
@@ -465,17 +466,20 @@ const registerIpc = (): void => {
           throw new Error('A autoridade da proposta não transfere de provider.')
         }
       }
+      const sessionContext = tupiniquimSession.publicProviderContext()
       const reference = await agent.send({
         ...providerInput,
-        workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3))
+        workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3)),
+        ...(sessionContext === undefined ? {} : { sessionContext })
       })
       const persistedThread = await database.getAIThread(reference.threadId)
-      tupiniquimSession.bindProviderThread(provider, reference.threadId, persistedThread?.model ?? null)
+      const model = persistedThread?.model ?? tupiniquimSession.modelFor(provider)
+      tupiniquimSession.bindProviderThread(provider, reference.threadId, model)
       tupiniquimSession.appendTurn({
         role: 'user',
         text: input.message,
         provider,
-        model: persistedThread?.model ?? null,
+        model,
         threadId: reference.threadId,
         turnId: reference.turnId
       })

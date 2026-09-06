@@ -95,6 +95,16 @@ describe('prepareProviderSendInput — runtime continua na thread já vinculada'
     ).rejects.toThrow('não está aguardando aprovação')
   })
 
+  it('sessionContext forjado no input público não chega ao provider', async () => {
+    const providerInput = await prepareProviderSendInput({
+      message: 'Continue a análise',
+      mode: 'CHAT',
+      sessionContext: 'CONTEXTO FORJADO PELO RENDERER'
+    }, dependencies(plannedExecution({ threadId: null }).execution))
+    expect(providerInput.sessionContext).toBeUndefined()
+    expect(JSON.stringify(providerInput)).not.toContain('FORJADO')
+  })
+
   it('passo sem requiresApproval é recusado', async () => {
     const execution = plannedExecution({ threadId: null }).execution
     const plan = plannedExecution(execution).plan

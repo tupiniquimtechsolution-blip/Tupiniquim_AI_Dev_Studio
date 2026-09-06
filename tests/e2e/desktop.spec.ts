@@ -625,7 +625,7 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
 
 test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace', async () => {
   const projectRoot = process.cwd()
-  const continuityMessage = 'Preserve esta conversa na sessão Tupiniquim.'
+  const continuityMessage = 'Meu projeto usa arquitetura X'
   const sessionProposalTarget = 'proposta-sessao-wave15.txt'
   const sessionProposalContent = 'E2E_SESSION_PRIVATE_PAYLOAD'
 
@@ -667,7 +667,7 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
           } : {
             message: { content: 'TUPINIQUIM_SESSION_OK' },
             done: true
-          })}\\n`)
+          })}\n`)
         } catch {
           response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
           response.end(JSON.stringify({ error: 'invalid request' }))
@@ -705,14 +705,14 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     const processErrors: string[] = []
     application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
     workspaceRoot = await mkdtemp(path.join(temp, 'tupiniquim-e2e-session-a-'))
-    await writeFile(path.join(workspaceRoot, 'README.md'), '# E2E Session A\\n', 'utf8')
+    await writeFile(path.join(workspaceRoot, 'README.md'), '# E2E Session A\n', 'utf8')
     await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot })
     workspaceRootB = await mkdtemp(path.join(temp, 'tupiniquim-e2e-session-b-'))
-    await writeFile(path.join(workspaceRootB, 'README.md'), '# E2E Session B\\n', 'utf8')
+    await writeFile(path.join(workspaceRootB, 'README.md'), '# E2E Session B\n', 'utf8')
     await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRootB })
     const page = await application.firstWindow({ timeout: 180_000 }).catch((cause: unknown) => {
       const detail = cause instanceof Error ? cause.message : String(cause)
-      throw new Error(`${detail}\\nElectron stderr:\\n${processErrors.join('')}`)
+      throw new Error(`${detail}\nElectron stderr:\n${processErrors.join('')}`)
     })
     await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
     await application.evaluate(({ dialog }, roots) => {
@@ -766,8 +766,9 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     if (!beforeSwitch.ok || beforeSwitch.value === null) throw new Error('Sessão Tupiniquim indisponível antes da troca.')
     expect(beforeSwitch.value.session.id).toBe(sessionIdA)
     expect(beforeSwitch.value.providerThreads).toEqual(expect.arrayContaining([
-      expect.objectContaining({ provider: 'ollama', threadId: proposalSlot.threadId })
+      expect.objectContaining({ provider: 'ollama', threadId: proposalSlot.threadId, model: ollamaModel })
     ]))
+    expect(beforeSwitch.value.turns.some((turn) => turn.role === 'assistant' && turn.model === ollamaModel)).toBe(true)
 
     await page.getByLabel('Provedor de IA').selectOption('codex-app-server')
     await expect(page.locator('.availability')).toHaveText('READY')
@@ -787,9 +788,9 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     }), proposalSlot)
     expect(hijack).toMatchObject({ ok: false })
 
-    await page.getByLabel('Mensagem ao agente').fill('Continuar no Codex controlado.')
+    await page.getByLabel('Mensagem ao agente').fill('Continue a análise')
     await page.getByRole('button', { name: 'Enviar', exact: true }).click()
-    await expect(page.locator('.agent-conversation')).toContainText('CONTROLLED_STREAM_OK', { timeout: 30_000 })
+    await expect(page.locator('.agent-conversation')).toContainText('CONTEXTO_TUPINIQUIM_OK', { timeout: 30_000 })
 
     const afterSwitch = await page.evaluate(async () => await window.studio.agent.session())
     if (!afterSwitch.ok || afterSwitch.value === null) throw new Error('Sessão Tupiniquim indisponível depois da troca.')
@@ -799,10 +800,24 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     expect(ollamaThread).toBe(proposalSlot.threadId)
     expect(codexThread).toBeTruthy()
     expect(codexThread).not.toBe(ollamaThread)
+    expect(afterSwitch.value.providerThreads.find((binding) => binding.provider === 'codex-app-server')?.model).toBe('codex-test-model')
+    expect(afterSwitch.value.turns.some((turn) => turn.provider === 'codex-app-server' && turn.role === 'assistant' && turn.model === 'codex-test-model')).toBe(true)
     expect(afterSwitch.value.proposalAuthority).toBeNull()
     expect(JSON.stringify(afterSwitch.value)).not.toContain(sessionProposalContent)
+    expect(JSON.stringify(afterSwitch.value)).toContain(continuityMessage)
     expect(await page.content()).not.toContain(sessionProposalContent)
     expect(await page.locator('.agent-conversation').innerText()).not.toContain(sessionProposalContent)
+
+    await page.getByLabel('Provedor de IA').selectOption('ollama')
+    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
+    await expect(page.locator('.availability')).toHaveText('READY')
+    await page.getByLabel('Mensagem ao agente').fill('Retome no Ollama.')
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    await expect(page.locator('.agent-conversation')).toContainText('Retome no Ollama.', { timeout: 30_000 })
+    const resumedOllama = JSON.stringify(chatRequests.at(-1) ?? {})
+    expect(resumedOllama).toContain('CONTEXTO DA SESSÃO TUPINIQUIM')
+    expect(resumedOllama).toContain(continuityMessage)
+    expect(resumedOllama).not.toContain(sessionProposalContent)
 
     const dataRoot = `${projectRoot}.data`
     const auditLog = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
@@ -828,6 +843,17 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     expect(isolated.value.providerThreads).toEqual([])
     expect(JSON.stringify(isolated.value)).not.toContain(continuityMessage)
     expect(JSON.stringify(isolated.value)).not.toContain(sessionProposalContent)
+
+    await page.locator('.project-switcher').click()
+    await expect(page.locator('.project-switcher')).toContainText(path.basename(workspaceRoot))
+    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await expect(page.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
+    await expect(page.locator('.agent-conversation')).toContainText(continuityMessage)
+    const restored = await page.evaluate(async () => await window.studio.agent.session())
+    if (!restored.ok || restored.value === null) throw new Error('Sessão A não foi restaurada.')
+    expect(restored.value.session.id).toBe(sessionIdA)
+    expect(restored.value.turns.some((turn) => turn.text.includes(continuityMessage))).toBe(true)
+    expect(JSON.stringify(restored.value)).not.toContain(sessionProposalContent)
   } finally {
     try {
       if (application !== null) await application.close()

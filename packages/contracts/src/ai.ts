@@ -55,13 +55,20 @@ export const agentSendInputSchema = z.object(agentSendInputFields).superRefine((
   }
 })
 
+/** Privileged, redacted Tupiniquim Session transcript injected by main — never by the renderer. */
+export const maxTupiniquimSessionContextChars = 8_000
+
 /**
  * Internal input used only by the privileged main process when forwarding a
  * validated AgentSendInput to a provider. Unlike the public AgentSendInput,
  * it may carry a `threadId` derived from the execution already bound by the
- * runtime. The renderer never receives this type and cannot use it as authority.
+ * runtime, and a `sessionContext` derived from the in-memory Tupiniquim Session.
+ * The renderer never receives this type and cannot use it as authority.
  */
-export const providerSendInputSchema = z.object(agentSendInputFields)
+export const providerSendInputSchema = z.object({
+  ...agentSendInputFields,
+  sessionContext: z.string().min(1).max(maxTupiniquimSessionContextChars).optional()
+})
 export type ProviderSendInput = z.infer<typeof providerSendInputSchema>
 
 export const agentInterruptInputSchema = z.object({
