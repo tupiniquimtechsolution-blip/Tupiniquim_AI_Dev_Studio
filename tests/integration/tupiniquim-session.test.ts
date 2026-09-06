@@ -3,9 +3,9 @@ import os from 'node:os'
 import { mkdtemp, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { AIEvent, AIThread, AITurn, ApprovalDecision, Execution, FlightRecorderEvent, Plan } from '@tupiniquim/contracts'
+import { agentSendInputSchema, type AIEvent, type AIThread, type AITurn, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan } from '@tupiniquim/contracts'
 import { CodexAppServerAdapter, OllamaAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, TupiniquimSessionService, WorkspaceWriteProposalService, assertIdleForWorkspaceSwitch, shouldCompleteTurnFromError, type PlanRepository } from '@tupiniquim/core'
+import { PlanApprovalService, TupiniquimSessionService, WorkspaceWriteProposalService, assertIdleForWorkspaceSwitch, prepareProviderSendInput, shouldCompleteTurnFromError, type PlanRepository } from '@tupiniquim/core'
 
 /**
  * Cross-platform Wave 15 invariants: Tupiniquim Session != Provider Thread.
@@ -579,6 +579,258 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
       const unseenAfterSuccess = sessions.unseenPublicContext('codex-app-server').turnIds
       expect(unseenBeforeError.every((turnId) => !unseenAfterSuccess.includes(turnId))).toBe(true)
       expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
+    } finally {
+      await ollama.close()
+    }
+  }, 30_000)
+
+  it('reutiliza a thread Ollama da sessão na primeira proposal com execution.threadId null', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceRoot)
+    const repository = new InMemoryPlanRepository()
+    const planning = new PlanApprovalService(repository)
+    const threads = new Map<string, AIThread>()
+    const turns = new Map<string, AITurn[]>()
+    const proposalsCreated: string[] = []
+    const delay = async (): Promise<void> => await new Promise((resolve) => setTimeout(resolve, 20))
+    const waitFor = async (predicate: () => boolean): Promise<void> => {
+      for (let attempt = 0; attempt < 80; attempt += 1) {
+        if (predicate()) return
+        await delay()
+      }
+      throw new Error('Timeout aguardando adapter.')
+    }
+    const ndjsonResponse = (...chunks: unknown[]): Response => {
+      const encoder = new TextEncoder()
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(encoder.encode(JSON.stringify(chunk) + '\n'))
+          controller.close()
+        }
+      }))
+    }
+    let chatMode: 'chat' | 'proposal-a' | 'proposal-b' = 'chat'
+    const proposals = new WorkspaceWriteProposalService(
+      planning,
+      {
+        getAIThread: (id) => Promise.resolve(threads.get(id) ?? null),
+        listAITurns: (threadId) => Promise.resolve(turns.get(threadId) ?? [])
+      },
+      () => workspaceRoot,
+      { inspectBaseline: () => Promise.resolve({ exists: false, hash: null }) }
+    )
+    const ollama = new OllamaAdapter({
+      onEvent: (event) => {
+        if (event.kind === 'TURN_COMPLETED' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.completeTurn('ollama', event.threadId, event.turnId, event.status)
+        } else if (event.kind === 'ERROR' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.completeTurn('ollama', event.threadId, event.turnId, event.status ?? 'FAILED')
+        }
+      },
+      onWorkspaceWriteToolCall: async (call) => {
+        const proposal = await proposals.proposeFromEnvelope(call)
+        proposalsCreated.push(proposal.id)
+        return proposal
+      },
+      fetchImpl: (input) => {
+        const url = input instanceof URL ? input.href : typeof input === 'string' ? input : input.url
+        if (url.endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local', model: 'qwen-local' }] })))
+        if (chatMode === 'chat') {
+          return Promise.resolve(ndjsonResponse({ message: { content: 'CHAT_T1' }, done: true }))
+        }
+        const relativePath = chatMode === 'proposal-a' ? 'src/proposta-a.ts' : 'src/proposta-b.ts'
+        return Promise.resolve(ndjsonResponse({
+          message: {
+            tool_calls: [{
+              function: {
+                name: 'tupiniquim_workspace_write_proposal',
+                arguments: { relativePath, content: 'conteudo-publico', operation: 'CREATE' }
+              }
+            }]
+          },
+          done: true
+        }))
+      },
+      getWorkspaceRoot: () => workspaceRoot,
+      history: {
+        putAIThread: (thread) => {
+          threads.set(thread.id, thread)
+          sessions.bindProviderThread('ollama', thread.id, thread.model)
+          return Promise.resolve()
+        },
+        getAIThread: (id) => Promise.resolve(threads.get(id) ?? null),
+        putAITurn: (turn) => {
+          turns.set(turn.threadId, [...(turns.get(turn.threadId) ?? []), turn])
+          return Promise.resolve()
+        },
+        appendAIEvent: () => Promise.resolve()
+      }
+    })
+    try {
+      await ollama.connect()
+      ollama.selectModel('qwen-local')
+      const chatRef = await ollama.send({ message: 'Conversa inicial na sessão.', mode: 'CHAT' })
+      sessions.appendTurn({
+        role: 'user',
+        text: 'Conversa inicial na sessão.',
+        provider: 'ollama',
+        model: 'qwen-local',
+        threadId: chatRef.threadId,
+        turnId: chatRef.turnId
+      })
+      await waitFor(() => ollama.status().state === 'READY')
+      const threadT1 = chatRef.threadId
+      expect(sessions.threadFor('ollama')).toBe(threadT1)
+      expect(threads.size).toBe(1)
+
+      const planned = await planning.create('Gerar proposta reusando a thread da sessão', workspaceRoot, 'PLAN')
+      expect(planned.execution.threadId).toBeNull()
+      const stepId = planned.plan.steps.find((step) => step.requiresApproval)?.id
+      if (stepId === undefined) throw new Error('Plano sem passo aprovável.')
+      const publicProposal = {
+        message: 'Proposta A.',
+        mode: 'PLAN' as const,
+        proposalContext: { executionId: planned.execution.id, stepId }
+      }
+      expect(() => agentSendInputSchema.parse({ ...publicProposal, threadId: threadT1 })).toThrow()
+
+      chatMode = 'proposal-a'
+      const firstProposalInput = await prepareProviderSendInput(publicProposal, {
+        readExecution: (context) => planning.read(context.executionId),
+        getWorkspaceRoot: () => workspaceRoot,
+        getBoundProviderThread: () => sessions.threadFor('ollama')
+      })
+      expect(firstProposalInput.threadId).toBe(threadT1)
+      const firstProposalRef = await ollama.send(firstProposalInput)
+      expect(firstProposalRef.threadId).toBe(threadT1)
+      await waitFor(() => ollama.status().state === 'READY' && proposalsCreated.length === 1)
+      expect(threads.size).toBe(1)
+      expect((await planning.read(planned.execution.id)).execution.threadId).toBe(threadT1)
+      expect(() => sessions.bindProviderThread('ollama', 'thread-t2-forjada', 'qwen-local')).toThrow('thread distinta')
+
+      chatMode = 'proposal-b'
+      const substituteInput = await prepareProviderSendInput({
+        ...publicProposal,
+        message: 'Proposta B substituta.'
+      }, {
+        readExecution: (context) => planning.read(context.executionId),
+        getWorkspaceRoot: () => workspaceRoot,
+        getBoundProviderThread: () => sessions.threadFor('ollama')
+      })
+      expect(substituteInput.threadId).toBe(threadT1)
+      const substituteRef = await ollama.send(substituteInput)
+      expect(substituteRef.threadId).toBe(threadT1)
+      await waitFor(() => ollama.status().state === 'READY' && proposalsCreated.length === 2)
+      expect(threads.size).toBe(1)
+      expect((await planning.read(planned.execution.id)).execution.threadId).toBe(threadT1)
+      expect(sessions.threadFor('ollama')).toBe(threadT1)
+
+      sessions.bindProviderThread('codex-app-server', 'thread-codex-distinta', 'codex-test-model')
+      expect(sessions.threadFor('codex-app-server')).toBe('thread-codex-distinta')
+      expect(sessions.threadFor('codex-app-server')).not.toBe(threadT1)
+      expect(JSON.stringify(sessions.snapshot())).not.toContain(privateMarker)
+    } finally {
+      await ollama.close()
+    }
+  }, 30_000)
+
+  it('primeira PLAN sem chat prévio pode criar a thread T1 da sessão', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceRoot)
+    const repository = new InMemoryPlanRepository()
+    const planning = new PlanApprovalService(repository)
+    const threads = new Map<string, AIThread>()
+    const turns = new Map<string, AITurn[]>()
+    let proposalId: string | undefined
+    const delay = async (): Promise<void> => await new Promise((resolve) => setTimeout(resolve, 20))
+    const waitFor = async (predicate: () => boolean): Promise<void> => {
+      for (let attempt = 0; attempt < 80; attempt += 1) {
+        if (predicate()) return
+        await delay()
+      }
+      throw new Error('Timeout aguardando adapter.')
+    }
+    const ndjsonResponse = (...chunks: unknown[]): Response => {
+      const encoder = new TextEncoder()
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(encoder.encode(JSON.stringify(chunk) + '\n'))
+          controller.close()
+        }
+      }))
+    }
+    const proposals = new WorkspaceWriteProposalService(
+      planning,
+      {
+        getAIThread: (id) => Promise.resolve(threads.get(id) ?? null),
+        listAITurns: (threadId) => Promise.resolve(turns.get(threadId) ?? [])
+      },
+      () => workspaceRoot,
+      { inspectBaseline: () => Promise.resolve({ exists: false, hash: null }) }
+    )
+    const ollama = new OllamaAdapter({
+      onEvent: (event) => {
+        if (event.kind === 'TURN_COMPLETED' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.completeTurn('ollama', event.threadId, event.turnId, event.status)
+        }
+      },
+      onWorkspaceWriteToolCall: async (call) => {
+        const proposal = await proposals.proposeFromEnvelope(call)
+        proposalId = proposal.id
+        return proposal
+      },
+      fetchImpl: (input) => {
+        const url = input instanceof URL ? input.href : typeof input === 'string' ? input : input.url
+        if (url.endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local', model: 'qwen-local' }] })))
+        return Promise.resolve(ndjsonResponse({
+          message: {
+            tool_calls: [{
+              function: {
+                name: 'tupiniquim_workspace_write_proposal',
+                arguments: { relativePath: 'src/primeira-plan.ts', content: 'conteudo-publico', operation: 'CREATE' }
+              }
+            }]
+          },
+          done: true
+        }))
+      },
+      getWorkspaceRoot: () => workspaceRoot,
+      history: {
+        putAIThread: (thread) => {
+          threads.set(thread.id, thread)
+          sessions.bindProviderThread('ollama', thread.id, thread.model)
+          return Promise.resolve()
+        },
+        getAIThread: (id) => Promise.resolve(threads.get(id) ?? null),
+        putAITurn: (turn) => {
+          turns.set(turn.threadId, [...(turns.get(turn.threadId) ?? []), turn])
+          return Promise.resolve()
+        },
+        appendAIEvent: () => Promise.resolve()
+      }
+    })
+    try {
+      await ollama.connect()
+      ollama.selectModel('qwen-local')
+      expect(sessions.threadFor('ollama')).toBeUndefined()
+      const planned = await planning.create('Primeira proposal sem chat', workspaceRoot, 'PLAN')
+      const stepId = planned.plan.steps.find((step) => step.requiresApproval)?.id
+      if (stepId === undefined) throw new Error('Plano sem passo aprovável.')
+      const providerInput = await prepareProviderSendInput({
+        message: 'Proposta inicial.',
+        mode: 'PLAN',
+        proposalContext: { executionId: planned.execution.id, stepId }
+      }, {
+        readExecution: (context) => planning.read(context.executionId),
+        getWorkspaceRoot: () => workspaceRoot,
+        getBoundProviderThread: () => sessions.threadFor('ollama')
+      })
+      expect(providerInput.threadId).toBeUndefined()
+      const reference = await ollama.send(providerInput)
+      await waitFor(() => ollama.status().state === 'READY' && proposalId !== undefined)
+      expect(threads.size).toBe(1)
+      expect(sessions.threadFor('ollama')).toBe(reference.threadId)
+      expect((await planning.read(planned.execution.id)).execution.threadId).toBe(reference.threadId)
     } finally {
       await ollama.close()
     }

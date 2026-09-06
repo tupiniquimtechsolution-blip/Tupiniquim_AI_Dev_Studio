@@ -9,13 +9,15 @@ import type { PlannedExecution } from './plan-approval'
 export interface AgentSendRouterDependencies {
   readExecution(context: AgentProposalContext): Promise<PlannedExecution>
   getWorkspaceRoot(): string
+  getBoundProviderThread?: () => string | undefined
 }
 
 /**
  * Validates public renderer input and derives the thread the provider must
- * use. For proposal flow the public renderer never chooses a thread: when the
- * execution is not yet bound the runtime lets the provider create one; when the
- * execution already has a bound thread, the privileged main process reuses it.
+ * use. For proposal flow the public renderer never chooses a thread. The
+ * privileged runtime reuses, in order: the execution's bound thread, then the
+ * Tupiniquim Session thread for the current provider. Only when neither exists
+ * may the provider create a new thread.
  *
  * The public AgentSendInput rejects `proposalContext + threadId`; this guard is
  * re-checked here so an internal caller bypassing the IPC schema still cannot
@@ -39,8 +41,10 @@ export const prepareProviderSendInput = async (
   const targetStep = plan.steps.find((step) => step.id === input.proposalContext?.stepId)
   if (targetStep === undefined || !targetStep.requiresApproval) throw new Error('O passo selecionado não aceita proposta mutável.')
 
+  const boundProviderThread = dependencies.getBoundProviderThread?.()
+  const trustedThread = execution.threadId ?? boundProviderThread ?? undefined
   return providerSendInputSchema.parse({
     ...input,
-    threadId: execution.threadId ?? undefined
+    ...(trustedThread === undefined ? {} : { threadId: trustedThread })
   })
 }

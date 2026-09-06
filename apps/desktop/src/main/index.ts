@@ -478,7 +478,8 @@ const registerIpc = (): void => {
           : { message: input.message, mode: input.mode, threadId: boundThread }
       const providerInput = await prepareProviderSendInput(routedInput, {
         readExecution: (context) => planning.read(context.executionId),
-        getWorkspaceRoot: () => workspace.getRoot()
+        getWorkspaceRoot: () => workspace.getRoot(),
+        getBoundProviderThread: () => tupiniquimSession.threadFor(provider)
       })
       if (providerInput.threadId !== undefined) {
         const persisted = await database.getAIThread(providerInput.threadId)
