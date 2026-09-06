@@ -76,7 +76,8 @@ describe('CodexAppServerAdapter — monotonicidade do turno', () => {
     const adapter = await createAdapter(events)
     try {
       const reference = await adapter.send({ message: 'TUPINIQUIM_RETRY_THEN_COMPLETE', mode: 'CHAT' })
-      expect(events.some((event) => event.kind === 'ERROR' && event.status === 'RETRYING' && event.turnId === reference.turnId)).toBe(true)
+      expect(adapter.status()).toMatchObject({ state: 'BUSY', activeTurnId: reference.turnId })
+      await waitFor(() => events.some((event) => event.kind === 'ERROR' && event.status === 'RETRYING' && event.turnId === reference.turnId))
       expect(adapter.status()).toMatchObject({ state: 'BUSY', activeTurnId: reference.turnId })
       await waitFor(() => adapter.status().state === 'READY')
       expect(adapter.status()).toMatchObject({ state: 'READY', activeTurnId: null })
