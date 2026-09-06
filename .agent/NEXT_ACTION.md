@@ -2,27 +2,34 @@
 
 Master Wave: **1 (EM ANDAMENTO)**.
 
-Checkpoint wave-14: **APROVADO/FECHADO** (checkpoint interno da Master Wave 1; NÃO é
-uma nova Master Wave). Os gates Windows `F:` passaram; o E2E foi executado duas vezes.
+Checkpoint wave-15: gates técnicos **APROVADOS**. Fechamento formal (merge/tag
+`checkpoint/wave-15`) após auditoria externa. NÃO é uma nova Master Wave e NÃO
+encerra a Master Wave 1.
 
-## Próxima unidade
+## Agora
 
-1. Abrir `.agent/MASTER_PLAN.md`.
-2. Definir a **próxima unidade da Master Wave 1** com base no Plano Mestre.
-3. Executar o protocolo padrão de wave do MASTER_PLAN para a unidade escolhida.
+1. Auditoria externa do diff documental desta etapa.
+2. NÃO mergear o PR #17 nesta etapa.
+3. NÃO iniciar Wave 16.
+
+## Depois da auditoria / merge controlado
+
+1. Merge controlado do PR #17.
+2. Fechar Issue #16.
+3. Tag anotada `checkpoint/wave-15`.
+4. Somente então preparar **wave-16 — restart/recovery da memória/sessão Tupiniquim**.
 
 ## Regras mantidas
 
 - NÃO avançar escopo nesta alteração.
-- NÃO fazer merge do PR #15.
 - Terminal mutável: **indisponível**.
 - Git mutável: **indisponível**.
-- O checkpoint wave-14 já está fechado; não é início de uma nova Master Wave.
+- Restart/recovery permanece **GAP WAVE 16**.
 
-## Estado do checkpoint wave-14 (referência)
+## Estado do checkpoint wave-15 (referência)
 
-- Branch: `arena/01a06dcc-tupiniquim-ai-dev-studio`
-- PR: #15
-- Issue: #11
-- HEAD validado no Windows F: `2703ed5cef0188e9b9e548bcdca84a7d7328c6e0`
-- `git status --short` no momento do fechamento: limpo.
+- Branch: `arena/01a0776a-tupiniquim-ai-dev-studio`
+- PR: #17
+- Issue: #16
+- HEAD de runtime validado no Windows F: `787bd304ce99c5916ba870870d2b5c2b6600e166`
+- CI remoto do runtime: run #34 `34067158283` SUCCESS

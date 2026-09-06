@@ -5,87 +5,106 @@ Atualizado em: 2026-09-06
 ## Estado atual
 
 - Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-- Checkpoint: wave-14 — Provider-neutral tool protocol + proposal provenance + expiration safety
-- **wave-14: APROVADO/FECHADO** (checkpoint interno da Master Wave 1; **NÃO** é uma nova Master Wave)
-- Current branch: `arena/01a06dcc-tupiniquim-ai-dev-studio`
-- PR atual: #15
-- Issue referenciada: #11
-- HEAD validado no Windows F: `2703ed5cef0188e9b9e548bcdca84a7d7328c6e0`
+- Checkpoint: wave-15 — Tupiniquim-owned conversation continuity
+- **wave-15: gates técnicos APROVADOS**; fechamento formal (merge/tag `checkpoint/wave-15`) após auditoria externa e merge controlado do PR #17
+- Current branch: `arena/01a0776a-tupiniquim-ai-dev-studio`
+- PR atual: #17
+- Issue referenciada: #16
+- HEAD de runtime validado no Windows F: `787bd304ce99c5916ba870870d2b5c2b6600e166`
 - Repositório operacional (máquina real): `F:\CODEX\Tupiniquim-AI-Dev-Studio`
 - Dados: `F:\CODEX\Tupiniquim-AI-Dev-Studio.data`
 
 ## Contexto de onda
 
-- O `MASTER_PLAN` mantém a **Master Wave 1 em andamento**. `wave-14` é um checkpoint
-  aprovado/fechado dessa Master Wave 1, NÃO uma nova wave mestre.
-- O próximo trabalho será definido pela próxima unidade da Master Wave 1 conforme
-  `.agent/MASTER_PLAN.md`. Não há avanço de escopo nesta alteração.
-- Terminal mutável e Git mutável continuam **INDISPONÍVEIS**. Não se avança para
-  "Wave 15 / autonomous loop" com este fechamento.
+- O `MASTER_PLAN` mantém a **Master Wave 1 em andamento**. `wave-15` é um checkpoint
+  interno dessa Master Wave 1, NÃO uma nova wave mestre e NÃO o encerramento da
+  Master Wave 1.
+- Checkpoints anteriores: wave-13 (ciclo de propostas), wave-14 (protocolo
+  provider-neutral + provenance + expiration).
+- Próxima unidade prevista: **wave-16 — restart/recovery da memória/sessão Tupiniquim**.
+  Não iniciar Wave 16 nesta etapa.
+- Terminal mutável e Git mutável continuam **INDISPONÍVEIS**.
 
-## Gates Windows F: — evidência real
+## Gates Windows F: — evidência real (runtime HEAD `787bd30`)
 
 Na máquina Windows real (`F:`), com o wrapper de validação oficial:
 
 | Gate | Resultado |
 |---|---|
 | `pnpm-f.ps1 validate` | PASS integral |
-| `pnpm test:unit` | 52/52 PASS |
-| `pnpm test:integration` | 42 passed / 2 skipped |
+| F:\CODEX-only | PASS |
+| lint | PASS |
+| typecheck | PASS |
+| `pnpm test:unit` | 82/82 PASS |
+| `pnpm test:integration` | 49 passed / 2 skipped |
 | `tests/integration/persistence.test.ts` | 22/22 PASS |
 | `pnpm test:security` | 34/34 PASS |
 | `pnpm build` | PASS |
-| `pnpm-f.ps1 test:e2e` | 2/2 PASS (executado DUAS vezes) |
+| `pnpm-f.ps1 test:e2e` | 3/3 PASS |
 
-- `git status --short`: limpo após os gates.
-- Nenhuma falha env-gated pendente para os itens antes BLOCKED (Windows `F:`,
-  persistence SQLite, E2E). O status BLOCKED referente a esses itens foi **removido**.
+CI remoto do runtime: run #34 `34067158283` SUCCESS.
 
-## Fluxo final comprovado pelo E2E Windows F:
+## E2E Electron (Windows F:)
 
-- provider-neutral tool protocol
-- proposal provenance
-- EXPIRED
-- replacement A→B
-- mesma Execution/Step/Thread
-- Turn/ToolCall distintos
-- `apply(A)` recusado
-- arquivo A ausente
-- payload privado ausente de: DOM, conversation, agent history, Flight Recorder, AuditLog e SQLite
-- isolamento entre workspaces
-- baseline fail-closed
-- purge do payload efêmero
+1. inicia o Electron seguro e carrega um workspace real — PASS
+2. proposta substituída fica EXPIRED e aplicação da antiga é recusada — PASS
+3. sessão Tupiniquim sobrevive à troca de provider fake e isola workspace — PASS
 
-## Correções incluídas no checkpoint wave-14
+## Invariantes Wave 15 comprovados
 
-1. **Baseline FAIL CLOSED** — removido o catch genérico que transformava erro de
-   inspeção/path em "alvo inexistente". Erros de `WorkspaceAdapter.inspectWriteTarget()`
-   (traversal, absoluto, symlink, namespace, permissão, inesperado) recusam a proposta.
-2. **Provenance de continuação na mesma thread** — proposal B com o mesmo
-   `executionId`/`stepId` reutiliza internamente a thread T da proposta A; `A = EXPIRED`,
-   `B = PENDING_REVIEW`; `apply(A)` falha e o arquivo de A não existe.
-3. **Purge garantido no EXPIRED** — `lookupStatus()` invalida o payload efêmero também
-   no caminho de exceção; payload não fica residente após EXPIRED.
-4. **Correção do driver de drift no gate Windows** — o teste
-   `lookupStatus retorna EXPIRED quando provider da thread de origem deriva` faz
-   upsert na MESMA row (`id: thread.id` mantido), altera o provider e comprova
-   `PENDING_REVIEW` antes, `EXPIRED` depois e `consume()` rejeitado.
-5. **E2E de expiração** — gate explícito; tombstone por ID; varredura de marcadores
-   privados em DOM, conversation, Flight Recorder/events, agent history, AuditLog e SQLite.
+- Tupiniquim Session ≠ Provider Thread
+- troca de provider preserva a sessão Tupiniquim
+- threads continuam provider-specific; sem reutilização cross-provider
+- workspace A → B → A isolado; thread/status scoped por workspace/session
+- workspace switch bloqueado enquanto o runtime está ocupado
+- transição de workspace protegida antes do primeiro await
+- contexto público incremental entre providers
+- ACK apenas após sucesso terminal (`TURN_COMPLETED` / SUCCESS)
+- Codex ERROR/RETRYING não consome contexto
+- ERROR/CANCELLED/FAILED não ACKam contexto incorretamente
+- race completion-before-pending tratada
+- race completion-before-send-return tratada
+- ordem user → assistant preservada
+- proveniência do modelo preservada
+- proposal authority não transfere de provider
+- proposal EXPIRED ao trocar provider/workspace quando aplicável
+- payload privado ausente de DOM, conversation, SQLite, AuditLog e history coberto
+- renderer não escolhe provenance privilegiada
+- primeira PLAN reutiliza thread confiável da sessão quando apropriado
+- `execution.threadId` tem precedência
+- sem chat anterior, o provider pode criar a primeira thread
 
-## Preservado (arquitetura aprovada — não refatorado)
+## Bugs reais descobertos pelo Windows F: (corrigidos no runtime)
 
-NormalizedToolCallEnvelope; workspaceWriteArgsSchema strict; protocolo
-provider-neutral; proposeFromEnvelope(); WorkspaceBaselineLookup via DI;
-WorkspaceAdapter.inspectWriteTarget(); ProposalStatus com EXPIRED;
-lookupProposalStatus IPC; tombstone público; validação do adapter Ollama;
+1. CHAT Ollama criava T1 e a primeira PLAN tentava criar T2.
+   Correção: `execution.threadId ?? session.threadFor(provider) ?? undefined`.
+2. Codex fake podia emitir `turn/completed` antes do retorno de `send()`, e BUSY
+   tardio sobrescrevia READY. Correção: `terminalTurns` / monotonicidade de status.
+
+## GAP explícito — Wave 16
+
+Restart/recovery permanece **GAP WAVE 16**. Ainda NÃO persistimos completamente:
+
+- Tupiniquim Session
+- provider bindings
+- seen-by-provider cursors
+- lifecycle necessário para recuperação
+
+Observação para Wave 16 (não bloqueia o fechamento da Wave 15): `terminalTurns` e
+`finalizedTurns` são estruturas in-memory e precisarão de bounded cleanup / recovery.
+
+## Preservado
+
 PolicyEngine; ApprovalStore/PlanApprovalService; AuditLog; payload privado só em
-memória; Terminal mutável indisponível; Git mutável indisponível.
+memória; schema público `agentSendInputSchema` sem `proposalContext + threadId`;
+Terminal mutável indisponível; Git mutável indisponível.
 
 ## Próximo passo
 
-1. Consultar `.agent/MASTER_PLAN.md` para definir a **próxima unidade da Master Wave 1**.
-2. NÃO fazer merge do PR #15. Parar para auditoria externa após este fechamento documental.
+1. Auditoria externa do diff documental.
+2. Depois: merge controlado do PR #17, fechar Issue #16, tag `checkpoint/wave-15`.
+3. Somente então preparar Wave 16.
+4. NÃO mergear o PR #17 nesta etapa. NÃO iniciar Wave 16.
 
 ## Bloqueios externos
 

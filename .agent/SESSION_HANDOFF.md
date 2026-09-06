@@ -1,76 +1,73 @@
 # SESSION HANDOFF
 
 Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-Checkpoint wave-14: **APROVADO/FECHADO** (checkpoint interno da Master Wave 1; NÃO é
-uma nova Master Wave).
-Branch: `arena/01a06dcc-tupiniquim-ai-dev-studio`
-PR: #15
-Issue: #11
-HEAD validado no Windows F: `2703ed5cef0188e9b9e548bcdca84a7d7328c6e0`
+Checkpoint wave-15: gates técnicos **APROVADOS**; fechamento formal após merge do PR #17
+(NÃO é uma nova Master Wave; NÃO encerra a Master Wave 1).
+Branch: `arena/01a0776a-tupiniquim-ai-dev-studio`
+PR: #17
+Issue: #16
+HEAD de runtime validado no Windows F: `787bd304ce99c5916ba870870d2b5c2b6600e166`
 
 ## Contexto
 
-O GitHub é a fonte de verdade. A Wave 14 foi validada nos gates reais na máquina
-Windows `F:`. O PR #15 não deve ser mergeado; este handoff registra o fechamento
-documental para auditoria externa.
+O GitHub é a fonte de verdade. A Wave 15 (Tupiniquim-owned conversation continuity)
+passou os gates reais na máquina Windows `F:` e o CI remoto. O PR #17 não deve ser
+mergeado nesta etapa; este handoff registra o fechamento documental para auditoria
+externa.
 
-## Windows F: — evidência real
+## Ponto de retomada pós-wave-15
+
+1. Auditoria externa deste diff documental.
+2. Merge controlado PR #17 → fechar Issue #16 → tag `checkpoint/wave-15`.
+3. Próxima unidade: **wave-16 — restart/recovery da memória/sessão Tupiniquim**.
+
+## GAP WAVE 16 (explícito)
+
+Ainda NÃO persistimos completamente:
+
+- Tupiniquim Session
+- provider bindings
+- seen-by-provider cursors
+- lifecycle necessário para recuperação pós-restart
+
+`terminalTurns` e `finalizedTurns` são in-memory; Wave 16 precisa de bounded
+cleanup / recovery. Isso **não** bloqueia o fechamento da Wave 15.
+
+Não implementar Wave 16 antes do merge formal da Wave 15.
+
+## Windows F: — evidência real (runtime HEAD `787bd30`)
 
 | Gate | Resultado |
 |---|---|
 | `pnpm-f.ps1 validate` | PASS integral |
-| `pnpm test:unit` | 52/52 PASS |
-| `pnpm test:integration` | 42 passed / 2 skipped |
+| F:\CODEX-only | PASS |
+| lint / typecheck / build | PASS |
+| `pnpm test:unit` | 82/82 PASS |
+| `pnpm test:integration` | 49 passed / 2 skipped |
 | `tests/integration/persistence.test.ts` | 22/22 PASS |
 | `pnpm test:security` | 34/34 PASS |
-| `pnpm build` | PASS |
-| `pnpm-f.ps1 test:e2e` | 2/2 PASS (executado DUAS vezes) |
+| `pnpm-f.ps1 test:e2e` | 3/3 PASS |
 
-`git status --short` após os gates: limpo.
+CI remoto: run #34 `34067158283` SUCCESS.
 
-## Bloqueios antigos resolvidos
+E2E:
 
-- Windows `F:`: validado.
-- `tests/integration/persistence.test.ts`: 22/22 PASS.
-- E2E completo: 2/2 PASS em duas execuções.
+1. Electron seguro + workspace real — PASS
+2. proposta substituída EXPIRED; apply da antiga recusado — PASS
+3. sessão Tupiniquim sobrevive à troca de provider fake e isola workspace — PASS
 
-Os status `BLOCKED` referentes a esses itens foram removidos da documentação.
+## Bugs Windows F: já corrigidos no runtime
 
-## Fluxo final comprovado
-
-- provider-neutral tool protocol
-- proposal provenance
-- EXPIRED
-- replacement A→B
-- mesma Execution/Step/Thread
-- Turn/ToolCall distintos
-- `apply(A)` recusado
-- arquivo A ausente
-- payload privado ausente de: DOM, conversation, agent history, Flight Recorder, AuditLog e SQLite
-- isolamento entre workspaces
-- baseline fail-closed
-- purge do payload efêmero
-
-## Correções incluídas no checkpoint w14
-
-1. Baseline fail-closed.
-2. Continuação na MESMA thread (A=EXPIRED, B=PENDING_REVIEW, `apply(A)` falha).
-3. Purge garantido no EXPIRED.
-4. Correção do driver de drift no teste de persistência (upsert na MESMA row,
-   provider derivado, `consume()` rejeitado) — somente no teste.
-5. E2E de expiração com tombstone por ID e varredura de marcadores privados.
-
-## Próxima ação
-
-Definir a próxima unidade da Master Wave 1 conforme `.agent/MASTER_PLAN.md`.
-Terminal mutável e Git mutável continuam INDISPONÍVEIS; não avançar escopo; não
-fazer merge; parar para auditoria externa.
+1. CHAT Ollama T1 + PLAN com `execution.threadId` null criava T2.
+   `execution.threadId ?? session.threadFor(provider) ?? undefined`.
+2. `turn/completed` antes do retorno de `send()` → BUSY tardio.
+   `terminalTurns` / monotonicidade de status.
 
 ## Fora de escopo (NÃO implementar agora)
 
-Novos providers (Qwen, Kimi, Gemini, DeepSeek, Claude, Grok), Model/Provider
-Registry completo, Agent Registry runtime, Google Skills runtime (PR #13
-separado), Terminal mutável, Git mutável, voz, multimodal, autonomous loop.
+Restart/recovery; persistência da sessão Tupiniquim no SQLite; novos providers;
+Agent/Skill Registry; RAG; Terminal mutável; Git mutável; voz; multimodal;
+autonomous loop; persistência de segredo; payload privado de proposta.
 
 ## External blockers
 

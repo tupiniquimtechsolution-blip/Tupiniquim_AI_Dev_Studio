@@ -1,5 +1,61 @@
 # Changelog do Agente
 
+## 2026-09-06 — Wave 15 — fechamento documental do checkpoint (docs-only)
+
+Alteração exclusivamente de documentação em `.agent/`. Nenhum `.ts`, `.tsx`, `.js`,
+`package`, config ou teste foi alterado neste commit.
+
+Runtime validado (não alterado aqui): `787bd304ce99c5916ba870870d2b5c2b6600e166`.
+
+### Estado do checkpoint
+
+- Master Wave 1 continua **EM ANDAMENTO** (ver `.agent/MASTER_PLAN.md`).
+- checkpoint wave-15: gates técnicos **APROVADOS**; merge/tag após auditoria externa.
+- NÃO é uma nova Master Wave e NÃO encerra a Master Wave 1.
+- Branch: `arena/01a0776a-tupiniquim-ai-dev-studio`.
+- PR: #17.
+- Issue: #16.
+
+### Entrega real da Wave 15 (já no runtime; não persistida pós-restart)
+
+Tupiniquim-owned conversation continuity, **in-memory enquanto o processo vive**:
+
+- `TupiniquimSessionService`: sessão Tupiniquim ≠ thread de provider.
+- Um thread por provider por sessão; sem reuso cross-provider.
+- Contexto público redigido, incremental (`unseenPublicContext`); ACK só em
+  `TURN_COMPLETED` / SUCCESS.
+- Codex ERROR/RETRYING não é terminal e não consome contexto.
+- Workspace switch: mutex/`PrivilegedRuntimeGate` antes do primeiro await;
+  `agentRuntimeLocked()`; propostas PENDING expiradas imediatamente.
+- Status exposto (`activeThreadId`/`activeTurnId`) scoped por sessão/workspace.
+- Lifecycle causal `provider+threadId+turnId`.
+- Ordem user → assistant; proveniência do modelo.
+- Routing privilegiado da primeira PLAN:
+  `execution.threadId ?? session.threadFor(provider) ?? undefined`.
+  Schema público **não** relaxado.
+- Monotonicidade Codex: `terminalTurns` impede BUSY tardio após `turn/completed`.
+
+**Não alegado:** persistência da sessão Tupiniquim, bindings ou cursores
+seen-by-provider após restart. Isso é **GAP WAVE 16**.
+
+### Bugs reais descobertos no Windows F: (já corrigidos no runtime)
+
+1. CHAT Ollama T1 + PLAN com `execution.threadId` null criava T2.
+2. Fake Codex `turn/completed` antes do retorno de `send()` → BUSY eterno.
+
+### Gates Windows F: reais
+
+- `pnpm-f.ps1 validate`: PASS integral (F:\CODEX-only, lint, typecheck, unit 82/82,
+  integration 49 passed / 2 skipped, persistence 22/22, security 34/34, build).
+- `pnpm-f.ps1 test:e2e`: 3/3 PASS.
+- CI remoto: run #34 `34067158283` SUCCESS.
+
+### Preservado
+
+Terminal mutável **INDISPONÍVEL**; Git mutável **INDISPONÍVEL**. Nenhum merge.
+`NEXT_ACTION.md` aponta auditoria externa → merge controlado PR #17 → tag
+wave-15 → somente então Wave 16.
+
 ## 2026-09-06 — Wave 14 — fechamento documental do checkpoint (docs-only) — HEAD 2703ed5
 
 Alteração exclusivamente de documentação em `.agent/`. Nenhum `.ts`, `.tsx`, `.js`,
