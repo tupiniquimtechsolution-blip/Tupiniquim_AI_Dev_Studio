@@ -26,4 +26,3 @@ uma nova Master Wave). Os gates Windows `F:` passaram; o E2E foi executado duas 
 - Issue: #11
 - HEAD validado no Windows F: `2703ed5cef0188e9b9e548bcdca84a7d7328c6e0`
 - `git status --short` no momento do fechamento: limpo.
-```
