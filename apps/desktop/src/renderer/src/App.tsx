@@ -105,14 +105,16 @@ export const App = (): React.JSX.Element => {
       setSessionId(null)
       setConversation([])
     }
-    const [tree, status, context] = await Promise.all([
+    const [tree, status, context, agentStatus] = await Promise.all([
       window.studio.workspace.list({ relativePath: '', depth: 4 }),
       window.studio.git.status(),
-      window.studio.workspace.context()
+      window.studio.workspace.context(),
+      window.studio.agent.status()
     ])
     if (tree.ok) setFiles(tree.value)
     if (status.ok) setGit(status.value)
     if (context.ok) setWorkspaceContext(context.value)
+    if (agentStatus.ok) setAIStatus(agentStatus.value)
     setNotice(context.ok ? 'Workspace autorizado e contexto de metadados mapeado.' : 'Workspace autorizado e mapeado.')
   }
 
@@ -346,7 +348,7 @@ export const App = (): React.JSX.Element => {
     <main className={`studio ${profile?.density === 'COMFORTABLE' ? 'density-comfortable' : 'density-compact'}`} style={profile === null ? undefined : { '--bg': profile.theme.background, '--surface': profile.theme.surface, '--raised': profile.theme.raised, '--text': profile.theme.text, '--muted': profile.theme.muted, '--accent': profile.theme.accent, '--info': profile.theme.info, '--warning': profile.theme.warning, '--danger': profile.theme.danger, '--explorer-width': `${profile.layout.explorerWidth}px`, '--agent-width': `${profile.layout.agentWidth}px`, '--deck-height': `${profile.layout.deckHeight}px` } as React.CSSProperties}>
       <header className="ribbon drag-region">
         <div className="brand no-drag"><span className="brand-mark"><Braces size={17} /></span><strong>Tupiniquim</strong><span className="brand-sub">AI DEV STUDIO</span></div>
-        <button className="project-switcher no-drag" onClick={() => void openWorkspace()}><Boxes size={15} /><span>{workspaceName}</span><ChevronsUpDown size={13} /></button>
+        <button className="project-switcher no-drag" disabled={sending || aiStatus?.state === 'BUSY'} onClick={() => void openWorkspace()}><Boxes size={15} /><span>{workspaceName}</span><ChevronsUpDown size={13} /></button>
         <div className="ribbon-meta no-drag"><GitBranch size={14} /><span>{git?.branch ?? 'sem Git'}</span></div>
         <div className="mode-switch no-drag">{modes.map((item) => <button key={item.mode} className={mode === item.mode ? 'active' : ''} onClick={() => setMode(item.mode)}>{item.label}</button>)}</div>
         <div className="ribbon-state no-drag"><span className="state-dot running" /><span>ASSISTED</span><ShieldCheck size={15} /></div>

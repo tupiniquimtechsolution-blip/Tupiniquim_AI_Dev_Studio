@@ -54,7 +54,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionService, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, type ToolIntent } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionService, VisualIntelligenceService, WorkspaceWriteProposalService, assertIdleForWorkspaceSwitch, prepareProviderSendInput, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
@@ -101,7 +101,8 @@ const controlledCodexArgs = ((): string[] | undefined => {
   }
 })()
 const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
-  if (tupiniquimSession.current() !== null) {
+  const foreignThread = !tupiniquimSession.acceptsProviderEvent(provider, event.threadId)
+  if (tupiniquimSession.current() !== null && !foreignThread) {
     const model = tupiniquimSession.modelFor(provider)
     if (event.kind === 'MESSAGE_DELTA' && event.threadId !== undefined && event.turnId !== undefined) {
       tupiniquimSession.applyAssistantDelta({
@@ -112,8 +113,9 @@ const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
         text: event.text ?? ''
       })
     } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
-      tupiniquimSession.completeTurn(event.turnId)
+      tupiniquimSession.completeTurn(event.turnId, event.status)
     } else if (event.kind === 'ERROR') {
+      if (event.turnId !== undefined) tupiniquimSession.completeTurn(event.turnId, event.status ?? 'FAILED')
       tupiniquimSession.appendTurn({
         role: 'error',
         text: event.detail ?? 'Falha no provider.',
@@ -124,7 +126,9 @@ const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
       })
     }
   }
-  if (selectedAgentProvider === provider) mainWindow?.webContents.send(ipcChannels.agentEvent, event)
+  if (selectedAgentProvider === provider && (event.kind === 'STATUS' || !foreignThread)) {
+    mainWindow?.webContents.send(ipcChannels.agentEvent, event)
+  }
 }
 const codexAgent = new CodexAppServerAdapter({
   dataRoot,
@@ -384,6 +388,7 @@ const registerIpc = (): void => {
     return result.canceled ? null : (result.filePaths[0] ?? null)
   })
   register(ipcChannels.workspaceConfigure, configureWorkspaceInputSchema, 'workspace.configure', async ({ root }) => {
+    assertIdleForWorkspaceSwitch(agentRuntimeLocked())
     const configured = await workspace.configure(root)
     for (const id of tupiniquimSession.switchWorkspace(configured)) writeProposals.invalidate(id)
     return configured
@@ -401,17 +406,17 @@ const registerIpc = (): void => {
   register(ipcChannels.terminalWrite, terminalWriteInputSchema, 'terminal.write', ({ terminalId, data }) => terminal.write(terminalId, data))
   register(ipcChannels.terminalResize, terminalResizeInputSchema, 'terminal.resize', ({ terminalId, cols, rows }) => terminal.resize(terminalId, cols, rows))
   register(ipcChannels.terminalKill, terminalKillInputSchema, 'terminal.kill', ({ terminalId }) => terminal.kill(terminalId))
-  register(ipcChannels.agentStatus, z.undefined(), 'agent.status', () => activeAgent().status())
+  register(ipcChannels.agentStatus, z.undefined(), 'agent.status', () => tupiniquimSession.scopedStatus(activeAgent().status()))
   register(ipcChannels.agentProviderSelect, agentProviderSelectInputSchema, 'agent.provider.select', async ({ provider }) => {
     if (agentRuntimeLocked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
-    if (provider === selectedAgentProvider) return activeAgent().status()
+    if (provider === selectedAgentProvider) return tupiniquimSession.scopedStatus(activeAgent().status())
     agentProviderTransitioning = true
     try {
       const status = await agents[provider].connect()
       const previous = selectedAgentProvider
       selectedAgentProvider = provider
       for (const id of tupiniquimSession.switchProvider(previous, provider)) writeProposals.invalidate(id)
-      return status
+      return tupiniquimSession.scopedStatus(status)
     } finally {
       agentProviderTransitioning = false
     }
@@ -423,13 +428,19 @@ const registerIpc = (): void => {
   register(ipcChannels.agentLocalModelSelect, agentLocalModelSelectInputSchema, 'agent.local-model.select', ({ model }) => {
     if (selectedAgentProvider !== 'ollama') throw new Error('Selecione Ollama local antes de escolher um modelo.')
     ollamaAgent.selectModel(model)
-    return ollamaAgent.status()
+    return tupiniquimSession.scopedStatus(ollamaAgent.status())
   })
-  register(ipcChannels.agentHistory, agentThreadIdInputSchema, 'agent.history', async ({ threadId }) => ({
-    thread: await database.getAIThread(threadId),
-    turns: await database.listAITurns(threadId),
-    events: await database.listAIEvents(threadId)
-  }), aiThreadHistorySchema)
+  register(ipcChannels.agentHistory, agentThreadIdInputSchema, 'agent.history', async ({ threadId }) => {
+    const thread = await database.getAIThread(threadId)
+    if (thread !== null && thread.workspaceRoot !== workspace.getRoot()) {
+      return { thread: null, turns: [], events: [] }
+    }
+    return {
+      thread,
+      turns: await database.listAITurns(threadId),
+      events: await database.listAIEvents(threadId)
+    }
+  }, aiThreadHistorySchema)
   register(ipcChannels.agentSession, z.undefined(), 'agent.session', () => tupiniquimSession.snapshot(), tupiniquimConversationSchema.nullable())
   register(ipcChannels.agentSend, agentSendInputSchema, 'agent.send', async (input) => {
     if (agentRuntimeLocked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
@@ -465,14 +476,20 @@ const registerIpc = (): void => {
         if (persisted !== null && persisted.provider !== provider) {
           throw new Error('A autoridade da proposta não transfere de provider.')
         }
+        if (persisted !== null && persisted.workspaceRoot !== workspace.getRoot()) {
+          delete (providerInput as { threadId?: string }).threadId
+        }
       }
       const pendingContext = tupiniquimSession.unseenPublicContext(provider)
+      const sendInput = providerInput.threadId === undefined
+        ? { ...providerInput }
+        : providerInput
       const reference = await agent.send({
-        ...providerInput,
+        ...sendInput,
         workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3)),
         ...(pendingContext.text === undefined ? {} : { sessionContext: pendingContext.text })
       })
-      tupiniquimSession.acknowledgeProviderContext(provider, pendingContext.turnIds)
+      tupiniquimSession.notePendingContext(provider, reference.threadId, reference.turnId, pendingContext.turnIds)
       const persistedThread = await database.getAIThread(reference.threadId)
       const model = persistedThread?.model ?? tupiniquimSession.modelFor(provider)
       tupiniquimSession.bindProviderThread(provider, reference.threadId, model)

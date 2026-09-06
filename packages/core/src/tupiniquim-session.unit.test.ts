@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { maxTupiniquimSessionContextChars } from '@tupiniquim/contracts'
-import { TupiniquimSessionService } from './tupiniquim-session'
+import { maxTupiniquimSessionContextChars, type AIStatus } from '@tupiniquim/contracts'
+import { TupiniquimSessionService, assertIdleForWorkspaceSwitch, workspaceSwitchBusyMessage } from './tupiniquim-session'
+
+const statusFor = (activeThreadId: string | null, activeTurnId: string | null = null): AIStatus => ({
+  provider: 'ollama',
+  state: 'READY',
+  account: 'NONE',
+  version: 'local',
+  activeThreadId,
+  activeTurnId,
+  detail: null
+})
 
 const workspaceA = '/workspace/autorizado-a'
 const workspaceB = '/workspace/autorizado-b'
@@ -361,5 +371,78 @@ describe('TupiniquimSessionService', () => {
     expect(backToOllama.text).toContain('CONTEXTO_TUPINIQUIM_OK')
     expect(backToOllama.text).not.toContain('arquitetura X')
     expect(sessions.publicProviderContext()).toContain('arquitetura X')
+  })
+
+  it('recusa troca de workspace enquanto o runtime está ocupado', () => {
+    expect(() => assertIdleForWorkspaceSwitch(true)).toThrow(workspaceSwitchBusyMessage)
+    expect(() => assertIdleForWorkspaceSwitch(false)).not.toThrow()
+  })
+
+  it('ignora threadId público de outro workspace e zera o status exposto sem binding', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-a', 'modelo-a')
+    expect(sessions.scopedStatus(statusFor('thread-a', 'turn-a')).activeThreadId).toBe('thread-a')
+
+    sessions.switchWorkspace(workspaceB)
+    expect(sessions.threadFor('ollama')).toBeUndefined()
+    expect(sessions.resolveChatThread('ollama', 'thread-a')).toBeUndefined()
+    expect(sessions.acceptsProviderEvent('ollama', 'thread-a')).toBe(false)
+    expect(sessions.acceptsProviderEvent('ollama', 'thread-nova-b')).toBe(true)
+    expect(sessions.scopedStatus(statusFor('thread-a', 'turn-a'))).toMatchObject({
+      activeThreadId: null,
+      activeTurnId: null
+    })
+
+    sessions.switchWorkspace(workspaceA)
+    expect(sessions.threadFor('ollama')).toBe('thread-a')
+    expect(sessions.resolveChatThread('ollama', 'thread-forjada')).toBe('thread-a')
+  })
+
+  it('não reconhece o contexto incremental em ERROR ou CANCELLED e reconhece só no sucesso', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'qwen-local')
+    sessions.appendTurn({
+      role: 'user',
+      text: 'Meu projeto usa arquitetura X',
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: 'thread-ollama',
+      turnId: 'turn-ollama-user'
+    })
+    const pending = sessions.unseenPublicContext('codex-app-server')
+    expect(pending.turnIds).toHaveLength(1)
+
+    sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-error', pending.turnIds)
+    sessions.completeTurn('turn-error', 'FAILED')
+    expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(pending.turnIds)
+
+    sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-cancel', pending.turnIds)
+    sessions.completeTurn('turn-cancel', 'CANCELLED')
+    expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(pending.turnIds)
+
+    sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-ok', pending.turnIds)
+    sessions.completeTurn('turn-ok', 'completed')
+    expect(sessions.unseenPublicContext('codex-app-server')).toEqual({ text: undefined, turnIds: [] })
+  })
+
+  it('reconhece contexto pendente mesmo se TURN_COMPLETED chegar antes do notePending', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'qwen-local')
+    sessions.appendTurn({
+      role: 'user',
+      text: 'contexto antecipado',
+      provider: 'ollama',
+      model: 'qwen-local',
+      threadId: 'thread-ollama',
+      turnId: 'turn-ollama-user'
+    })
+    const pending = sessions.unseenPublicContext('codex-app-server')
+    sessions.completeTurn('turn-race', 'COMPLETED')
+    expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(pending.turnIds)
+    sessions.notePendingContext('codex-app-server', 'thread-codex', 'turn-race', pending.turnIds)
+    expect(sessions.unseenPublicContext('codex-app-server')).toEqual({ text: undefined, turnIds: [] })
   })
 })

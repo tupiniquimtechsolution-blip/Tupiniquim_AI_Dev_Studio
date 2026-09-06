@@ -3,6 +3,7 @@ import {
   maxTupiniquimSessionContextChars,
   tupiniquimConversationSchema,
   type AIProviderKind,
+  type AIStatus,
   type TupiniquimConversation,
   type TupiniquimProposalAuthority,
   type TupiniquimProviderBinding,
@@ -10,6 +11,12 @@ import {
   type TupiniquimTurn,
   type TupiniquimTurnRole
 } from '@tupiniquim/contracts'
+
+export const workspaceSwitchBusyMessage = 'Aguarde o turno do agente terminar antes de trocar de workspace.'
+
+export const assertIdleForWorkspaceSwitch = (locked: boolean): void => {
+  if (locked) throw new Error(workspaceSwitchBusyMessage)
+}
 
 const sessionContextHeader = [
   'CONTEXTO DA SESSÃO TUPINIQUIM — SOMENTE TURNS PÚBLICOS REDIGIDOS',
@@ -22,6 +29,12 @@ export interface UnseenSessionContext {
   turnIds: string[]
 }
 
+interface PendingContextDelivery {
+  provider: AIProviderKind
+  threadId: string
+  turnIds: string[]
+}
+
 interface WorkspaceSessionState {
   session: TupiniquimSession
   turns: TupiniquimTurn[]
@@ -30,6 +43,9 @@ interface WorkspaceSessionState {
   proposalIds: Set<string>
   inProgress: Map<string, TupiniquimTurn>
   seenByProvider: Map<AIProviderKind, Set<string>>
+  pendingByTurn: Map<string, PendingContextDelivery>
+  settledSuccess: Set<string>
+  settledFailure: Set<string>
 }
 
 export class TupiniquimSessionService {
@@ -59,7 +75,10 @@ export class TupiniquimSessionService {
       authority: null,
       proposalIds: new Set(),
       inProgress: new Map(),
-      seenByProvider: new Map()
+      seenByProvider: new Map(),
+      pendingByTurn: new Map(),
+      settledSuccess: new Set(),
+      settledFailure: new Set()
     }
     this.sessionsByWorkspace.set(workspaceRoot, created)
     this.activeWorkspaceRoot = workspaceRoot
@@ -112,9 +131,22 @@ export class TupiniquimSessionService {
   public acknowledgeProviderContext(provider: AIProviderKind, turnIds: string[]): void {
     const state = this.activeOrNull()
     if (state === null || turnIds.length === 0) return
-    const seen = state.seenByProvider.get(provider) ?? new Set<string>()
-    for (const id of turnIds) seen.add(id)
-    state.seenByProvider.set(provider, seen)
+    this.markTurnsSeen(state, provider, turnIds)
+  }
+
+  public notePendingContext(provider: AIProviderKind, threadId: string, turnId: string, turnIds: string[]): void {
+    const state = this.activeOrNull()
+    if (state === null || turnIds.length === 0) return
+    if (state.settledSuccess.has(turnId)) {
+      this.markTurnsSeen(state, provider, turnIds)
+      state.settledSuccess.delete(turnId)
+      return
+    }
+    if (state.settledFailure.has(turnId)) {
+      state.settledFailure.delete(turnId)
+      return
+    }
+    state.pendingByTurn.set(turnId, { provider, threadId, turnIds })
   }
 
   public modelFor(provider: AIProviderKind): string | null {
@@ -131,10 +163,25 @@ export class TupiniquimSessionService {
     const bound = state.bindings.get(provider)
     if (bound !== undefined) return bound.threadId
     if (requested === undefined || requested === '') return undefined
+    if (this.ownsThreadInOtherWorkspace(requested)) return undefined
     for (const [owner, binding] of state.bindings) {
       if (binding.threadId === requested && owner !== provider) return undefined
     }
     return requested
+  }
+
+  public acceptsProviderEvent(provider: AIProviderKind, threadId?: string): boolean {
+    if (threadId === undefined) return true
+    const bound = this.threadFor(provider)
+    if (bound !== undefined) return bound === threadId
+    return !this.ownsThreadInOtherWorkspace(threadId)
+  }
+
+  public scopedStatus(status: AIStatus): AIStatus {
+    const bound = this.threadFor(status.provider)
+    if (bound === undefined) return { ...status, activeThreadId: null, activeTurnId: null }
+    if (status.activeThreadId !== bound) return { ...status, activeThreadId: bound, activeTurnId: null }
+    return status
   }
 
   public bindProviderThread(provider: AIProviderKind, threadId: string, model: string | null): TupiniquimProviderBinding {
@@ -215,8 +262,26 @@ export class TupiniquimSessionService {
     return turn
   }
 
-  public completeTurn(turnId: string): void {
-    this.activeOrNull()?.inProgress.delete(turnId)
+  public completeTurn(turnId: string, status?: string): void {
+    const state = this.activeOrNull()
+    if (state === null) return
+    state.inProgress.delete(turnId)
+    const pending = state.pendingByTurn.get(turnId)
+    const success = status !== undefined && isSuccessfulTurnStatus(status)
+    if (pending !== undefined) {
+      state.pendingByTurn.delete(turnId)
+      if (success) this.markTurnsSeen(state, pending.provider, pending.turnIds)
+      return
+    }
+    if (success) {
+      state.settledSuccess.add(turnId)
+      state.settledFailure.delete(turnId)
+      return
+    }
+    if (status !== undefined) {
+      state.settledFailure.add(turnId)
+      state.settledSuccess.delete(turnId)
+    }
   }
 
   public grantProposalAuthority(provider: AIProviderKind, threadId: string, proposalId: string): void {
@@ -305,6 +370,21 @@ export class TupiniquimSessionService {
     state.seenByProvider.set(provider, seen)
   }
 
+  private markTurnsSeen(state: WorkspaceSessionState, provider: AIProviderKind, turnIds: string[]): void {
+    for (const turnId of turnIds) this.markSeen(state, provider, turnId)
+  }
+
+  private ownsThreadInOtherWorkspace(threadId: string): boolean {
+    const current = this.activeWorkspaceRoot
+    for (const [root, state] of this.sessionsByWorkspace) {
+      if (root === current) continue
+      for (const binding of state.bindings.values()) {
+        if (binding.threadId === threadId) return true
+      }
+    }
+    return false
+  }
+
   private proposalAuthorityFrom(state: WorkspaceSessionState): TupiniquimProposalAuthority | null {
     if (state.authority === null) return null
     return { ...state.authority, proposalIds: [...state.proposalIds] }
@@ -332,6 +412,11 @@ export class TupiniquimSessionService {
   private touch(state: WorkspaceSessionState): void {
     state.session = { ...state.session, updatedAt: new Date().toISOString() }
   }
+}
+
+const isSuccessfulTurnStatus = (status: string): boolean => {
+  const normalized = status.trim().toUpperCase()
+  return normalized === 'COMPLETED' || normalized === 'SUCCESS'
 }
 
 const redact = (value: string): string => value

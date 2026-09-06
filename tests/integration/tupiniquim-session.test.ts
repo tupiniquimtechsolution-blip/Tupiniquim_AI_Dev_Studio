@@ -5,7 +5,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { AIEvent, AIThread, AITurn, ApprovalDecision, Execution, FlightRecorderEvent, Plan } from '@tupiniquim/contracts'
 import { CodexAppServerAdapter, OllamaAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, TupiniquimSessionService, WorkspaceWriteProposalService, type PlanRepository } from '@tupiniquim/core'
+import { PlanApprovalService, TupiniquimSessionService, WorkspaceWriteProposalService, assertIdleForWorkspaceSwitch, type PlanRepository } from '@tupiniquim/core'
 
 /**
  * Cross-platform Wave 15 invariants: Tupiniquim Session != Provider Thread.
@@ -252,7 +252,9 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
             text: event.text ?? ''
           })
         } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
-          sessions.completeTurn(event.turnId)
+          sessions.completeTurn(event.turnId, event.status)
+        } else if (event.kind === 'ERROR' && event.turnId !== undefined) {
+          sessions.completeTurn(event.turnId, event.status ?? 'FAILED')
         }
       },
       fetchImpl: (input, init) => {
@@ -312,7 +314,9 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
             text: event.text ?? ''
           })
         } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
-          sessions.completeTurn(event.turnId)
+          sessions.completeTurn(event.turnId, event.status)
+        } else if (event.kind === 'ERROR' && event.turnId !== undefined) {
+          sessions.completeTurn(event.turnId, event.status ?? 'FAILED')
         }
       },
       codexPath: process.execPath,
@@ -334,7 +338,7 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
         mode: 'CHAT',
         ...(pendingCodex.text === undefined ? {} : { sessionContext: pendingCodex.text })
       })
-      sessions.acknowledgeProviderContext('codex-app-server', pendingCodex.turnIds)
+      sessions.notePendingContext('codex-app-server', codexRef.threadId, codexRef.turnId, pendingCodex.turnIds)
       sessions.appendTurn({
         role: 'user',
         text: 'Continue a análise',
@@ -369,13 +373,13 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
       const followUpContext = sessions.unseenPublicContext('ollama')
       expect(followUpContext.text).toContain('Continue a análise')
       expect(followUpContext.text).not.toContain(architecture)
-      await ollama.send({
+      const followUpRef = await ollama.send({
         message: 'Retome no Ollama.',
         mode: 'CHAT',
         threadId: ollamaRef.threadId,
         ...(followUpContext.text === undefined ? {} : { sessionContext: followUpContext.text })
       })
-      sessions.acknowledgeProviderContext('ollama', followUpContext.turnIds)
+      sessions.notePendingContext('ollama', followUpRef.threadId, followUpRef.turnId, followUpContext.turnIds)
       await waitFor(() => ollama.status().state === 'READY')
       const lastOllama = JSON.parse(ollamaBodies.at(-1) ?? '{}') as { messages?: Array<{ role?: string; content?: string }> }
       const sessionMessage = lastOllama.messages?.find((message) => message.content?.includes('CONTEXTO DA SESSÃO TUPINIQUIM'))
@@ -387,6 +391,186 @@ describe('Tupiniquim session — continuidade e isolamento', () => {
       await ollama.close()
       await codex.close()
       await rm(dataRoot, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('recusa troca BUSY, isola o primeiro send em B e não consome contexto em ERROR/CANCELLED', async () => {
+    const sessions = new TupiniquimSessionService()
+    const sessionA = sessions.open(workspaceRoot)
+    const architecture = 'Meu projeto usa arquitetura X'
+    const delay = async (): Promise<void> => await new Promise((resolve) => setTimeout(resolve, 20))
+    const waitFor = async (predicate: () => boolean): Promise<void> => {
+      for (let attempt = 0; attempt < 80; attempt += 1) {
+        if (predicate()) return
+        await delay()
+      }
+      throw new Error('Timeout aguardando adapter.')
+    }
+    const ndjsonResponse = (...chunks: unknown[]): Response => {
+      const encoder = new TextEncoder()
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) controller.enqueue(encoder.encode(JSON.stringify(chunk) + '\n'))
+          controller.close()
+        }
+      }))
+    }
+    let hangRelease = (): void => undefined
+    let hangNotify = (): void => undefined
+    let hangStarted = Promise.resolve()
+    let chatMode: 'hang' | 'fail' | 'ok' = 'hang'
+    const armHang = (): void => {
+      hangRelease = (): void => undefined
+      hangStarted = new Promise<void>((resolve) => { hangNotify = resolve })
+    }
+    armHang()
+    const ollama = new OllamaAdapter({
+      onEvent: (event) => {
+        if (!sessions.acceptsProviderEvent('ollama', event.threadId)) return
+        if (event.kind === 'MESSAGE_DELTA' && event.threadId !== undefined && event.turnId !== undefined) {
+          sessions.applyAssistantDelta({
+            provider: 'ollama',
+            model: sessions.modelFor('ollama'),
+            threadId: event.threadId,
+            turnId: event.turnId,
+            text: event.text ?? ''
+          })
+        } else if (event.kind === 'TURN_COMPLETED' && event.turnId !== undefined) {
+          sessions.completeTurn(event.turnId, event.status)
+        } else if (event.kind === 'ERROR' && event.turnId !== undefined) {
+          sessions.completeTurn(event.turnId, event.status ?? 'FAILED')
+        }
+      },
+      fetchImpl: (input, init) => {
+        const url = input instanceof URL ? input.href : typeof input === 'string' ? input : input.url
+        if (url.endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local', model: 'qwen-local' }] })))
+        if (chatMode === 'fail') return Promise.resolve(new Response('', { status: 500 }))
+        if (chatMode === 'hang') {
+          const encoder = new TextEncoder()
+          let streamController: ReadableStreamDefaultController<Uint8Array> | null = null
+          const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              streamController = controller
+              controller.enqueue(encoder.encode(JSON.stringify({ message: { content: 'DELTA_A' }, done: false }) + '\n'))
+              hangNotify()
+              hangRelease = () => {
+                streamController?.enqueue(encoder.encode(JSON.stringify({ message: { content: '_OK' }, done: true }) + '\n'))
+                streamController?.close()
+              }
+            }
+          })
+          init?.signal?.addEventListener('abort', () => streamController?.error(new DOMException('Aborted', 'AbortError')), { once: true })
+          return Promise.resolve(new Response(stream))
+        }
+        return Promise.resolve(ndjsonResponse({ message: { content: 'TUPINIQUIM_SESSION_B' }, done: true }))
+      },
+      getWorkspaceRoot: () => sessions.current()?.workspaceRoot ?? workspaceRoot,
+      history: {
+        putAIThread: (thread) => {
+          sessions.bindProviderThread('ollama', thread.id, thread.model)
+          return Promise.resolve()
+        },
+        putAITurn: () => Promise.resolve(),
+        appendAIEvent: () => Promise.resolve()
+      }
+    })
+    try {
+      await ollama.connect()
+      ollama.selectModel('qwen-local')
+      const firstA = await ollama.send({ message: architecture, mode: 'CHAT' })
+      sessions.appendTurn({
+        role: 'user',
+        text: architecture,
+        provider: 'ollama',
+        model: 'qwen-local',
+        threadId: firstA.threadId,
+        turnId: firstA.turnId
+      })
+      await hangStarted
+      expect(ollama.status().state).toBe('BUSY')
+      expect(() => assertIdleForWorkspaceSwitch(true)).toThrow('Aguarde o turno do agente terminar antes de trocar de workspace.')
+      expect(sessions.current()?.id).toBe(sessionA.id)
+      await waitFor(() => (sessions.snapshot()?.turns.some((turn) => turn.role === 'assistant' && turn.text.includes('DELTA_A')) ?? false))
+      hangRelease()
+      await waitFor(() => ollama.status().state === 'READY')
+      expect(sessions.snapshot()?.turns.some((turn) => turn.role === 'assistant' && turn.text.includes('DELTA_A_OK'))).toBe(true)
+      expect(sessions.threadFor('ollama')).toBe(firstA.threadId)
+
+      const otherRoot = `${workspaceRoot}-b`
+      sessions.switchWorkspace(otherRoot)
+      const sessionB = sessions.open(otherRoot)
+      expect(sessionB.id).not.toBe(sessionA.id)
+      expect(sessions.threadFor('ollama')).toBeUndefined()
+      expect(sessions.resolveChatThread('ollama', firstA.threadId)).toBeUndefined()
+      expect(sessions.scopedStatus(ollama.status())).toMatchObject({ activeThreadId: null, activeTurnId: null })
+      expect(sessions.acceptsProviderEvent('ollama', firstA.threadId)).toBe(false)
+
+      chatMode = 'ok'
+      const firstB = await ollama.send({ message: 'primeira mensagem em B', mode: 'CHAT' })
+      sessions.appendTurn({
+        role: 'user',
+        text: 'primeira mensagem em B',
+        provider: 'ollama',
+        model: 'qwen-local',
+        threadId: firstB.threadId,
+        turnId: firstB.turnId
+      })
+      await waitFor(() => ollama.status().state === 'READY')
+      expect(firstB.threadId).not.toBe(firstA.threadId)
+      expect(sessions.threadFor('ollama')).toBe(firstB.threadId)
+      expect(sessions.publicProviderContext()).toContain('primeira mensagem em B')
+      expect(sessions.publicProviderContext()).not.toContain(architecture)
+
+      const restored = sessions.open(workspaceRoot)
+      expect(restored.id).toBe(sessionA.id)
+      expect(sessions.threadFor('ollama')).toBe(firstA.threadId)
+      expect(sessions.publicProviderContext()).toContain(architecture)
+      expect(sessions.publicProviderContext()).not.toContain('primeira mensagem em B')
+
+      const pending = sessions.unseenPublicContext('codex-app-server')
+      expect(pending.turnIds.length).toBeGreaterThan(0)
+      const unseenBeforeError = [...pending.turnIds]
+      chatMode = 'fail'
+      const errorRef = await ollama.send({
+        message: 'retry após erro',
+        mode: 'CHAT',
+        threadId: firstA.threadId,
+        ...(pending.text === undefined ? {} : { sessionContext: pending.text })
+      })
+      sessions.notePendingContext('codex-app-server', errorRef.threadId, errorRef.turnId, pending.turnIds)
+      await waitFor(() => ollama.status().state === 'ERROR')
+      expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(unseenBeforeError)
+
+      await ollama.connect()
+      chatMode = 'hang'
+      armHang()
+      const cancelPending = sessions.unseenPublicContext('codex-app-server')
+      const cancelRef = await ollama.send({
+        message: 'vai cancelar',
+        mode: 'CHAT',
+        threadId: firstA.threadId,
+        ...(cancelPending.text === undefined ? {} : { sessionContext: cancelPending.text })
+      })
+      sessions.notePendingContext('codex-app-server', cancelRef.threadId, cancelRef.turnId, cancelPending.turnIds)
+      await hangStarted
+      await ollama.interrupt(cancelRef)
+      await waitFor(() => ollama.status().state === 'READY')
+      expect(sessions.unseenPublicContext('codex-app-server').turnIds).toEqual(expect.arrayContaining(unseenBeforeError))
+
+      chatMode = 'ok'
+      const successPending = sessions.unseenPublicContext('codex-app-server')
+      const successRef = await ollama.send({
+        message: 'sucesso após retry',
+        mode: 'CHAT',
+        threadId: firstA.threadId,
+        ...(successPending.text === undefined ? {} : { sessionContext: successPending.text })
+      })
+      sessions.notePendingContext('codex-app-server', successRef.threadId, successRef.turnId, successPending.turnIds)
+      await waitFor(() => ollama.status().state === 'READY')
+      const unseenAfterSuccess = sessions.unseenPublicContext('codex-app-server').turnIds
+      expect(unseenBeforeError.every((turnId) => !unseenAfterSuccess.includes(turnId))).toBe(true)
+    } finally {
+      await ollama.close()
     }
   }, 30_000)
 })
