@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { AIEvent, AIThread, AITurn, WorkspaceWriteProposal } from '@tupiniquim/contracts'
-import { OllamaAdapter, type OllamaWorkspaceWriteToolCall } from './ollama'
+import type { AIEvent, AIThread, AITurn, NormalizedToolCallEnvelope, WorkspaceWriteProposal } from '@tupiniquim/contracts'
+import { OllamaAdapter } from './ollama'
 
 const delay = async (): Promise<void> => await new Promise((resolve) => setTimeout(resolve, 20))
 const urlFor = (input: Parameters<typeof fetch>[0]): string => input instanceof URL ? input.href : typeof input === 'string' ? input : input.url
@@ -20,25 +20,28 @@ const ndjsonResponse = (...chunks: unknown[]): Response => {
     }
   }))
 }
-const proposalFor = (call: OllamaWorkspaceWriteToolCall): WorkspaceWriteProposal => ({
-  id: crypto.randomUUID(),
-  provider: call.provider,
-  toolCallId: call.callId,
-  tool: call.tool,
-  executionId: call.executionId,
-  stepId: call.stepId,
-  threadId: call.threadId,
-  turnId: call.turnId,
-  effect: {
+const proposalFor = (call: { envelope: NormalizedToolCallEnvelope; executionId: string; stepId: string }): WorkspaceWriteProposal => {
+  const args = call.envelope.arguments as Record<string, string>
+  return {
     id: crypto.randomUUID(),
-    capability: 'workspace.write',
-    operation: call.operation,
-    target: call.relativePath,
-    payloadHash: 'a'.repeat(64),
-    risk: 'HIGH'
-  },
-  createdAt: new Date().toISOString()
-})
+    provider: call.envelope.provider,
+    toolCallId: call.envelope.callId,
+    tool: call.envelope.tool,
+    executionId: call.executionId,
+    stepId: call.stepId,
+    threadId: call.envelope.threadId,
+    turnId: call.envelope.turnId,
+    effect: {
+      id: crypto.randomUUID(),
+      capability: 'workspace.write',
+      operation: (args.operation ?? 'CREATE') as 'CREATE' | 'REPLACE',
+      target: args.relativePath ?? '',
+      payloadHash: 'a'.repeat(64),
+      risk: 'HIGH'
+    },
+    createdAt: new Date().toISOString()
+  }
+}
 const rejectedMarker = 'MARCADOR_REJEITADO_OLLAMA'
 const workspaceWriteToolCall = (argumentsValue: unknown, name = 'tupiniquim_workspace_write_proposal'): unknown => ({
   function: { name, arguments: argumentsValue }
@@ -68,7 +71,7 @@ const rejectedProposalScenarios: Array<[string, () => Response]> = [
   ['argumento extra', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall({ ...validToolArguments, unexpected: rejectedMarker })], true))],
   ['campo ausente', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall({ relativePath: 'src/rejeitado.ts', operation: 'CREATE' })], true))],
   ['tipo de campo incorreto', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall({ ...validToolArguments, content: 42 })], true))],
-  ['JSON de argumentos malformado', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall(`{"relativePath":"src/rejeitado.ts","content":"${rejectedMarker}","operation":"CREATE"`)], true))],
+  ['JSON de argumentos malformado', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall(`{"relativePath":"src/rejeitado.ts","content":"${rejectedMarker}","operation":"CREATE"}`)], true))],
   ['EOF sem done', rejectedNdjson(rejectedProposalChunk([workspaceWriteToolCall(validToolArguments)], false))],
   ['múltiplos chunks done', rejectedNdjson(
     rejectedProposalChunk([workspaceWriteToolCall(validToolArguments)], true),
@@ -169,7 +172,7 @@ describe('OllamaAdapter', () => {
     const adapter = new OllamaAdapter({ onEvent: (event) => events.push(event), fetchImpl })
     await adapter.connect()
     adapter.selectModel('qwen-local')
-    const reference = await adapter.send({ message: 'conteÃºdo privado', mode: 'CHAT' })
+    const reference = await adapter.send({ message: 'conteúdo privado', mode: 'CHAT' })
     await streamStarted
     await adapter.interrupt(reference)
     await delay()
@@ -264,7 +267,7 @@ describe('OllamaAdapter', () => {
     const storedEvents: AIEvent[] = []
     const chatBodies: string[] = []
     let chatIndex = 0
-    const received: OllamaWorkspaceWriteToolCall[] = []
+    const received: Array<{ envelope: NormalizedToolCallEnvelope; executionId: string; stepId: string }> = []
     const fetchImpl: typeof fetch = (input, init) => {
       if (urlFor(input).endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local' }] })))
       if (typeof init?.body === 'string') chatBodies.push(init.body)
@@ -316,17 +319,21 @@ describe('OllamaAdapter', () => {
     expect(chatBodies[0]).not.toContain(executionId)
     expect(chatBodies[0]).not.toContain(stepId)
     expect(received[0]).toMatchObject({
+      executionId,
+      stepId
+    })
+    expect(received[0]?.envelope).toMatchObject({
       provider: 'ollama',
       threadId: reference.threadId,
       turnId: reference.turnId,
-      executionId,
-      stepId,
       tool: 'workspace.write',
-      relativePath: 'src/gerado.ts',
-      content: marker,
-      operation: 'CREATE'
+      arguments: {
+        relativePath: 'src/gerado.ts',
+        content: marker,
+        operation: 'CREATE'
+      }
     })
-    expect(received[0]?.callId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
+    expect(received[0]?.envelope.callId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u)
     expect(JSON.stringify(events)).not.toContain(marker)
     expect(JSON.stringify(storedEvents)).not.toContain(marker)
     expect(events.some((event) => event.kind === 'MESSAGE_DELTA' && event.text === marker)).toBe(false)

@@ -2,19 +2,36 @@ import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { PathSecurityError, isInside, resolveLexicalPath } from '@tupiniquim/adapters'
 
-describe('segurança de caminhos', () => {
-  const root = 'F:\\CODEX\\workspace'
+const isWindows = process.platform === 'win32'
+const root = isWindows ? 'F:\\CODEX\\workspace' : '/tmp/workspace'
 
-  it('rejeita traversal e caminhos absolutos', () => {
-    expect(() => resolveLexicalPath(root, '..\\segredo.txt')).toThrow(PathSecurityError)
-    expect(() => resolveLexicalPath(root, 'C:\\Windows\\System32')).toThrow(PathSecurityError)
-    expect(() => resolveLexicalPath(root, '\\\\servidor\\share')).toThrow(PathSecurityError)
+describe('segurança de caminhos', () => {
+  it('rejeita traversal com ..', () => {
+    const traversal = path.join('..', 'segredo.txt')
+    expect(() => resolveLexicalPath(root, traversal)).toThrow(PathSecurityError)
+  })
+
+  it('rejeita caminhos absolutos', () => {
+    if (isWindows) {
+      expect(() => resolveLexicalPath(root, 'C:\\Windows\\System32')).toThrow(PathSecurityError)
+    }
+    expect(() => resolveLexicalPath(root, '/etc/passwd')).toThrow(PathSecurityError)
+  })
+
+  it('rejeita caminhos de rede UNC', () => {
+    if (isWindows) {
+      expect(() => resolveLexicalPath(root, '\\\\servidor\\share')).toThrow(PathSecurityError)
+    }
   })
 
   it('aceita apenas descendentes reais da raiz lexical', () => {
-    const candidate = resolveLexicalPath(root, 'src\\index.ts')
+    const candidate = resolveLexicalPath(root, path.join('src', 'index.ts'))
     expect(isInside(root, candidate)).toBe(true)
     expect(path.relative(root, candidate)).toBe(path.join('src', 'index.ts'))
+  })
+
+  it('rejeita paths com bytes nulos', () => {
+    expect(() => resolveLexicalPath(root, 'src/index.ts\0/etc/passwd')).toThrow(PathSecurityError)
   })
 
   it('rejeita ADS e dois-pontos em qualquer segmento', () => {
@@ -39,7 +56,7 @@ describe('segurança de caminhos', () => {
   it.each([
     '\\\\?\\F:\\CODEX\\workspace\\arquivo.txt',
     '\\\\.\\PhysicalDrive0',
-    '\\??\\F:\\CODEX\\workspace\\arquivo.txt',
+    '\\\\??\\F:\\CODEX\\workspace\\arquivo.txt',
     '\\Device\\HarddiskVolume1\\arquivo.txt'
   ])('rejeita namespace ou dispositivo do Windows: %s', (relativePath) => {
     expect(() => resolveLexicalPath(root, relativePath)).toThrow(PathSecurityError)
@@ -52,7 +69,7 @@ describe('segurança de caminhos', () => {
     }
   )
 
-  it.each(['src\\linha\nnova.txt', 'src\\arquivo?.txt', 'src\\arquivo*.txt', 'src\\arquivo|pipe.txt', 'src\\<arquivo>.txt'])(
+  it.each(['src\\linha\nova.txt', 'src\\arquivo?.txt', 'src\\arquivo*.txt', 'src\\arquivo|pipe.txt', 'src\\<arquivo>.txt'])(
     'rejeita caractere inválido do Windows: %s',
     (relativePath) => {
       expect(() => resolveLexicalPath(root, relativePath)).toThrow(PathSecurityError)
@@ -60,7 +77,7 @@ describe('segurança de caminhos', () => {
   )
 
   it('não confunde nomes comuns com dispositivos reservados', () => {
-    expect(resolveLexicalPath(root, 'src\\console.txt')).toBe('F:\\CODEX\\workspace\\src\\console.txt')
-    expect(resolveLexicalPath(root, 'src\\com10.txt')).toBe('F:\\CODEX\\workspace\\src\\com10.txt')
+    expect(resolveLexicalPath(root, 'src\\console.txt')).toBe(isWindows ? 'F:\\CODEX\\workspace\\src\\console.txt' : '/tmp/workspace/src\\console.txt')
+    expect(resolveLexicalPath(root, 'src\\com10.txt')).toBe(isWindows ? 'F:\\CODEX\\workspace\\src\\com10.txt' : '/tmp/workspace/src\\com10.txt')
   })
 })

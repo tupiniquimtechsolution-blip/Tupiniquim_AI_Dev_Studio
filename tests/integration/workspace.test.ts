@@ -1,14 +1,22 @@
 import { createHash } from 'node:crypto'
+import os from 'node:os'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WorkspaceAdapter } from '@tupiniquim/adapters'
 
+const isWindows = process.platform === 'win32'
+
 let fixture = ''
 
 beforeEach(async () => {
-  const temp = process.env.TEMP
-  if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de testes precisa estar em F:.')
+  // On Windows, enforce F: drive constraint per production policy.
+  // On other platforms, use the system temp directory for testing.
+  const temp = process.env.TEMP ?? process.env.TMP ?? os.tmpdir()
+  if (isWindows) {
+    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\')
+      throw new Error('TEMP de testes precisa estar em F:.')
+  }
   fixture = await mkdtemp(path.join(temp, 'tupiniquim-workspace-'))
   await mkdir(path.join(fixture, 'src'))
   await writeFile(path.join(fixture, 'src', 'index.ts'), 'export const value = 1\n', 'utf8')

@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { _electron as electron, expect, test } from '@playwright/test'
+import { _electron as electron, expect, test, type Locator, type Page } from '@playwright/test'
 
 const execFileAsync = promisify(execFile)
 const ollamaModel = 'tupiniquim-e2e-model'
@@ -315,6 +315,309 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
         if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
       } finally {
         await mockOllama.close()
+      }
+    }
+  }
+})
+
+test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', async () => {
+  const projectRoot = process.cwd()
+  const proposalTargetA = 'proposta-a-expirada.txt'
+  const proposalContentA = 'E2E_PRIVATE_CONTENT_A'
+  const proposalTargetB = 'proposta-b-atual.txt'
+  const proposalContentB = 'E2E_PRIVATE_CONTENT_B'
+
+  // Gate explícito e VISÍVEL: este cenário roda apenas no ambiente suportado
+  // (Windows real com TEMP em F: e display Electron). Nunca fazer `return`
+  // silencioso que produz PASS falso — fora do ambiente suportado o teste é
+  // reportado como SKIPPED (não como passado) com a razão explícita abaixo.
+  // A máquina Windows F: é o gate real (scripts/pnpm-f.ps1 validate + pnpm test:e2e).
+  const tempEnv = process.env.TEMP
+  test.skip(
+    process.platform !== 'win32' || tempEnv === undefined || path.parse(tempEnv).root.toUpperCase() !== 'F:\\',
+    `E2E de expiração requer Windows real com TEMP em F: e display Electron (plataforma=${process.platform}, TEMP=${tempEnv ?? 'ausente'}). Executar na máquina Windows F: via pnpm test:e2e.`
+  )
+  // Após o gate, TEMP está garantido em F: (Windows real).
+  const temp = tempEnv as string
+
+  let requestCount = 0
+  const chatRequests: unknown[] = []
+  const server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/api/tags') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+      response.end(JSON.stringify({ models: [{ name: ollamaModel, model: ollamaModel, modified_at: '2026-08-20T12:00:00.000Z', size: 1_024 }] }))
+      return
+    }
+    if (request.method === 'POST' && request.url === '/api/chat') {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.once('end', () => {
+        try {
+          chatRequests.push(JSON.parse(body))
+          requestCount += 1
+          const target = requestCount <= 1 ? proposalTargetA : proposalTargetB
+          const content = requestCount <= 1 ? proposalContentA : proposalContentB
+          response.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8' })
+          response.end(`${JSON.stringify({
+            message: {
+              content: '',
+              tool_calls: [{
+                function: {
+                  name: 'tupiniquim_workspace_write_proposal',
+                  arguments: { relativePath: target, content: `${content}\n`, operation: 'CREATE' }
+                }
+              }]
+            },
+            done: true
+          })}\n`)
+        } catch {
+          response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+          response.end(JSON.stringify({ error: 'invalid request' }))
+        }
+      })
+      return
+    }
+    response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
+    response.end(JSON.stringify({ error: 'not found' }))
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('Mock não recebeu porta.')
+  const mockUrl = `http://127.0.0.1:${String(address.port)}`
+  let application: Awaited<ReturnType<typeof electron.launch>> | null = null
+  let workspaceRoot = ''
+  let workspaceRootB = ''
+  const provenanceRegion = (page: Page): Locator => page.getByRole('region', { name: 'Proveniência da proposta de escrita' })
+  const proposalIdOf = (region: Locator): Locator => region.locator('dt').filter({ hasText: /^Proposal$/u }).locator('..').locator('dd')
+  try {
+    application = await electron.launch({
+      args: ['.'],
+      cwd: projectRoot,
+      timeout: 180_000,
+      env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', TUPINIQUIM_OLLAMA_BASE_URL: mockUrl }
+    })
+    const processErrors: string[] = []
+    application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
+    workspaceRoot = await mkdtemp(path.join(temp, 'tupiniquim-e2e-expire-'))
+    await writeFile(path.join(workspaceRoot, 'README.md'), '# E2E Expiration\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot })
+    workspaceRootB = await mkdtemp(path.join(temp, 'tupiniquim-e2e-isolation-'))
+    await writeFile(path.join(workspaceRootB, 'README.md'), '# E2E Isolation B\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRootB })
+    const page = await application.firstWindow({ timeout: 180_000 }).catch((cause: unknown) => {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(`${detail}\nElectron stderr:\n${processErrors.join('')}`)
+    })
+    await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
+    await application.evaluate(({ dialog }, roots) => {
+      const queue = [roots.root, roots.nextRoot]
+      let pickCount = 0
+      Object.defineProperty(dialog, 'showOpenDialog', {
+        configurable: true,
+        value: () => Promise.resolve({ canceled: false, filePaths: [queue[pickCount++ % queue.length] ?? roots.root] })
+      })
+      Object.defineProperty(dialog, 'showMessageBox', {
+        configurable: true,
+        value: () => Promise.resolve({ response: 0, checkboxChecked: false })
+      })
+    }, { root: workspaceRoot, nextRoot: workspaceRootB })
+    await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
+    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await page.getByLabel('Provedor de IA').selectOption('ollama')
+    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
+    await expect(page.locator('.availability')).toHaveText('READY')
+
+    // ── UM único plano: A/B compartilham EXATAMENTE executionId + stepId ────
+    // O renderer cria um plano a cada envio em modo PLAN; para provar
+    // substituição no slot executionId:stepId é necessário usar o mesmo slot
+    // nas duas chamadas.
+    const replacementSlot = await page.evaluate(async () => {
+      const created = await window.studio.planning.create({ objective: 'E2E proposal replacement', mode: 'PLAN' })
+      if (!created.ok) throw new Error(`planning.create falhou: ${created.error.message}`)
+      const stepId = created.value.plan.steps.find((step) => step.requiresApproval)?.id
+      if (stepId === undefined) throw new Error('Plano E2E sem passo de escrita aprovável.')
+      return { executionId: created.value.execution.id, stepId }
+    })
+    const sendReplacementProposal = async (message: 'Proposta A.' | 'Proposta B.'): Promise<void> => {
+      const sent = await page.evaluate(async (input) => await window.studio.agent.send({
+        message: input.message,
+        mode: 'PLAN',
+        proposalContext: { executionId: input.executionId, stepId: input.stepId }
+      }), { message, ...replacementSlot })
+      if (!sent.ok) throw new Error(`agent.send falhou para ${message}: ${sent.error.message}`)
+    }
+
+    // ── Proposal A (PENDING_REVIEW) no slot compartilhado ───────────────────
+    await sendReplacementProposal('Proposta A.')
+    await expect(provenanceRegion(page)).toBeVisible({ timeout: 30_000 })
+    const proposalIdA = await proposalIdOf(provenanceRegion(page).last()).textContent()
+    if (proposalIdA === null) throw new Error('Proposal A sem ID.')
+
+    // ── Proposal B no MESMO executionId + stepId substitui A ───────────────
+    await sendReplacementProposal('Proposta B.')
+
+    // Espera até existirem DOIS cards de proveniência (tombstone de A + B).
+    await expect(provenanceRegion(page)).toHaveCount(2, { timeout: 30_000 })
+
+    // Localiza EXPLICITAMENTE o card cujo Proposal == proposalIdA.
+    const tombstoneA = provenanceRegion(page).filter({ has: page.locator('dd', { hasText: proposalIdA }) })
+    await expect(tombstoneA).toHaveCount(1)
+    await expect(tombstoneA.locator('header span')).toHaveText('EXPIRED')
+
+    // Localiza B separadamente: o card que NÃO contém o id de A é o corrente.
+    const cardB = provenanceRegion(page).filter({ hasNot: page.locator('dd', { hasText: proposalIdA }) })
+    await expect(cardB).toHaveCount(1)
+    await expect(cardB.locator('header span')).toHaveText('PENDING_REVIEW')
+    const proposalIdB = await proposalIdOf(cardB).textContent()
+    if (proposalIdB === null) throw new Error('Proposal B sem ID.')
+    expect(proposalIdB).not.toBe(proposalIdA)
+
+    // ── IPC: lookupProposalStatus(A) => EXPIRED; (B) => PENDING_REVIEW ──────
+    const statusA = await page.evaluate(async (id: string) => await window.studio.agent.lookupProposalStatus(id), proposalIdA)
+    expect(statusA).toMatchObject({ ok: true, value: 'EXPIRED' })
+    const statusB = await page.evaluate(async (id: string) => await window.studio.agent.lookupProposalStatus(id), proposalIdB)
+    expect(statusB).toMatchObject({ ok: true, value: 'PENDING_REVIEW' })
+    // Segunda consulta de A continua EXPIRED.
+    const statusAAgain = await page.evaluate(async (id: string) => await window.studio.agent.lookupProposalStatus(id), proposalIdA)
+    expect(statusAAgain).toMatchObject({ ok: true, value: 'EXPIRED' })
+
+    // ── applyProposedWorkspaceWrite(A) => erro ─────────────────────────────
+    const applyA = await page.evaluate(async (id) => await window.studio.planning.applyProposedWorkspaceWrite({ proposalId: id }), proposalIdA)
+    expect(applyA).toMatchObject({ ok: false })
+
+    // ── Arquivo de A nunca é escrito ───────────────────────────────────────
+    await expect(readFile(path.join(workspaceRoot, proposalTargetA), 'utf8')).rejects.toThrow()
+
+    // ── Marcadores privados A/B ausentes de TODOS os artefatos públicos ─────
+    const markers = [proposalContentA, proposalContentB]
+    // 1) DOM.
+    const dom = await page.content()
+    for (const marker of markers) expect(dom).not.toContain(marker)
+    // 2) Conversation pública dorenderer.
+    const conversation = await page.locator('.agent-conversation').innerText()
+    for (const marker of markers) expect(conversation).not.toContain(marker)
+    // 3) History REAL: extrai os Thread IDs das cards de proveniência A/B e
+    // consulta cada thread real, sem pseudo-check com threadId vazio.
+    const provenanceRecords = await page.evaluate((): Array<Record<string, string>> => {
+      const records: Array<Record<string, string>> = []
+      const nodes = Array.from(document.querySelectorAll<HTMLElement>('.proposal-provenance dl'))
+      for (const dl of nodes) {
+        const fields: Record<string, string> = {}
+        for (const dt of Array.from(dl.querySelectorAll<HTMLElement>('dt'))) {
+          const label = dt.textContent?.trim() ?? ''
+          const value = dt.parentElement?.querySelector('dd')?.textContent?.trim() ?? ''
+          if (label !== '' && value !== '') fields[label] = value
+        }
+        records.push(fields)
+      }
+      return records
+    })
+    const recordA = provenanceRecords.find((record) => record.Proposal === proposalIdA)
+    const recordB = provenanceRecords.find((record) => record.Proposal === proposalIdB)
+    if (recordA === undefined || recordB === undefined) throw new Error('Cards de proveniência A/B não localizados.')
+    // Prova explícita de que A e B usaram o MESMO slot executionId:stepId e a
+    // MESMA thread vinculada, com turns/tool calls distintos (continuação).
+    expect(recordB.Execution).toBe(recordA.Execution)
+    expect(recordB.Step).toBe(recordA.Step)
+    expect(recordB.Thread).toBe(recordA.Thread)
+    expect(recordB.Turn).not.toBe(recordA.Turn)
+    expect(recordB['Tool call']).not.toBe(recordA['Tool call'])
+    expect(recordA.Target).toBe(proposalTargetA)
+    expect(recordB.Target).toBe(proposalTargetB)
+    const realThreadIds = [...new Set(provenanceRecords.map((record) => record.Thread).filter((value): value is string => value !== undefined && value !== ''))]
+    expect(realThreadIds).toHaveLength(1)
+    expect(realThreadIds[0]).toBe(recordA.Thread)
+    const realHistory = await page.evaluate(async (threadIds) => {
+      const thread: unknown[] = []
+      const turns: unknown[][] = []
+      const events: unknown[][] = []
+      const raw: unknown[] = []
+      for (const threadId of threadIds) {
+        const history = await window.studio.agent.history({ threadId })
+        raw.push(history)
+        if (!history.ok) throw new Error(`agent.history falhou para threadId ${threadId}: ${history.error.message}`)
+        thread.push(history.value.thread)
+        turns.push(history.value.turns)
+        events.push(history.value.events)
+      }
+      return { thread, turns, events, raw }
+    }, realThreadIds)
+    for (const marker of markers) {
+      expect(JSON.stringify(realHistory.thread)).not.toContain(marker)
+      expect(JSON.stringify(realHistory.turns)).not.toContain(marker)
+      expect(JSON.stringify(realHistory.events)).not.toContain(marker)
+      expect(JSON.stringify(realHistory.raw)).not.toContain(marker)
+    }
+    // 4) Flight Recorder events de TODAS as execuções, obtidos a partir dos
+    // ids expostos nas cards de proveniência.
+    const executionIds = await page.evaluate((): string[] => {
+      const ids: string[] = []
+      const nodes = Array.from(document.querySelectorAll<HTMLElement>('.proposal-provenance dl'))
+      for (const dl of nodes) {
+        const dts = Array.from(dl.querySelectorAll<HTMLElement>('dt'))
+        const executionDt = dts.find((dt) => dt.textContent?.trim() === 'Execution')
+        const dd = executionDt?.parentElement?.querySelector('dd')?.textContent
+        if (dd !== null && dd !== undefined && dd !== '') ids.push(dd)
+      }
+      return ids
+    })
+    const flightRecorder = await page.evaluate(async (ids) => {
+      const collected: unknown[] = []
+      for (const executionId of ids) {
+        const events = await window.studio.planning.events({ executionId })
+        collected.push(events)
+      }
+      return JSON.stringify(collected)
+    }, executionIds)
+    for (const marker of markers) expect(flightRecorder).not.toContain(marker)
+
+    // 5) AuditLog.
+    const dataRoot = `${projectRoot}.data`
+    const auditLog = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
+    for (const marker of markers) expect(auditLog).not.toContain(marker)
+
+    // 6) SQLite (arquivos studio.sqlite*).
+    const databaseFiles = (await readdir(path.join(dataRoot, 'database'))).filter((name) => name.startsWith('studio.sqlite'))
+    for (const marker of markers) {
+      const needle = Buffer.from(marker, 'utf8')
+      for (const databaseFile of databaseFiles) {
+        expect((await readFile(path.join(dataRoot, 'database', databaseFile))).includes(needle)).toBe(false)
+      }
+    }
+
+    // ── 7) Isolamento: tombstone A não sobrevive à troca para workspace B ─────
+    const tombstoneAFields = provenanceRecords.find((record) => record.Proposal === proposalIdA)
+    if (tombstoneAFields === undefined) throw new Error('O card EXPIRED de A não foi localizado para o teste de isolamento.')
+    expect(tombstoneAFields.Target).toBe(proposalTargetA)
+    const workspaceBName = path.basename(workspaceRootB)
+    await page.locator('.project-switcher').click()
+    await expect(page.locator('.project-switcher')).toContainText(workspaceBName)
+    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await expect(provenanceRegion(page)).toHaveCount(0)
+    const isolationProvenance = await page.evaluate(() => {
+      const regions = Array.from(document.querySelectorAll<HTMLElement>('.proposal-provenance'))
+      return regions.map((node) => node.textContent ?? '').join('\n')
+    })
+    expect(isolationProvenance).not.toContain(tombstoneAFields.Proposal)
+    expect(isolationProvenance).not.toContain(tombstoneAFields.Thread)
+    expect(isolationProvenance).not.toContain(tombstoneAFields.Turn)
+    expect(isolationProvenance).not.toContain(tombstoneAFields.Target)
+    expect(isolationProvenance).not.toContain(tombstoneAFields.Hash)
+
+    await page.screenshot({ path: path.join(projectRoot, 'test-results', 'expiration-flow.png'), fullPage: true })
+  } finally {
+    try {
+      if (application !== null) await application.close()
+    } finally {
+      try {
+        if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
+        if (workspaceRootB !== '') await rm(workspaceRootB, { recursive: true, force: true })
+      } finally {
+        await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
       }
     }
   }

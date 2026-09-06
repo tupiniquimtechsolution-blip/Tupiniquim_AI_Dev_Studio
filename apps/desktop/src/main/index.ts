@@ -18,6 +18,7 @@ import {
   executionIdInputSchema,
   executionWorkspaceWriteInputSchema,
   executionWorkspaceWriteProposalIdInputSchema,
+  proposalStatusInputSchema,
   listFilesInputSchema,
   ok,
   readFileInputSchema,
@@ -51,7 +52,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService, WorkspaceWriteProposalService, type ToolIntent } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PromptArchitect, TechnologyResolutionEngine, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
@@ -69,7 +70,7 @@ const git = new GitAdapter(() => workspace.getRoot())
 const audit = new AuditLog(dataRoot)
 const database = new LocalDatabase(dataRoot)
 const planning = new PlanApprovalService(database)
-const writeProposals = new WorkspaceWriteProposalService(planning, database, () => workspace.getRoot())
+const writeProposals = new WorkspaceWriteProposalService(planning, database, () => workspace.getRoot(), { inspectBaseline: async (relativePath) => await workspace.inspectWriteTarget(relativePath) })
 const research = new HttpResearchProvider(dataRoot)
 const technology = new TechnologyResolutionEngine()
 const promptArchitect = new PromptArchitect(database)
@@ -103,20 +104,23 @@ const ollamaAgent = new OllamaAdapter({
     let proposalId: string | undefined
     try {
       if (selectedAgentProvider !== 'ollama') throw new Error('O turno Ollama não é mais o provider autorizado.')
-      const relativePath = await workspace.validateWriteTarget(call.relativePath)
-      const targetBaseline = await workspace.inspectWriteTarget(relativePath)
-      if (call.operation === 'CREATE' && targetBaseline.exists) throw new Error('CREATE exige que o alvo não exista no momento da proposta.')
-      if (call.operation === 'REPLACE' && !targetBaseline.exists) throw new Error('REPLACE exige um arquivo existente no momento da proposta.')
-      const { callId, ...source } = call
-      const proposal = workspaceWriteProposalSchema.parse(await writeProposals.propose({ ...source, toolCallId: callId, relativePath, targetBaselineHash: targetBaseline.hash }))
+      const { envelope, executionId, stepId } = call
+      // Provider-neutral canonical path: the proposal service validates
+      // business arguments via workspaceWriteArgsSchema and inspects
+      // the baseline via the injected WorkspaceBaselineLookup.
+      const proposal = workspaceWriteProposalSchema.parse(await writeProposals.proposeFromEnvelope({
+        envelope,
+        executionId,
+        stepId
+      }))
       proposalId = proposal.id
-      await audit.write({ requestId: call.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', target: redactContextMetadata(proposal.effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
+      await audit.write({ requestId: envelope.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', target: redactContextMetadata(proposal.effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
       mainWindow?.webContents.send(ipcChannels.agentWorkspaceWriteProposal, proposal)
       return proposal
     } catch (cause) {
       if (proposalId !== undefined) writeProposals.invalidate(proposalId)
       const error = toAppError(cause, 'AGENT_PROPOSAL_ERROR')
-      await audit.write({ requestId: call.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', outcome: 'ERROR', durationMs: Date.now() - started, errorCode: error.code }).catch(() => undefined)
+      await audit.write({ requestId: call.envelope.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', outcome: 'ERROR', durationMs: Date.now() - started, errorCode: error.code }).catch(() => undefined)
       throw new Error('A proposta automática foi recusada pelo runtime privilegiado.', { cause })
     }
   },
@@ -378,17 +382,15 @@ const registerIpc = (): void => {
     const provider = selectedAgentProvider
     const agent = agents[provider]
     try {
-      if (input.proposalContext !== undefined) {
-        if (provider !== 'ollama') throw new Error('O provider selecionado não oferece propostas de escrita pelo protocolo estável.')
-        if (input.mode !== 'PLAN') throw new Error('Propostas automáticas de escrita só podem ser solicitadas no modo PLAN.')
-        const { execution, plan } = await planning.read(input.proposalContext.executionId)
-        const targetStep = plan.steps.find((step) => step.id === input.proposalContext?.stepId)
-        if (execution.workspaceRoot !== workspace.getRoot()) throw new Error('A execução não pertence ao workspace autorizado.')
-        if (execution.state !== 'WAITING_APPROVAL') throw new Error('A execução não está aguardando aprovação e não aceita nova proposta.')
-        if (targetStep === undefined || !targetStep.requiresApproval) throw new Error('O passo selecionado não aceita proposta mutável.')
+      if (input.proposalContext !== undefined && provider !== 'ollama') {
+        throw new Error('O provider selecionado não oferece propostas de escrita pelo protocolo estável.')
       }
+      const providerInput = await prepareProviderSendInput(input, {
+        readExecution: (context) => planning.read(context.executionId),
+        getWorkspaceRoot: () => workspace.getRoot()
+      })
       return await agent.send({
-        ...input,
+        ...providerInput,
         workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3))
       })
     } finally {
@@ -441,6 +443,7 @@ const registerIpc = (): void => {
     return execution
   })
   register(ipcChannels.executionEvents, executionIdInputSchema, 'execution.events', ({ executionId }) => planning.events(executionId))
+  register(ipcChannels.agentProposalStatus, proposalStatusInputSchema, 'agent.proposal-status', ({ proposalId }) => writeProposals.lookupStatus(proposalId))
   register(ipcChannels.researchSearch, researchSearchInputSchema, 'research.search', ({ query, maxResults }) => research.search(query, maxResults))
   register(ipcChannels.researchCollect, researchCollectInputSchema, 'research.collect', ({ url }) => research.collect(url))
   register(ipcChannels.technologyResolve, technologyResolveInputSchema, 'technology.resolve', ({ requirements, platforms, availableTools }) => technology.resolve(requirements, platforms, availableTools))

@@ -1,15 +1,21 @@
+import os from 'node:os'
 import { mkdtemp, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { TerminalAdapter, type TerminalEvent } from '@tupiniquim/adapters'
+
+const isWindows = process.platform === 'win32'
 
 let fixture = ''
 afterEach(async () => { if (fixture !== '') await rm(fixture, { recursive: true, force: true }) })
 
 describe('TerminalAdapter', () => {
   it('executa uma sessão ConPTY real', async () => {
-    const temp = process.env.TEMP
-    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de testes precisa estar em F:.')
+    if (!isWindows) return // ConPTY and powershell.exe are Windows-only
+
+    const temp = process.env.TEMP ?? process.env.TMP ?? os.tmpdir()
+    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\')
+      throw new Error('TEMP de testes precisa estar em F:.')
     fixture = await mkdtemp(path.join(temp, 'tupiniquim-pty-'))
     const events: TerminalEvent[] = []
     let resolveOutput: (() => void) | undefined

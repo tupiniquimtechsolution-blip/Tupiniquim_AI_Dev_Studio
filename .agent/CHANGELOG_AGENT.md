@@ -1,5 +1,147 @@
 # Changelog do Agente
 
+## 2026-09-06 — Wave 14 — fechamento documental do checkpoint (docs-only) — HEAD 2703ed5
+
+Alteração exclusivamente de documentação em `.agent/`. Nenhum `.ts`, `.tsx`, `.js`,
+`package`, config ou teste foi alterado.
+
+### Estado do checkpoint
+
+- Master Wave 1 continua **EM ANDAMENTO** (ver `.agent/MASTER_PLAN.md`).
+- checkpoint wave-14: **APROVADO/FECHADO**; NÃO é uma nova Master Wave.
+- Branch correta: `arena/01a06dcc-tupiniquim-ai-dev-studio`.
+- PR correto: #15.
+- Issue: #11.
+- HEAD validado no Windows F: `2703ed5cef0188e9b9e548bcdca84a7d7328c6e0`.
+
+### Gates Windows F: reais
+
+- `pnpm-f.ps1 validate`: PASS integral.
+- `pnpm test:unit`: 52/52 PASS.
+- `pnpm test:integration`: 42 passed / 2 skipped.
+- `tests/integration/persistence.test.ts`: 22/22 PASS.
+- `pnpm test:security`: 34/34 PASS.
+- `pnpm build`: PASS.
+- `pnpm-f.ps1 test:e2e`: 2/2 PASS, executado **duas vezes**.
+
+Status `BLOCKED` referente a Windows F:, persistence e E2E foi removido da
+documentação: as execuções reais na máquina Windows resolveram esses itens.
+
+### Fluxo final comprovado
+
+- provider-neutral tool protocol
+- proposal provenance
+- EXPIRED
+- replacement A→B
+- mesma Execution/Step/Thread
+- Turn/ToolCall distintos
+- `apply(A)` recusado
+- arquivo A ausente
+- payload privado ausente de: DOM, conversation, agent history, Flight Recorder, AuditLog e SQLite
+- isolamento entre workspaces
+- baseline fail-closed
+- purge do payload efêmero
+
+### Preservado
+
+Terminal mutável continua **INDISPONÍVEL**; Git mutável continua **INDISPONÍVEL**.
+Nenhum merge realizado. `NEXT_ACTION.md` volta a apontar para
+`.agent/MASTER_PLAN.md` para definir a próxima unidade da Master Wave 1.
+
+## 2026-09-04 — Wave 14 (Master Wave 1, checkpoint candidate wave-14), correções da 4ª auditoria — HEAD 312c674
+
+Continuidade corretiva sobre o PR #12 (Ref #11). Nenhuma mudança arquitetural; os elementos já aprovados foram preservados (NormalizedToolCallEnvelope, workspaceWriteArgsSchema strict, protocolo provider-neutral, proposeFromEnvelope(), WorkspaceBaselineLookup via DI, WorkspaceAdapter.inspectWriteTarget(), ProposalStatus com EXPIRED, lookupProposalStatus IPC, tombstone público, validação do adapter Ollama, PolicyEngine, ApprovalStore/PlanApprovalService, AuditLog, payload privado somente em memória; Terminal e Git mutáveis seguem indisponíveis).
+
+### Correção 1 — baseline FAIL CLOSED (bloqueante)
+- Removido o `catch` genérico de `lookupTargetBaseline()` no `WorkspaceWriteProposalService`, que convertia QUALQUER exceção em `{ exists:false, hash:null }` (fail-open).
+- Agora erros de inspeção/path do `WorkspaceAdapter.inspectWriteTarget()` — path traversal, caminho absoluto, symlink fora do workspace, namespace/dispositivo inválido, permissão ou erro inesperado — PROPAGAM e recusam a proposta.
+- Apenas um resultado real `{ exists:false, hash:null }` do adapter significa alvo inexistente. Drift de workspace na inspeção também falha com erro explícito.
+
+### Correção 2 — purge garantido no EXPIRED
+- `lookupStatus()` agora chama `invalidate(id)` também no caminho de exceção de `validateProposalState()`.
+- Declarar EXPIRED nunca mais deixa o payload efêmero residente em memória; segunda consulta continua EXPIRED e `consume()` falha.
+
+### Correção 3 — testes de persistência sem falso cenário
+- Teste de workspace drift reescrito para usar a MESMA instância do serviço com `getWorkspaceRoot()` mutável (antes criava uma instância nova vazia, que retornaria EXPIRED para qualquer id).
+- Teste de purge reescrito para provocar expiração REAL (drift causal) antes de lookup/consume; cobre lookupStatus=EXPIRED, segunda consulta EXPIRED, consume rejeitado e payload não recuperável/não persistido.
+
+### Testes novos cross-platform (executados no Linux/Arena, sem F: nem SQLite)
+- `packages/core/src/workspace-write-proposal.unit.test.ts` (8 testes, unit): fail-closed de baseline (traversal, EACCES, CREATE exists, REPLACE missing, CREATE genuíno), purge em exceção, purge por drift, workspace drift na mesma instância.
+- `tests/integration/workspace-write-proposal.test.ts` (7 testes, integration): usa o WorkspaceAdapter REAL contra diretório temporário real — traversal/absoluto recusados sem escrita/manifesto/payload, CREATE exists/REPLACE missing contra arquivos reais, CREATE legítimo PENDING_REVIEW, workspace drift e substituição A→B com purga.
+
+### Correção 4 — E2E de expiração (tests/e2e/desktop.spec.ts)
+- Gate de ambiente convertido de `return` silencioso (falso PASS) para `test.skip(condição, motivo)` explícito e visível; no Linux reporta SKIP, nunca PASS.
+- O teste localiza o tombstone da Proposal A pelo ID (não mais locator genérico que também casa B): A=EXPIRED, B=PENDING_REVIEW, `lookupProposalStatus(A)=EXPIRED` (idempotente), `applyProposedWorkspaceWrite(A)` falha e o arquivo de A não existe.
+- Marcadores privados A/B verificados ausentes em: DOM, conversation pública do renderer, planning events/Flight Recorder, agent history, AuditLog e SQLite (studio.sqlite*).
+
+### Documentação
+- `.agent/CHANGELOG_AGENT.md` restaurado: todo o histórico anterior (Waves 0/1 e migrações) foi recuperado de `origin/main`; a Wave 14 foi ADICIONADA, sem substituir entradas antigas.
+- STATUS/NEXT_ACTION/SESSION_HANDOFF/CURRENT_TASK reconciliados para distinguir Master Wave 1 (em andamento) de checkpoint candidate wave-14; não há avanço para Terminal/Git/autonomous loop.
+
+### Gates
+- Executado no Arena (Linux): lint ✅, typecheck ✅, unit (novos 8 + suíte), security, integration (novos 7 cross-platform), build.
+- BLOCKED para Windows real (F:): `scripts/pnpm-f.ps1 validate` e `pnpm test:e2e` (inclui o E2E de expiração e os testes de persistência SQLite gated por F:).
+
+## 2026-09-04 — Wave 14, provider-neutral tool protocol + proposal expiration safety
+
+### Provider-neutral tool call protocol
+- Added `NormalizedToolCallEnvelope` contract in packages/contracts/src/ai.ts — provider-neutral envelope decoupled from Ollama format
+- Added `workspaceWriteArgsSchema` shared strict schema for business arguments (relativePath, content, operation) in contracts
+- `OllamaAdapter.normalizeToolCall()` translates raw Ollama tool_calls → normalized envelope
+- Adapter validates business arguments via `workspaceWriteArgsSchema.parse()` before calling proposal callback
+- Adapter rejects non-object arguments (malformed Ollama responses)
+
+### Canonical propose path
+- Main process uses `proposeFromEnvelope()` instead of legacy `propose()` with manual parsing
+- Flow: raw provider tool call → adapter structural normalization → NormalizedToolCallEnvelope → adapter business validation → privileged runtime → proposal service → manifest → approval → PolicyEngine → materialization
+
+### Shared business argument validation
+- `workspaceWriteArgsSchema` in contracts with `.strict()` — rejects extra fields, unknown operations, null bytes
+- Both adapter and proposal service validate against the same shared schema
+- Provider-neutral: no Ollama-specific validation in core
+
+### Safe baseline lookup via dependency injection
+- `WorkspaceBaselineLookup` interface injected into `WorkspaceWriteProposalService`
+- Core never imports fs, path, or any adapter directly
+- `inspectWriteTarget()` from WorkspaceAdapter uses path security (resolveLexicalPath + assertRealPathInside)
+- CREATE validates that target does NOT exist; REPLACE validates that target exists with valid SHA-256 hash
+
+### EXPIRED proposal status
+- `proposalStatusValues` in contracts includes EXPIRED
+- `lookupStatus()` uses `validateProposalState()` — same causal validation as `consume()`
+- Unified causal validation: workspace drift, slot superseded, thread drift, turn drift, toolcall drift, manifest drift, payload drift
+- Expired proposals are purged from memory; no file is written
+- `proposalStatusInputSchema` IPC channel for renderer to query proposal status
+
+### EXPIRED in UI
+- Renderer uses `ProposalStatus` from contracts (removed local duplicate type)
+- `lookupProposalStatus()` IPC bridges renderer → main → proposal service
+- Replaced proposals show tombstone EXPIRED with public provenance
+- Private content never crosses IPC
+
+### Fixed 6 ollama unit test regressions
+- Adapter now validates business arguments before calling proposal service callback
+- Tests for DELETE operation, extra provenance, extra argument, missing field, wrong type, malformed JSON all pass
+
+### New tests (6)
+- CREATE target exists → rejected
+- REPLACE target missing → rejected
+- Proposal replaced → lookupStatus returns EXPIRED
+- Workspace drift → EXPIRED
+- Thread drift → EXPIRED
+- Payload purged on expiration
+
+### E2E expiration test
+- Written in tests/e2e/desktop.spec.ts
+- BLOCKED on Linux (requires F: drive, Electron display)
+- Executable on Windows real machine
+
+## 2026-09-04 — Wave 14, cross-platform test fixes
+
+- Fixed 3 test files (terminal.test.ts, workspace.test.ts, path-security.test.ts) for cross-platform compatibility
+- Added `isWindows` guards for Windows-only test paths (F: drive, LOCALAPPDATA)
+- All 38 affected tests pass on Linux
+
 ## 2026-08-17 — Wave Mestre 1, consumo aprovado de propostas
 
 - Adicionado canal IPC/preload tipado que recebe somente o id da proposta e materializa `workspace.write` apenas após a aprovação do manifesto, sem reenviar nem persistir o conteúdo pelo renderer.

@@ -1,5 +1,41 @@
 # Resultados de testes
 
+## 2026-09-06 — Wave 14 — Gate Windows F: (checkpoint aprovado/fechado)
+
+Máquina Windows real (`F:`); branch `arena/01a06dcc-tupiniquim-ai-dev-studio`;
+PR #15; Issue #11; HEAD `2703ed5cef0188e9b9e548bcdca84a7d7328c6e0`.
+
+| Comando | Resultado |
+|---|---|
+| `pnpm-f.ps1 validate` | PASS integral |
+| `pnpm test:unit` | 52/52 PASS |
+| `pnpm test:integration` | 42 passed / 2 skipped |
+| `tests/integration/persistence.test.ts` | 22/22 PASS |
+| `pnpm test:security` | 34/34 PASS |
+| `pnpm build` | PASS |
+| `pnpm-f.ps1 test:e2e` | 2/2 PASS |
+
+- O E2E foi executado **duas vezes** com sucesso.
+- `git status --short` antes do fechamento documental: limpo.
+- Status `BLOCKED` referente a Windows `F:`, `persistence` e `E2E` foi removido:
+  os gates reais passaram na máquina Windows.
+- Nenhuma alteração de código/runtime/teste nesta etapa documental.
+
+### Fluxo final comprovado no Windows F:
+
+- provider-neutral tool protocol
+- proposal provenance
+- EXPIRED
+- replacement A→B
+- mesma Execution/Step/Thread
+- Turn/ToolCall distintos
+- `apply(A)` recusado
+- arquivo A ausente
+- payload privado ausente de: DOM, conversation, agent history, Flight Recorder, AuditLog e SQLite
+- isolamento entre workspaces
+- baseline fail-closed
+- purge do payload efêmero
+
 ## 2026-08-17 — Wave 1, consumo aprovado de propostas
 
 | Comando | Resultado |

@@ -1,12 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto'
 import {
   agentProposalEffectSourceSchema,
+  normalizedToolCallEnvelopeSchema,
+  workspaceWriteArgsSchema,
   workspaceWriteProposalSchema,
   type AIProviderKind,
   type AIThread,
   type AITurn,
   type ActionManifest,
+  type NormalizedToolCallEnvelope,
   type Plan,
+  type ProposalStatus,
   type WorkspaceWriteProposal
 } from '@tupiniquim/contracts'
 import { manifestEffectsHash, type PlanApprovalService } from './plan-approval'
@@ -16,6 +20,7 @@ export interface ProposalHistory {
   listAITurns(threadId: string): Promise<AITurn[]>
 }
 
+/** @deprecated Legacy input format — prefer the envelope-based overload. */
 export interface WorkspaceWriteProposalInput {
   executionId: string
   stepId: string
@@ -28,6 +33,19 @@ export interface WorkspaceWriteProposalInput {
   content: string
   operation: 'CREATE' | 'REPLACE'
   targetBaselineHash: string | null
+}
+
+/** Provider-neutral input accepted by the proposal service. */
+export interface EnvelopeProposalInput {
+  envelope: NormalizedToolCallEnvelope
+  executionId: string
+  stepId: string
+}
+
+/** Injected capability: inspect a file in the workspace for baseline information. */
+export interface WorkspaceBaselineLookup {
+  /** Return the existence and hash of the file at relativePath. */
+  inspectBaseline(relativePath: string): Promise<{ exists: boolean; hash: string | null }>
 }
 
 interface StoredProposal extends WorkspaceWriteProposal {
@@ -49,9 +67,39 @@ export class WorkspaceWriteProposalService {
   public constructor(
     private readonly planning: PlanApprovalService,
     private readonly history: ProposalHistory,
-    private readonly getWorkspaceRoot: () => string
+    private readonly getWorkspaceRoot: () => string,
+    private readonly baselineLookup: WorkspaceBaselineLookup
   ) {}
 
+  /** Create a proposal from a provider-neutral envelope. */
+  public async proposeFromEnvelope(input: EnvelopeProposalInput): Promise<WorkspaceWriteProposal> {
+    const envelope = normalizedToolCallEnvelopeSchema.parse(input.envelope)
+    if (envelope.tool !== 'workspace.write') throw new Error('Somente workspace.write é suportado por propostas.')
+    const args = workspaceWriteArgsSchema.parse(envelope.arguments)
+    const baseline = await this.lookupTargetBaseline(input.executionId, args.relativePath)
+    if (args.operation === 'CREATE' && baseline.exists) {
+      throw new Error('CREATE exige que o alvo não exista no momento da proposta.')
+    }
+    if (args.operation === 'REPLACE' && !baseline.exists) {
+      throw new Error('REPLACE exige um arquivo existente no momento da proposta.')
+    }
+    const baselineHash = args.operation === 'CREATE' ? null : baseline.hash
+    return this.propose({
+      executionId: input.executionId,
+      stepId: input.stepId,
+      provider: envelope.provider,
+      threadId: envelope.threadId,
+      turnId: envelope.turnId,
+      toolCallId: envelope.callId,
+      tool: envelope.tool,
+      relativePath: args.relativePath,
+      content: args.content,
+      operation: args.operation,
+      targetBaselineHash: baselineHash
+    })
+  }
+
+  /** @deprecated Use proposeFromEnvelope for provider-neutral input. */
   public async propose(input: WorkspaceWriteProposalInput): Promise<WorkspaceWriteProposal> {
     if (isPrivateEnvironmentPath(input.relativePath)) throw new Error('Arquivos .env não podem receber proposta de escrita.')
     const proposalId = randomUUID()
@@ -126,27 +174,59 @@ export class WorkspaceWriteProposalService {
   public async consume(id: string): Promise<{ proposal: WorkspaceWriteProposal; content: string }> {
     const proposal = this.proposals.get(id)
     if (proposal === undefined) throw new Error('Proposta não está disponível; ela pode ter expirado ou sido substituída.')
+    const validity = await this.validateProposalState(proposal)
+    if (!validity.valid) {
+      this.invalidate(id)
+      throw new Error('Proposta obsoleta para o plano ou workspace atual.')
+    }
+    return { proposal: this.publicProposal(proposal), content: proposal.content }
+  }
+
+  /** Look up the public status of a proposal. Returns EXPIRED when the payload is gone. */
+  public async lookupStatus(id: string): Promise<ProposalStatus> {
+    const proposal = this.proposals.get(id)
+    if (proposal === undefined) return 'EXPIRED'
+    try {
+      const validity = await this.validateProposalState(proposal)
+      if (!validity.valid) {
+        this.invalidate(id)
+        return 'EXPIRED'
+      }
+      return 'PENDING_REVIEW'
+    } catch {
+      // Fail closed: any error during causal revalidation (DB/history/persistence
+      // failure) must purge the ephemeral payload, never keep it resident in memory.
+      this.invalidate(id)
+      return 'EXPIRED'
+    }
+  }
+
+  /** Shared causal validation used by both lookupStatus() and consume(). */
+  private async validateProposalState(proposal: StoredProposal): Promise<{ valid: boolean; reason?: string }> {
     const [{ execution, plan }, thread, turns] = await Promise.all([
       this.planning.read(proposal.executionId),
       this.history.getAIThread(proposal.threadId),
       this.history.listAITurns(proposal.threadId)
     ])
+    // Workspace drift
+    if (execution.workspaceRoot !== this.getWorkspaceRoot()) return { valid: false, reason: 'workspace_drift' }
+    // Slot must still be current (proposal was superseded)
+    const slot = proposalSlot(proposal.executionId, proposal.stepId)
+    if (this.slots.get(slot) !== proposal.id) return { valid: false, reason: 'superseded' }
+    // Thread/provider drift
+    if (thread?.id !== proposal.threadId || thread.provider !== proposal.provider) return { valid: false, reason: 'thread_drift' }
+    // Turn must exist in PLAN mode
+    if (!turns.some((turn) => turn.id === proposal.turnId && turn.threadId === proposal.threadId && turn.mode === 'PLAN')) return { valid: false, reason: 'turn_drift' }
+    // Tool call must still be tracked
+    if (!this.toolCalls.has(toolCallKey(proposal))) return { valid: false, reason: 'toolcall_drift' }
+    // Manifest must still match
     const step = plan.steps.find((candidate) => candidate.id === proposal.stepId)
     const current = step?.effects.find((effect) => effect.id === proposal.effect.id)
-    const manifestMatches = current !== undefined
-      && manifestEffectsHash([current]) === manifestEffectsHash([proposal.effect])
-      && contentHash(proposal.content) === proposal.effect.payloadHash
-    const sourceMatches = execution.threadId === proposal.threadId
-      && thread?.id === proposal.threadId
-      && thread.provider === proposal.provider
-      && thread.workspaceRoot === execution.workspaceRoot
-      && turns.some((turn) => turn.id === proposal.turnId && turn.threadId === proposal.threadId && turn.mode === 'PLAN')
-      && this.toolCalls.has(toolCallKey(proposal))
-    if (execution.workspaceRoot !== this.getWorkspaceRoot() || !sourceMatches || !manifestMatches) {
-      this.invalidate(id)
-      throw new Error('Proposta obsoleta para o plano ou workspace atual.')
-    }
-    return { proposal: this.publicProposal(proposal), content: proposal.content }
+    if (current === undefined) return { valid: false, reason: 'manifest_gone' }
+    if (manifestEffectsHash([current]) !== manifestEffectsHash([proposal.effect])) return { valid: false, reason: 'manifest_drift' }
+    // Payload integrity
+    if (contentHash(proposal.content) !== proposal.effect.payloadHash) return { valid: false, reason: 'payload_drift' }
+    return { valid: true }
   }
 
   public invalidate(id: string): void {
@@ -154,6 +234,26 @@ export class WorkspaceWriteProposalService {
     if (proposal === undefined) return
     this.proposals.delete(id)
     if (this.slots.get(proposalSlot(proposal.executionId, proposal.stepId)) === id) this.slots.delete(proposalSlot(proposal.executionId, proposal.stepId))
+  }
+
+  /**
+   * Inspect the real baseline through the injected WorkspaceBaselineLookup.
+   *
+   * FAIL CLOSED: this method never swallows an error. Path-traversal, absolute
+   * path, symlink-outside-workspace, invalid namespace, permission or any
+   * unexpected error raised by WorkspaceAdapter.inspectWriteTarget() must
+   * propagate and reject the proposal — they must never be translated into a
+   * fake "target does not exist" result. Only a genuine
+   * `{ exists:false, hash:null }` produced by the adapter means missing.
+   */
+  private async lookupTargetBaseline(executionId: string, relativePath: string): Promise<{ exists: boolean; hash: string | null }> {
+    const { execution } = await this.planning.read(executionId)
+    const root = this.getWorkspaceRoot()
+    if (execution.workspaceRoot !== root) {
+      throw new Error('A execução não pertence ao workspace atualmente autorizado; baseline não pode ser inspecionado.')
+    }
+    // Propagate every inspection/path error to the caller (proposal rejected).
+    return await this.baselineLookup.inspectBaseline(relativePath)
   }
 
   private withEffect(plan: Plan, stepId: string, effect: ActionManifest): Plan {

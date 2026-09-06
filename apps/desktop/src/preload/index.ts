@@ -44,7 +44,8 @@ const api: StudioApi = {
       const wrapped = (_event: Electron.IpcRendererEvent, proposal: WorkspaceWriteProposal): void => listener(proposal)
       ipcRenderer.on(ipcChannels.agentWorkspaceWriteProposal, wrapped)
       return () => ipcRenderer.removeListener(ipcChannels.agentWorkspaceWriteProposal, wrapped)
-    }
+    },
+    lookupProposalStatus: (proposalId) => ipcRenderer.invoke(ipcChannels.agentProposalStatus, { proposalId })
   },
   planning: {
     create: (input) => ipcRenderer.invoke(ipcChannels.planCreate, input),
