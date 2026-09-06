@@ -10,6 +10,14 @@ const turnInputText = (params) => {
   return input.map((item) => typeof item?.text === 'string' ? item.text : '').join('\n')
 }
 
+const emitCompletion = (threadId, turnId, text) => {
+  send({ method: 'turn/started', params: { threadId, turn: { id: turnId } } })
+  const delta = text.includes('CONTEXTO DA SESSÃO TUPINIQUIM') ? 'CONTROLLED_STREAM_OK CONTEXTO_TUPINIQUIM_OK' : 'CONTROLLED_STREAM_OK'
+  send({ method: 'item/agentMessage/delta', params: { threadId, turnId, itemId: 'item-' + turnIndex, delta } })
+  const status = text.includes('TUPINIQUIM_FAIL_THEN_COMPLETE') ? 'failed' : 'completed'
+  send({ method: 'turn/completed', params: { threadId, turn: { id: turnId, status, error: null } } })
+}
+
 readline.createInterface({ input: process.stdin }).on('line', (line) => {
   const request = JSON.parse(line)
   if (request.id === undefined) return
@@ -33,12 +41,23 @@ readline.createInterface({ input: process.stdin }).on('line', (line) => {
     turnIndex += 1
     const turnId = 'turn-controlled-' + turnIndex
     const text = turnInputText(request.params)
-    const sawSession = text.includes('CONTEXTO DA SESSÃO TUPINIQUIM')
-    const delta = sawSession ? 'CONTROLLED_STREAM_OK CONTEXTO_TUPINIQUIM_OK' : 'CONTROLLED_STREAM_OK'
+    const threadId = request.params.threadId
     send({ id: request.id, result: { turn: { id: turnId } } })
-    send({ method: 'turn/started', params: { threadId: request.params.threadId, turn: { id: turnId } } })
-    send({ method: 'item/agentMessage/delta', params: { threadId: request.params.threadId, turnId, itemId: 'item-' + turnIndex, delta } })
-    send({ method: 'turn/completed', params: { threadId: request.params.threadId, turn: { id: turnId, status: 'completed', error: null } } })
+    if (text.includes('TUPINIQUIM_RETRY_THEN_COMPLETE')) {
+      send({ method: 'error', params: { threadId, turnId, willRetry: true, error: { message: 'retry' } } })
+      setTimeout(() => emitCompletion(threadId, turnId, text), 80)
+      return
+    }
+    if (text.includes('TUPINIQUIM_FAIL_THEN_COMPLETE')) {
+      send({ method: 'error', params: { threadId, turnId, willRetry: false, error: { message: 'fail' } } })
+      emitCompletion(threadId, turnId, text)
+      return
+    }
+    if (text.includes('TUPINIQUIM_HOLD_TURN')) {
+      setTimeout(() => emitCompletion(threadId, turnId, text), 80)
+      return
+    }
+    emitCompletion(threadId, turnId, text)
     return
   }
   if (request.method === 'turn/interrupt') {

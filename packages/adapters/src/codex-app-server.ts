@@ -44,6 +44,7 @@ export interface AIHistoryRepository {
   putAIThread(thread: AIThread): Promise<void>
   putAITurn(turn: AITurn): Promise<void>
   appendAIEvent(event: AIEvent): Promise<void>
+  getAIThread?(id: string): Promise<AIThread | null>
 }
 
 export interface CodexAppServerOptions {
@@ -72,9 +73,18 @@ const normalizeDiagnostic = (value: string): string => {
   return redact(value)
 }
 
-const composeTurnInput = (message: string, workspaceContext: string | undefined): string => workspaceContext === undefined
-  ? message
-  : ['Use o contexto de metadados abaixo apenas como referência.', workspaceContext, 'FIM DO CONTEXTO', 'PEDIDO DO USUÁRIO:', message].join('\n\n')
+const composeTurnInput = (message: string, workspaceContext: string | undefined, sessionContext: string | undefined): string => {
+  const parts: string[] = []
+  if (workspaceContext !== undefined) {
+    parts.push('Use o contexto de metadados abaixo apenas como referência.', workspaceContext, 'FIM DO CONTEXTO')
+  }
+  if (sessionContext !== undefined) {
+    parts.push('Use o contexto público da sessão Tupiniquim abaixo apenas como memória redigida.', sessionContext, 'FIM DO CONTEXTO DA SESSÃO TUPINIQUIM')
+  }
+  if (parts.length === 0) return message
+  parts.push('PEDIDO DO USUÁRIO:', message)
+  return parts.join('\n\n')
+}
 
 export const findCodexExecutable = async (): Promise<string> => {
   const explicit = process.env.TUPINIQUIM_CODEX_PATH
@@ -98,6 +108,7 @@ export class CodexAppServerAdapter implements AIProvider {
   private readonly pending = new Map<number | string, PendingRequest>()
   private readonly streamedItems = new Set<string>()
   private readonly resumedThreads = new Set<string>()
+  private readonly terminalTurns = new Set<string>()
   private currentStatus: AIStatus = aiStatusSchema.parse({ provider: 'codex-app-server', state: 'DISCONNECTED', account: 'NONE', version: null, activeThreadId: null, activeTurnId: null, detail: null })
   private connectPromise: Promise<AIStatus> | null = null
 
@@ -162,6 +173,15 @@ export class CodexAppServerAdapter implements AIProvider {
     if (status.state === 'AUTH_REQUIRED') throw new Error('Codex requer autenticação. Configure uma chave local ou faça login no Codex.')
     const workspaceRoot = this.options.getWorkspaceRoot()
     let threadId = input.threadId
+    if (threadId !== undefined) {
+      const persisted = await this.options.history?.getAIThread?.(threadId)
+      if (persisted !== undefined && persisted !== null) {
+        const parsed = aiThreadSchema.parse(persisted)
+        if (parsed.provider !== 'codex-app-server' || parsed.workspaceRoot !== workspaceRoot) {
+          throw new Error('Thread persistida não pertence ao runtime Codex ou workspace atual.')
+        }
+      }
+    }
     if (threadId === undefined) {
       const response = threadStartResponseSchema.parse(await this.request('thread/start', {
         cwd: workspaceRoot,
@@ -183,11 +203,13 @@ export class CodexAppServerAdapter implements AIProvider {
     }
     const response = turnStartResponseSchema.parse(await this.request('turn/start', {
       threadId,
-      input: [{ type: 'text', text: composeTurnInput(input.message, input.workspaceContext), text_elements: [] }]
+      input: [{ type: 'text', text: composeTurnInput(input.message, input.workspaceContext, input.sessionContext), text_elements: [] }]
     }))
     const reference = { threadId, turnId: response.turn.id }
     await this.options.history?.putAITurn(aiTurnSchema.parse({ id: reference.turnId, threadId: reference.threadId, mode: input.mode, inputHash: createHash('sha256').update(input.message).digest('hex'), createdAt: new Date().toISOString() }))
-    this.updateStatus({ state: 'BUSY', activeThreadId: threadId, activeTurnId: response.turn.id, detail: null })
+    if (!this.terminalTurns.has(reference.turnId)) {
+      this.updateStatus({ state: 'BUSY', activeThreadId: threadId, activeTurnId: reference.turnId, detail: null })
+    }
     return reference
   }
 
@@ -200,6 +222,7 @@ export class CodexAppServerAdapter implements AIProvider {
     const child = this.child
     this.child = null
     this.resumedThreads.clear()
+    this.terminalTurns.clear()
     this.rejectPending(new Error('Codex App Server encerrado.'))
     this.updateStatus({ state: 'STOPPED', activeTurnId: null, detail: null })
     if (child !== null && !child.killed && child.exitCode === null) {
@@ -268,6 +291,7 @@ export class CodexAppServerAdapter implements AIProvider {
     } else if (method === 'turn/completed') {
       const event = turnCompletedSchema.safeParse(params)
       if (event.success) {
+        this.terminalTurns.add(event.data.turn.id)
         this.emit({ kind: 'TURN_COMPLETED', threadId: event.data.threadId, turnId: event.data.turn.id, status: event.data.turn.status })
         this.updateStatus({ state: 'READY', activeTurnId: null, detail: null })
       }
@@ -310,6 +334,9 @@ export class CodexAppServerAdapter implements AIProvider {
   }
 
   private updateStatus(update: Partial<AIStatus>): void {
+    if (update.state === 'BUSY' && typeof update.activeTurnId === 'string' && this.terminalTurns.has(update.activeTurnId)) {
+      return
+    }
     this.currentStatus = aiStatusSchema.parse({ ...this.currentStatus, ...update })
     this.emit({ kind: 'STATUS', status: this.currentStatus.state, detail: this.currentStatus.detail ?? undefined, threadId: this.currentStatus.activeThreadId ?? undefined, turnId: this.currentStatus.activeTurnId ?? undefined })
   }
@@ -325,6 +352,7 @@ export class CodexAppServerAdapter implements AIProvider {
     if (this.child === null) return
     this.child = null
     this.resumedThreads.clear()
+    this.terminalTurns.clear()
     const detail = `Codex App Server encerrou (code=${String(code)}, signal=${String(signal)}).`
     this.rejectPending(new Error(detail))
     this.updateStatus({ state: 'ERROR', activeTurnId: null, detail })

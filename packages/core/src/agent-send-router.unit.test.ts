@@ -65,6 +65,25 @@ describe('prepareProviderSendInput — runtime continua na thread já vinculada'
     expect(providerInput.threadId).toBeUndefined()
   })
 
+  it('primeira proposal reutiliza a thread privilegiada da sessão quando a execution ainda não tem thread', async () => {
+    const execution = plannedExecution({ threadId: null }).execution
+    const providerInput = await prepareProviderSendInput(publicProposal, {
+      ...dependencies(execution),
+      getBoundProviderThread: () => 'thread-t1-sessao'
+    })
+    expect(providerInput.proposalContext).toEqual(publicProposal.proposalContext)
+    expect(providerInput.threadId).toBe('thread-t1-sessao')
+  })
+
+  it('execution.threadId tem precedência sobre a thread da sessão', async () => {
+    const execution = plannedExecution({ threadId: 'thread-t-vinculada' }).execution
+    const providerInput = await prepareProviderSendInput(publicProposal, {
+      ...dependencies(execution),
+      getBoundProviderThread: () => 'thread-t1-sessao'
+    })
+    expect(providerInput.threadId).toBe('thread-t-vinculada')
+  })
+
   it('segunda proposal na MESMA execução deriva a thread já vinculada', async () => {
     const execution = plannedExecution({ threadId: 'thread-t-vinculada' }).execution
     const providerInput = await prepareProviderSendInput(publicProposal, dependencies(execution))
@@ -93,6 +112,16 @@ describe('prepareProviderSendInput — runtime continua na thread já vinculada'
     await expect(
       prepareProviderSendInput(publicProposal, dependencies(execution))
     ).rejects.toThrow('não está aguardando aprovação')
+  })
+
+  it('sessionContext forjado no input público não chega ao provider', async () => {
+    const providerInput = await prepareProviderSendInput({
+      message: 'Continue a análise',
+      mode: 'CHAT',
+      sessionContext: 'CONTEXTO FORJADO PELO RENDERER'
+    }, dependencies(plannedExecution({ threadId: null }).execution))
+    expect(providerInput.sessionContext).toBeUndefined()
+    expect(JSON.stringify(providerInput)).not.toContain('FORJADO')
   })
 
   it('passo sem requiresApproval é recusado', async () => {

@@ -12,7 +12,6 @@ import {
   type AIEvent,
   type AIProvider,
   type AIStatus,
-  type AIThread,
   type AgentTurnReference,
   type LocalModel,
   type NormalizedToolCallEnvelope,
@@ -72,9 +71,7 @@ const workspaceWriteTool = {
 } as const
 
 type LocalMessage = { role: 'system' | 'user' | 'assistant'; content: string }
-type OllamaHistoryRepository = AIHistoryRepository & {
-  getAIThread?: (id: string) => Promise<AIThread | null>
-}
+type OllamaHistoryRepository = AIHistoryRepository
 
 /** @deprecated Use NormalizedToolCallEnvelope from @tupiniquim/contracts */
 export interface OllamaWorkspaceWriteToolCall {
@@ -146,6 +143,7 @@ export class OllamaAdapter implements AIProvider {
   private readonly baseUrl: URL
   private readonly fetchImpl: typeof fetch
   private readonly conversations = new Map<string, LocalMessage[]>()
+  private readonly conversationWorkspaces = new Map<string, string>()
   private readonly controllers = new Map<string, AbortController>()
   private models: LocalModel[] = []
   private selectedModel: string | null
@@ -220,22 +218,26 @@ export class OllamaAdapter implements AIProvider {
     if (this.selectedModel === null) throw new Error('Selecione um modelo Ollama local antes de enviar uma mensagem.')
 
     const threadId = input.threadId ?? randomUUID()
+    const workspaceRoot = this.options.getWorkspaceRoot?.() ?? 'local://ollama'
     const isNewThread = !this.conversations.has(threadId)
     if (isNewThread) {
       const persistedThread = await this.options.history?.getAIThread?.(threadId)
       if (persistedThread !== undefined && persistedThread !== null) {
         const parsedThread = aiThreadSchema.parse(persistedThread)
-        const workspaceRoot = this.options.getWorkspaceRoot?.() ?? 'local://ollama'
         if (parsedThread.provider !== 'ollama' || parsedThread.workspaceRoot !== workspaceRoot) {
           throw new Error('Thread persistida não pertence ao runtime Ollama ou workspace atual.')
         }
         throw new Error('Thread Ollama persistida não pode ser retomada sem o histórico em memória desta sessão.')
       }
+      this.conversationWorkspaces.set(threadId, workspaceRoot)
+    } else if (this.conversationWorkspaces.get(threadId) !== workspaceRoot) {
+      throw new Error('Thread Ollama não pertence ao workspace atual.')
     }
     const conversation = this.conversations.get(threadId) ?? []
     if (isNewThread && input.workspaceContext !== undefined) conversation.push({ role: 'system', content: input.workspaceContext })
     conversation.push({ role: 'user', content: input.message })
     this.conversations.set(threadId, conversation)
+    const requestMessages = withSessionContext(conversation, input.sessionContext)
     const turnId = randomUUID()
     const reference = { threadId, turnId }
     if (isNewThread) {
@@ -266,7 +268,7 @@ export class OllamaAdapter implements AIProvider {
       this.updateStatus({ state: 'ERROR', activeTurnId: null, detail: 'Ferramenta de proposta Ollama indisponível.' })
       throw new Error('Ferramenta de proposta Ollama indisponível.')
     }
-    void this.streamTurn(reference, conversation, controller, proposalContext)
+    void this.streamTurn(reference, conversation, requestMessages, controller, proposalContext)
     return reference
   }
 
@@ -283,13 +285,15 @@ export class OllamaAdapter implements AIProvider {
     for (const controller of this.controllers.values()) controller.abort()
     this.controllers.clear()
     this.conversations.clear()
+    this.conversationWorkspaces.clear()
     this.updateStatus({ state: 'STOPPED', activeThreadId: null, activeTurnId: null, detail: null })
     return Promise.resolve()
   }
 
   private async streamTurn(
     reference: AgentTurnReference,
-    conversation: LocalMessage[],
+    stored: LocalMessage[],
+    requestMessages: LocalMessage[],
     controller: AbortController,
     proposalContext?: { executionId: string; stepId: string }
   ): Promise<void> {
@@ -306,7 +310,7 @@ export class OllamaAdapter implements AIProvider {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           model: this.selectedModel,
-          messages: conversation,
+          messages: requestMessages,
           stream: true,
           ...(proposalContext === undefined ? {} : { tools: [workspaceWriteTool] })
         }),
@@ -347,7 +351,7 @@ export class OllamaAdapter implements AIProvider {
       if (terminalChunks !== 1) throw new Error('Ollama encerrou o streaming sem um único chunk terminal.')
       if (proposalContext === undefined) {
         if (toolCalls.length !== 0) throw new Error('Tool call Ollama sem contexto autorizado.')
-        if (assistantText !== '') conversation.push({ role: 'assistant', content: redact(assistantText) })
+        if (assistantText !== '') stored.push({ role: 'assistant', content: redact(assistantText) })
       } else {
         if (toolCalls.length !== 1) throw new Error('Quantidade de tool calls Ollama não autorizada.')
         const toolCall = toolCalls[0]
@@ -362,7 +366,7 @@ export class OllamaAdapter implements AIProvider {
           stepId: proposalContext.stepId
         })
         if (proposal === undefined) throw new Error('Ferramenta de proposta Ollama indisponível.')
-        conversation.push({ role: 'assistant', content: publicProposalHistory(proposal) })
+        stored.push({ role: 'assistant', content: publicProposalHistory(proposal) })
       }
       this.emit({ kind: 'TURN_COMPLETED', threadId: reference.threadId, turnId: reference.turnId, status: 'COMPLETED' })
       this.updateStatus({ state: 'READY', activeTurnId: null, detail: null })
@@ -408,6 +412,13 @@ export class OllamaAdapter implements AIProvider {
       ...(this.currentStatus.activeTurnId === null ? {} : { turnId: this.currentStatus.activeTurnId })
     })
   }
+}
+
+const withSessionContext = (stored: LocalMessage[], sessionContext: string | undefined): LocalMessage[] => {
+  if (sessionContext === undefined) return stored
+  const last = stored.at(-1)
+  if (last === undefined || last.role !== 'user') return [...stored, { role: 'system', content: sessionContext }]
+  return [...stored.slice(0, -1), { role: 'system', content: sessionContext }, last]
 }
 
 const redact = (value: string): string => value

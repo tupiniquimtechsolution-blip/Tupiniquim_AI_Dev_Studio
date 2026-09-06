@@ -23,7 +23,10 @@ interface ConversationMessage {
   text: string
   turnId: string | null
   complete: boolean
+  provider: AIProviderKind | null
 }
+
+const providerLabel = (provider: AIProviderKind | null): string => provider === 'ollama' ? 'OLLAMA' : provider === 'codex-app-server' ? 'CODEX' : 'AGENTE'
 
 // ProposalStatus imported from @tupiniquim/contracts — includes EXPIRED
 
@@ -43,6 +46,7 @@ export const App = (): React.JSX.Element => {
   const [selectedLocalModel, setSelectedLocalModel] = useState('')
   const [agentInput, setAgentInput] = useState('')
   const [conversation, setConversation] = useState<ConversationMessage[]>([])
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const [sending, setSending] = useState(false)
   const [planned, setPlanned] = useState<PlannedExecution | null>(null)
   const [proposal, setProposal] = useState<WorkspaceWriteProposal | null>(null)
@@ -51,13 +55,18 @@ export const App = (): React.JSX.Element => {
   const [profile, setProfile] = useState<UIProfile | null>(null)
   const [showSettings, setShowSettings] = useState(false)
   const profileRef = useRef<UIProfile | null>(null)
+  const providerRef = useRef<AIProviderKind | null>(null)
   const dirty = document !== null && content !== document.content
+
+  useEffect(() => {
+    providerRef.current = aiStatus?.provider ?? null
+  }, [aiStatus?.provider])
 
   useEffect(() => {
     void window.studio.system.info().then((result) => { if (result.ok) setSystem(result.value) })
     void window.studio.agent.status().then((result) => { if (result.ok) setAIStatus(result.value) })
     void window.studio.settings.get().then((result) => { if (result.ok) { profileRef.current = result.value; setProfile(result.value) } })
-    const removeAgentListener = window.studio.agent.onEvent((event) => handleAgentEvent(event, setAIStatus, setConversation, setSending))
+    const removeAgentListener = window.studio.agent.onEvent((event) => handleAgentEvent(event, setAIStatus, setConversation, setSending, () => providerRef.current))
     const removeProposalListener = window.studio.agent.onWorkspaceWriteProposal((incoming) => {
       setProposal((current) => {
         if (current !== null && current.executionId === incoming.executionId && current.stepId === incoming.stepId && current.id !== incoming.id) {
@@ -69,7 +78,7 @@ export const App = (): React.JSX.Element => {
         return incoming
       })
       setProposalStatus('PENDING_REVIEW')
-      setConversation((current) => [...current, { id: incoming.id, role: 'assistant', text: `PROPOSTA DISPONÍVEL PARA REVISÃO\n${incoming.effect.operation} ${incoming.effect.target}\nHash ${incoming.effect.payloadHash.slice(0, 12)}…`, turnId: incoming.turnId, complete: true }])
+      setConversation((current) => [...current, { id: incoming.id, role: 'assistant', text: `PROPOSTA DISPONÍVEL PARA REVISÃO\n${incoming.effect.operation} ${incoming.effect.target}\nHash ${incoming.effect.payloadHash.slice(0, 12)}…`, turnId: incoming.turnId, complete: true, provider: incoming.provider }])
       void window.studio.planning.read({ executionId: incoming.executionId }).then((result) => { if (result.ok) setPlanned(result.value) })
     })
     return () => { removeAgentListener(); removeProposalListener() }
@@ -85,14 +94,27 @@ export const App = (): React.JSX.Element => {
     setProposal(null)
     setProposalStatus(null)
     setExpiredProposals([])
-    const [tree, status, context] = await Promise.all([
+    const session = await window.studio.agent.session()
+    if (session.ok) {
+      setSessionId(session.value?.session.id ?? null)
+      setConversation((session.value?.turns ?? []).flatMap((turn) => {
+        if (turn.role !== 'user' && turn.role !== 'assistant' && turn.role !== 'error') return []
+        return [{ id: turn.id, role: turn.role, text: turn.text, turnId: turn.turnId, complete: true, provider: turn.provider }]
+      }))
+    } else {
+      setSessionId(null)
+      setConversation([])
+    }
+    const [tree, status, context, agentStatus] = await Promise.all([
       window.studio.workspace.list({ relativePath: '', depth: 4 }),
       window.studio.git.status(),
-      window.studio.workspace.context()
+      window.studio.workspace.context(),
+      window.studio.agent.status()
     ])
     if (tree.ok) setFiles(tree.value)
     if (status.ok) setGit(status.value)
     if (context.ok) setWorkspaceContext(context.value)
+    if (agentStatus.ok) setAIStatus(agentStatus.value)
     setNotice(context.ok ? 'Workspace autorizado e contexto de metadados mapeado.' : 'Workspace autorizado e mapeado.')
   }
 
@@ -113,15 +135,15 @@ export const App = (): React.JSX.Element => {
   const sendToAgent = async (): Promise<void> => {
     const message = agentInput.trim()
     if (message === '' || workspaceRoot === null || sending) return
-    setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'user', text: message, turnId: null, complete: true }])
+    setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'user', text: message, turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
     setAgentInput('')
     setSending(true)
     if (mode === 'VISUAL') {
       const result = await window.studio.visual.statuses()
       if (result.ok) {
         const providers = result.value.map((provider) => `• ${provider.label}: ${provider.state}\n  ${provider.detail}`).join('\n')
-        setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: `VISUAL LAB\nSolicitação: ${message}\n\nPROVEDORES\n${providers}\n\nAssets só podem entrar no produto com origem, direitos e licença conhecida.`, turnId: null, complete: true }])
-      } else setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: result.error.message, turnId: null, complete: true }])
+        setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: `VISUAL LAB\nSolicitação: ${message}\n\nPROVEDORES\n${providers}\n\nAssets só podem entrar no produto com origem, direitos e licença conhecida.`, turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
+      } else setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: result.error.message, turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
       setSending(false)
       return
     }
@@ -133,8 +155,8 @@ export const App = (): React.JSX.Element => {
       ])
       if (saved.ok && linted.ok) {
         const report = linted.value.length === 0 ? 'Nenhum problema de lint.' : linted.value.map((issue) => `• ${issue.severity} ${issue.code}: ${issue.message}`).join('\n')
-        setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: `TEMPLATE VERSIONADO\n${saved.value.name} · v${saved.value.version}\n${variableNames.length} variável(is)\n\n${report}`, turnId: null, complete: true }])
-      } else setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: !saved.ok ? saved.error.message : !linted.ok ? linted.error.message : 'Falha no Prompt Architect.', turnId: null, complete: true }])
+        setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: `TEMPLATE VERSIONADO\n${saved.value.name} · v${saved.value.version}\n${variableNames.length} variável(is)\n\n${report}`, turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
+      } else setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: !saved.ok ? saved.error.message : !linted.ok ? linted.error.message : 'Falha no Prompt Architect.', turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
       setSending(false)
       return
     }
@@ -148,7 +170,7 @@ export const App = (): React.JSX.Element => {
       if (searchResult.ok) sections.push(`EVIDÊNCIAS EXTERNAS — NÃO CONFIÁVEIS\n${searchResult.value.sources.map((source) => `• ${source.title}\n  ${source.url}`).join('\n') || 'Nenhum resultado retornado pelo provedor HTTP.'}`)
       if (!searchResult.ok) sections.push(`PESQUISA INDISPONÍVEL\n${searchResult.error.message}`)
       if (!resolutionResult.ok) sections.push(`RESOLUÇÃO INDISPONÍVEL\n${resolutionResult.error.message}`)
-      setConversation((current) => [...current, { id: crypto.randomUUID(), role: sections.length > 0 ? 'assistant' : 'error', text: sections.join('\n\n'), turnId: null, complete: true }])
+      setConversation((current) => [...current, { id: crypto.randomUUID(), role: sections.length > 0 ? 'assistant' : 'error', text: sections.join('\n\n'), turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
       setSending(false)
       return
     }
@@ -160,12 +182,12 @@ export const App = (): React.JSX.Element => {
         setProposalStatus(null)
         const targetStep = planResult.value.plan.steps.find((step) => step.requiresApproval)
         if (targetStep === undefined) {
-          setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: 'O plano não possui um passo mutável compatível com workspace.write.', turnId: null, complete: true }])
+          setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: 'O plano não possui um passo mutável compatível com workspace.write.', turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
           setSending(false)
           return
         }
         if (aiStatus?.provider !== 'ollama') {
-          setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: 'Plano persistido, mas o provider atual permanece read-only. Selecione Ollama local com um modelo compatível para gerar a proposta sem habilitar APIs experimentais.', turnId: null, complete: true }])
+          setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: 'Plano persistido, mas o provider atual permanece read-only. Selecione Ollama local com um modelo compatível para gerar a proposta sem habilitar APIs experimentais.', turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
           setSending(false)
           return
         }
@@ -175,17 +197,17 @@ export const App = (): React.JSX.Element => {
           proposalContext: { executionId: planResult.value.execution.id, stepId: targetStep.id }
         })
         if (!turn.ok) {
-          setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: turn.error.message, turnId: null, complete: true }])
+          setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: turn.error.message, turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
           setSending(false)
         }
-      } else setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: planResult.error.message, turnId: null, complete: true }])
+      } else setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: planResult.error.message, turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
       if (!planResult.ok) setSending(false)
       return
     }
     const threadId = aiStatus?.activeThreadId
     const result = await window.studio.agent.send({ message, mode, ...(threadId !== null && threadId !== undefined ? { threadId } : {}) })
     if (!result.ok) {
-      setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: result.error.message, turnId: null, complete: true }])
+      setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: result.error.message, turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
       setSending(false)
     }
   }
@@ -201,11 +223,14 @@ export const App = (): React.JSX.Element => {
     const result = await window.studio.agent.selectProvider({ provider })
     if (!result.ok) { setNotice(result.error.message); return }
     setAIStatus(result.value)
-    setConversation([])
-    setPlanned(null)
-    setProposal(null)
-    setProposalStatus(null)
-    setExpiredProposals([])
+    if (proposal !== null) {
+      const lookup = await window.studio.agent.lookupProposalStatus(proposal.id)
+      setExpiredProposals((current) => [...current, { proposal, status: lookup.ok ? lookup.value : 'EXPIRED' }])
+      setProposal(null)
+      setProposalStatus('EXPIRED')
+    }
+    const session = await window.studio.agent.session()
+    if (session.ok) setSessionId(session.value?.session.id ?? null)
     setSelectedLocalModel('')
     if (provider !== 'ollama') { setLocalModels([]); return }
     const models = await window.studio.agent.listLocalModels()
@@ -258,7 +283,7 @@ export const App = (): React.JSX.Element => {
       const events = await window.studio.planning.events({ executionId: planned.execution.id })
       if (events.ok) {
         const evidence = events.value.filter((event) => event.category === 'TOOL' || event.category === 'GIT').slice(-2)
-        if (evidence.length > 0) setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: 'EXECUÇÃO AUTORIZADA\n' + evidence.map((event) => event.title + ': ' + (event.detail ?? '')).join('\n'), turnId: null, complete: true }])
+        if (evidence.length > 0) setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'assistant', text: 'EXECUÇÃO AUTORIZADA\n' + evidence.map((event) => event.title + ': ' + (event.detail ?? '')).join('\n'), turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
       }
       if (proposal !== null && proposal.executionId === planned.execution.id && proposalStatus === 'APPROVED') {
         const applied = await window.studio.planning.applyProposedWorkspaceWrite({ proposalId: proposal.id })
@@ -323,7 +348,7 @@ export const App = (): React.JSX.Element => {
     <main className={`studio ${profile?.density === 'COMFORTABLE' ? 'density-comfortable' : 'density-compact'}`} style={profile === null ? undefined : { '--bg': profile.theme.background, '--surface': profile.theme.surface, '--raised': profile.theme.raised, '--text': profile.theme.text, '--muted': profile.theme.muted, '--accent': profile.theme.accent, '--info': profile.theme.info, '--warning': profile.theme.warning, '--danger': profile.theme.danger, '--explorer-width': `${profile.layout.explorerWidth}px`, '--agent-width': `${profile.layout.agentWidth}px`, '--deck-height': `${profile.layout.deckHeight}px` } as React.CSSProperties}>
       <header className="ribbon drag-region">
         <div className="brand no-drag"><span className="brand-mark"><Braces size={17} /></span><strong>Tupiniquim</strong><span className="brand-sub">AI DEV STUDIO</span></div>
-        <button className="project-switcher no-drag" onClick={() => void openWorkspace()}><Boxes size={15} /><span>{workspaceName}</span><ChevronsUpDown size={13} /></button>
+        <button className="project-switcher no-drag" disabled={sending || aiStatus?.state === 'BUSY'} onClick={() => void openWorkspace()}><Boxes size={15} /><span>{workspaceName}</span><ChevronsUpDown size={13} /></button>
         <div className="ribbon-meta no-drag"><GitBranch size={14} /><span>{git?.branch ?? 'sem Git'}</span></div>
         <div className="mode-switch no-drag">{modes.map((item) => <button key={item.mode} className={mode === item.mode ? 'active' : ''} onClick={() => setMode(item.mode)}>{item.label}</button>)}</div>
         <div className="ribbon-state no-drag"><span className="state-dot running" /><span>ASSISTED</span><ShieldCheck size={15} /></div>
@@ -362,13 +387,14 @@ export const App = (): React.JSX.Element => {
         <aside className="agent-panel panel">
           <div className="agent-heading"><div className="agent-orb"><Bot size={18} /></div><div><strong>Agente principal</strong><small>Modo {mode}</small></div><span className="availability">{aiStatus?.state ?? 'LOCAL'}</span></div>
           <div className="context-strip"><span>ESTADO</span><strong>{aiStatus?.state ?? 'DISCONNECTED'}</strong><span>POLÍTICA</span><strong>ASSISTED</strong><span>CONTEXTO</span><strong>{workspaceContext === null ? 'NÃO MAPEADO' : String(workspaceContext.entries.length) + (workspaceContext.truncated ? '+' : '') + ' ITENS'}</strong></div>
+          <div className="context-strip" aria-label="Sessão Tupiniquim" data-session-id={sessionId ?? ''}><span>SESSÃO TUPINIQUIM</span><strong title={sessionId ?? ''}>{sessionId ?? 'NENHUMA'}</strong></div>
           <div className="provider-controls">
             <label>PROVIDER<select aria-label="Provedor de IA" value={aiStatus?.provider ?? 'codex-app-server'} disabled={sending || aiStatus?.state === 'BUSY'} onChange={(event) => void selectAgentProvider(event.target.value as AIProviderKind)}><option value="codex-app-server">Codex App Server</option><option value="ollama">Ollama local</option></select></label>
             {aiStatus?.provider === 'ollama' && <label>MODELO<select aria-label="Modelo Ollama local" value={selectedLocalModel} disabled={localModels.length === 0 || aiStatus.state !== 'READY'} onChange={(event) => void selectOllamaModel(event.target.value)}><option value="">Selecionar modelo</option>{localModels.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select></label>}
           </div>
           <section className="agent-conversation">
             <div className="agent-message"><span className="message-label">SISTEMA</span><p>{aiStatus?.provider === 'ollama' ? 'Ollama usa somente o loopback local; modelos são escolhidos explicitamente e não há downloads automáticos.' : 'Codex usa stdio JSONL, dados em F:\\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.'}</p></div>
-            {conversation.map((message) => <div key={message.id} className={`agent-message ${message.role}`}><span className="message-label">{message.role === 'user' ? 'VOCÊ' : message.role === 'error' ? 'ERRO' : aiStatus?.provider === 'ollama' ? 'OLLAMA' : 'CODEX'}</span><p>{message.text}{!message.complete && <span className="stream-caret">▋</span>}</p></div>)}
+            {conversation.map((message) => <div key={message.id} className={`agent-message ${message.role}`} data-provider={message.provider ?? ''}><span className="message-label">{message.role === 'user' ? 'VOCÊ' : message.role === 'error' ? 'ERRO' : providerLabel(message.provider)}</span><p>{message.text}{!message.complete && <span className="stream-caret">▋</span>}</p></div>)}
             {expiredProposals.map((item) => <ProposalProvenance key={item.proposal.id} proposal={item.proposal} status={item.status} expired />)}
             {proposal !== null && <ProposalProvenance proposal={proposal} status={proposalStatus ?? 'PENDING_REVIEW'} />}
             {planned !== null ? (
@@ -447,7 +473,8 @@ const handleAgentEvent = (
   event: AIEvent,
   setStatus: React.Dispatch<React.SetStateAction<AIStatus | null>>,
   setConversation: React.Dispatch<React.SetStateAction<ConversationMessage[]>>,
-  setSending: React.Dispatch<React.SetStateAction<boolean>>
+  setSending: React.Dispatch<React.SetStateAction<boolean>>,
+  getProvider: () => AIProviderKind | null
 ): void => {
   if (event.kind === 'STATUS') {
     void window.studio.agent.status().then((result) => { if (result.ok) setStatus(result.value) })
@@ -457,13 +484,13 @@ const handleAgentEvent = (
       if (last?.role === 'assistant' && last.turnId === (event.turnId ?? null) && !last.complete) {
         return [...current.slice(0, -1), { ...last, text: `${last.text}${event.text ?? ''}` }]
       }
-      return [...current, { id: event.id, role: 'assistant', text: event.text ?? '', turnId: event.turnId ?? null, complete: false }]
+      return [...current, { id: event.id, role: 'assistant', text: event.text ?? '', turnId: event.turnId ?? null, complete: false, provider: getProvider() }]
     })
   } else if (event.kind === 'TURN_COMPLETED') {
     setConversation((current) => current.map((message) => message.turnId === (event.turnId ?? null) ? { ...message, complete: true } : message))
     setSending(false)
   } else if (event.kind === 'ERROR') {
-    setConversation((current) => [...current, { id: event.id, role: 'error', text: event.detail ?? 'Falha no Codex App Server.', turnId: event.turnId ?? null, complete: true }])
+    setConversation((current) => [...current, { id: event.id, role: 'error', text: event.detail ?? 'Falha no Codex App Server.', turnId: event.turnId ?? null, complete: true, provider: getProvider() }])
     setSending(false)
   }
 }

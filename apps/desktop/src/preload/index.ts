@@ -33,6 +33,7 @@ const api: StudioApi = {
     listLocalModels: () => ipcRenderer.invoke(ipcChannels.agentLocalModels),
     selectLocalModel: (input) => ipcRenderer.invoke(ipcChannels.agentLocalModelSelect, input),
     history: (input) => ipcRenderer.invoke(ipcChannels.agentHistory, input),
+    session: () => ipcRenderer.invoke(ipcChannels.agentSession),
     send: (input) => ipcRenderer.invoke(ipcChannels.agentSend, input),
     interrupt: (input) => ipcRenderer.invoke(ipcChannels.agentInterrupt, input),
     onEvent: (listener) => {

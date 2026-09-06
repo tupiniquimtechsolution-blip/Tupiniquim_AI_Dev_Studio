@@ -622,3 +622,249 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
     }
   }
 })
+
+test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace', async () => {
+  const projectRoot = process.cwd()
+  const continuityMessage = 'Meu projeto usa arquitetura X'
+  const sessionProposalTarget = 'proposta-sessao-wave15.txt'
+  const sessionProposalContent = 'E2E_SESSION_PRIVATE_PAYLOAD'
+
+  const tempEnv = process.env.TEMP
+  test.skip(
+    process.platform !== 'win32' || tempEnv === undefined || path.parse(tempEnv).root.toUpperCase() !== 'F:\\',
+    `E2E de continuidade requer Windows real com TEMP em F: e display Electron (plataforma=${process.platform}, TEMP=${tempEnv ?? 'ausente'}). Executar na máquina Windows F: via pnpm test:e2e.`
+  )
+  const temp = tempEnv as string
+
+  const chatRequests: unknown[] = []
+  const server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/api/tags') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+      response.end(JSON.stringify({ models: [{ name: ollamaModel, model: ollamaModel, modified_at: '2026-08-20T12:00:00.000Z', size: 1_024 }] }))
+      return
+    }
+    if (request.method === 'POST' && request.url === '/api/chat') {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.once('end', () => {
+        try {
+          const parsed = JSON.parse(body) as { tools?: unknown[] }
+          chatRequests.push(parsed)
+          const usesTools = Array.isArray(parsed.tools) && parsed.tools.length > 0
+          response.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8' })
+          response.end(`${JSON.stringify(usesTools ? {
+            message: {
+              content: '',
+              tool_calls: [{
+                function: {
+                  name: 'tupiniquim_workspace_write_proposal',
+                  arguments: { relativePath: sessionProposalTarget, content: sessionProposalContent, operation: 'CREATE' }
+                }
+              }]
+            },
+            done: true
+          } : {
+            message: { content: 'TUPINIQUIM_SESSION_OK' },
+            done: true
+          })}\n`)
+        } catch {
+          response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+          response.end(JSON.stringify({ error: 'invalid request' }))
+        }
+      })
+      return
+    }
+    response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
+    response.end(JSON.stringify({ error: 'not found' }))
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('Mock não recebeu porta.')
+  const mockUrl = `http://127.0.0.1:${String(address.port)}`
+  let application: Awaited<ReturnType<typeof electron.launch>> | null = null
+  let workspaceRoot = ''
+  let workspaceRootB = ''
+  const provenanceRegion = (page: Page): Locator => page.getByRole('region', { name: 'Proveniência da proposta de escrita' })
+  try {
+    application = await electron.launch({
+      args: ['.'],
+      cwd: projectRoot,
+      timeout: 180_000,
+      env: {
+        ...process.env,
+        ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
+        TUPINIQUIM_OLLAMA_BASE_URL: mockUrl,
+        TUPINIQUIM_CODEX_PATH: process.execPath,
+        TUPINIQUIM_CODEX_SERVER_ARGS: JSON.stringify([path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs')])
+      }
+    })
+    const processErrors: string[] = []
+    application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
+    workspaceRoot = await mkdtemp(path.join(temp, 'tupiniquim-e2e-session-a-'))
+    await writeFile(path.join(workspaceRoot, 'README.md'), '# E2E Session A\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot })
+    workspaceRootB = await mkdtemp(path.join(temp, 'tupiniquim-e2e-session-b-'))
+    await writeFile(path.join(workspaceRootB, 'README.md'), '# E2E Session B\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRootB })
+    const page = await application.firstWindow({ timeout: 180_000 }).catch((cause: unknown) => {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(`${detail}\nElectron stderr:\n${processErrors.join('')}`)
+    })
+    await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
+    await application.evaluate(({ dialog }, roots) => {
+      const queue = [roots.root, roots.nextRoot]
+      let pickCount = 0
+      Object.defineProperty(dialog, 'showOpenDialog', {
+        configurable: true,
+        value: () => Promise.resolve({ canceled: false, filePaths: [queue[pickCount++ % queue.length] ?? roots.root] })
+      })
+      Object.defineProperty(dialog, 'showMessageBox', {
+        configurable: true,
+        value: () => Promise.resolve({ response: 0, checkboxChecked: false })
+      })
+    }, { root: workspaceRoot, nextRoot: workspaceRootB })
+    await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
+    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await expect(page.getByLabel('Sessão Tupiniquim')).toBeVisible()
+    const sessionIdA = await page.getByLabel('Sessão Tupiniquim').getAttribute('data-session-id')
+    if (sessionIdA === null || sessionIdA === '') throw new Error('Sessão Tupiniquim ausente após abrir o workspace.')
+
+    await page.getByLabel('Provedor de IA').selectOption('ollama')
+    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
+    await expect(page.locator('.availability')).toHaveText('READY')
+    await expect(page.getByLabel('Provedor de IA')).toBeEnabled()
+
+    await page.locator('.mode-switch').getByRole('button', { name: 'Chat', exact: true }).click()
+    await page.getByLabel('Mensagem ao agente').fill(continuityMessage)
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    await expect(page.locator('.agent-conversation')).toContainText(continuityMessage)
+    await expect(page.locator('.agent-conversation')).toContainText('TUPINIQUIM_SESSION_OK', { timeout: 30_000 })
+
+    const proposalSlot = await page.evaluate(async () => {
+      const created = await window.studio.planning.create({ objective: 'E2E session proposal authority', mode: 'PLAN' })
+      if (!created.ok) throw new Error(`planning.create falhou: ${created.error.message}`)
+      const stepId = created.value.plan.steps.find((step) => step.requiresApproval)?.id
+      if (stepId === undefined) throw new Error('Plano E2E sem passo de escrita aprovável.')
+      const sent = await window.studio.agent.send({
+        message: 'Proponha um arquivo pela sessão Tupiniquim.',
+        mode: 'PLAN',
+        proposalContext: { executionId: created.value.execution.id, stepId }
+      })
+      if (!sent.ok) throw new Error(`agent.send falhou: ${sent.error.message}`)
+      return { executionId: created.value.execution.id, stepId, threadId: sent.value.threadId }
+    })
+    await expect(provenanceRegion(page)).toBeVisible({ timeout: 30_000 })
+    await expect(provenanceRegion(page).locator('header span')).toHaveText('PENDING_REVIEW')
+    const proposalId = await provenanceRegion(page).locator('dt').filter({ hasText: /^Proposal$/u }).locator('..').locator('dd').textContent()
+    if (proposalId === null) throw new Error('Proposal da sessão sem ID.')
+
+    const beforeSwitch = await page.evaluate(async () => await window.studio.agent.session())
+    if (!beforeSwitch.ok || beforeSwitch.value === null) throw new Error('Sessão Tupiniquim indisponível antes da troca.')
+    expect(beforeSwitch.value.session.id).toBe(sessionIdA)
+    expect(beforeSwitch.value.providerThreads).toEqual(expect.arrayContaining([
+      expect.objectContaining({ provider: 'ollama', threadId: proposalSlot.threadId, model: ollamaModel })
+    ]))
+    expect(beforeSwitch.value.turns.some((turn) => turn.role === 'assistant' && turn.model === ollamaModel)).toBe(true)
+
+    await page.getByLabel('Provedor de IA').selectOption('codex-app-server')
+    await expect(page.locator('.availability')).toHaveText('READY')
+    await expect(page.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
+    await expect(page.locator('.agent-conversation')).toContainText(continuityMessage)
+    await expect(page.locator('.agent-conversation')).toContainText('TUPINIQUIM_SESSION_OK')
+    await expect(provenanceRegion(page).filter({ has: page.locator('dd', { hasText: proposalId }) }).locator('header span')).toHaveText('EXPIRED')
+
+    const statusAfterSwitch = await page.evaluate(async (id: string) => await window.studio.agent.lookupProposalStatus(id), proposalId)
+    expect(statusAfterSwitch).toMatchObject({ ok: true, value: 'EXPIRED' })
+    const applyAfterSwitch = await page.evaluate(async (id) => await window.studio.planning.applyProposedWorkspaceWrite({ proposalId: id }), proposalId)
+    expect(applyAfterSwitch).toMatchObject({ ok: false })
+    const hijack = await page.evaluate(async (slot) => await window.studio.agent.send({
+      message: 'Não transfira a proposta.',
+      mode: 'PLAN',
+      proposalContext: { executionId: slot.executionId, stepId: slot.stepId }
+    }), proposalSlot)
+    expect(hijack).toMatchObject({ ok: false })
+
+    await page.getByLabel('Mensagem ao agente').fill('Continue a análise')
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    await expect(page.locator('.agent-conversation')).toContainText('CONTEXTO_TUPINIQUIM_OK', { timeout: 30_000 })
+
+    const afterSwitch = await page.evaluate(async () => await window.studio.agent.session())
+    if (!afterSwitch.ok || afterSwitch.value === null) throw new Error('Sessão Tupiniquim indisponível depois da troca.')
+    expect(afterSwitch.value.session.id).toBe(sessionIdA)
+    const ollamaThread = afterSwitch.value.providerThreads.find((binding) => binding.provider === 'ollama')?.threadId
+    const codexThread = afterSwitch.value.providerThreads.find((binding) => binding.provider === 'codex-app-server')?.threadId
+    expect(ollamaThread).toBe(proposalSlot.threadId)
+    expect(codexThread).toBeTruthy()
+    expect(codexThread).not.toBe(ollamaThread)
+    expect(afterSwitch.value.providerThreads.find((binding) => binding.provider === 'codex-app-server')?.model).toBe('codex-test-model')
+    expect(afterSwitch.value.turns.some((turn) => turn.provider === 'codex-app-server' && turn.role === 'assistant' && turn.model === 'codex-test-model')).toBe(true)
+    expect(afterSwitch.value.proposalAuthority).toBeNull()
+    expect(JSON.stringify(afterSwitch.value)).not.toContain(sessionProposalContent)
+    expect(JSON.stringify(afterSwitch.value)).toContain(continuityMessage)
+    expect(await page.content()).not.toContain(sessionProposalContent)
+    expect(await page.locator('.agent-conversation').innerText()).not.toContain(sessionProposalContent)
+
+    await page.getByLabel('Provedor de IA').selectOption('ollama')
+    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
+    await expect(page.locator('.availability')).toHaveText('READY')
+    await page.getByLabel('Mensagem ao agente').fill('Retome no Ollama.')
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    await expect(page.locator('.agent-conversation')).toContainText('Retome no Ollama.', { timeout: 30_000 })
+    const resumedOllama = JSON.stringify(chatRequests.at(-1) ?? {})
+    expect(resumedOllama).toContain('CONTEXTO DA SESSÃO TUPINIQUIM')
+    expect(resumedOllama).toContain('Continue a análise')
+    expect(resumedOllama).toContain(continuityMessage)
+    expect(resumedOllama).not.toContain(sessionProposalContent)
+
+    const dataRoot = `${projectRoot}.data`
+    const auditLog = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
+    expect(auditLog).not.toContain(sessionProposalContent)
+    const databaseFiles = (await readdir(path.join(dataRoot, 'database'))).filter((name) => name.startsWith('studio.sqlite'))
+    const privateMarker = Buffer.from(sessionProposalContent, 'utf8')
+    for (const databaseFile of databaseFiles) {
+      expect((await readFile(path.join(dataRoot, 'database', databaseFile))).includes(privateMarker)).toBe(false)
+    }
+
+    await page.locator('.project-switcher').click()
+    await expect(page.locator('.project-switcher')).toContainText(path.basename(workspaceRootB))
+    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    const sessionIdB = await page.getByLabel('Sessão Tupiniquim').getAttribute('data-session-id')
+    expect(sessionIdB).toBeTruthy()
+    expect(sessionIdB).not.toBe(sessionIdA)
+    await expect(page.locator('.agent-conversation')).not.toContainText(continuityMessage)
+    await expect(provenanceRegion(page)).toHaveCount(0)
+    const isolated = await page.evaluate(async () => await window.studio.agent.session())
+    if (!isolated.ok || isolated.value === null) throw new Error('Sessão do workspace B ausente.')
+    expect(isolated.value.session.id).toBe(sessionIdB)
+    expect(isolated.value.turns).toEqual([])
+    expect(isolated.value.providerThreads).toEqual([])
+    expect(JSON.stringify(isolated.value)).not.toContain(continuityMessage)
+    expect(JSON.stringify(isolated.value)).not.toContain(sessionProposalContent)
+
+    await page.locator('.project-switcher').click()
+    await expect(page.locator('.project-switcher')).toContainText(path.basename(workspaceRoot))
+    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await expect(page.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
+    await expect(page.locator('.agent-conversation')).toContainText(continuityMessage)
+    const restored = await page.evaluate(async () => await window.studio.agent.session())
+    if (!restored.ok || restored.value === null) throw new Error('Sessão A não foi restaurada.')
+    expect(restored.value.session.id).toBe(sessionIdA)
+    expect(restored.value.turns.some((turn) => turn.text.includes(continuityMessage))).toBe(true)
+    expect(JSON.stringify(restored.value)).not.toContain(sessionProposalContent)
+  } finally {
+    try {
+      if (application !== null) await application.close()
+    } finally {
+      try {
+        if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
+        if (workspaceRootB !== '') await rm(workspaceRootB, { recursive: true, force: true })
+      } finally {
+        await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
+      }
+    }
+  }
+})

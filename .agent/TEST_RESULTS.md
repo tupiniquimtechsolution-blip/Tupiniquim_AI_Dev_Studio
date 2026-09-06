@@ -1,5 +1,50 @@
 # Resultados de testes
 
+## 2026-09-06 — Wave 15 — Gate Windows F: (gates técnicos aprovados)
+
+Máquina Windows real (`F:`); branch `arena/01a0776a-tupiniquim-ai-dev-studio`;
+PR #17; Issue #16; HEAD de runtime `787bd304ce99c5916ba870870d2b5c2b6600e166`.
+
+| Comando | Resultado |
+|---|---|
+| `pnpm-f.ps1 validate` | PASS integral |
+| F:\CODEX-only | PASS |
+| lint | PASS |
+| typecheck | PASS |
+| `pnpm test:unit` | 82/82 PASS |
+| `pnpm test:integration` | 49 passed / 2 skipped |
+| `tests/integration/persistence.test.ts` | 22/22 PASS |
+| `pnpm test:security` | 34/34 PASS |
+| `pnpm build` | PASS |
+| `pnpm-f.ps1 test:e2e` | 3/3 PASS |
+
+CI remoto do runtime: run #34 `34067158283` SUCCESS.
+
+### Electron E2E (Windows F:)
+
+1. inicia o Electron seguro e carrega um workspace real — PASS
+2. proposta substituída fica EXPIRED e aplicação da antiga é recusada — PASS
+3. sessão Tupiniquim sobrevive à troca de provider fake e isola workspace — PASS
+
+### Invariantes cobertos no E2E / validate
+
+- Tupiniquim Session ≠ Provider Thread
+- troca de provider preserva sessão; threads provider-specific; sem reuso cross-provider
+- workspace A → B → A isolado; status/thread scoped
+- workspace switch bloqueado enquanto ocupado; mutex antes do primeiro await
+- contexto incremental; ACK só no sucesso terminal
+- Codex ERROR/RETRYING não consome contexto
+- races completion-before-pending e completion-before-send-return
+- ordem user → assistant; proveniência do modelo
+- proposal authority não transfere; EXPIRED em troca de provider/workspace
+- payload privado ausente de DOM, conversation, SQLite, AuditLog e history coberto
+- primeira PLAN reutiliza thread da sessão; `execution.threadId` tem precedência
+
+Nenhuma alteração de código/runtime/teste nesta etapa documental.
+
+GAP WAVE 16: restart/recovery da sessão Tupiniquim / bindings / cursores ainda
+não persistidos. Não bloqueia o fechamento técnico da Wave 15.
+
 ## 2026-09-06 — Wave 14 — Gate Windows F: (checkpoint aprovado/fechado)
 
 Máquina Windows real (`F:`); branch `arena/01a06dcc-tupiniquim-ai-dev-studio`;
