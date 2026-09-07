@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
-  maxDurableTupiniquimTurnTextChars,
   maxTupiniquimSessionContextChars,
+  redactTupiniquimDurableText,
   tupiniquimConversationSchema,
   type AIProviderKind,
   type AIStatus,
@@ -489,9 +489,10 @@ const isSuccessfulTurnStatus = (status: string): boolean => {
   return normalized === 'COMPLETED' || normalized === 'SUCCESS'
 }
 
-export const redactTupiniquimSessionText = (value: string): string => value
-  .replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gu, '[REDACTED]')
-  .replace(/(authorization|api[_-]?key|token)\s*[:=]\s*\S+/giu, '$1=[REDACTED]')
-  .slice(0, maxDurableTupiniquimTurnTextChars)
+/**
+ * Redaction canônico compartilhado com a boundary durável (contracts):
+ * o runtime e a persistência aplicam exatamente a mesma regra.
+ */
+export { redactTupiniquimDurableText as redactTupiniquimSessionText }
 
-const redact = redactTupiniquimSessionText
+const redact = redactTupiniquimDurableText

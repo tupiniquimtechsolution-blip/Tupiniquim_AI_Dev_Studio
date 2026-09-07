@@ -9,19 +9,34 @@ import { aiProviderKinds, tupiniquimProviderBindingSchema, tupiniquimSessionSche
  * cursors. Authority de proposal, proposalIds, pendingByTurn, inProgress,
  * settledSuccess/settledFailure, finalizedTurns, terminalTurns e payload
  * privado de workspace.write NUNCA fazem parte deste contrato.
+ *
+ * Fail-closed: os schemas deste contrato são STRICT — qualquer campo extra
+ * (privilegiado ou acidental) é rejeitado, nunca silenciosamente descartado.
  */
 
 /** Política de retenção durável: últimos 200 Tupiniquim turns públicos por workspace. */
 export const maxDurableTupiniquimTurns = 200
 
-/** Limite durável de texto por turn após redaction (runtime redact aplica o mesmo limite). */
+/** Limite durável de texto por turn após redaction (boundary aplica o mesmo limite). */
 export const maxDurableTupiniquimTurnTextChars = 2_000
 
-/** Turns duráveis são somente conversa pública redigida (user/assistant). */
+/**
+ * Redactor canônico da boundary durável (contracts/shared, sem dependency
+ * cycle: contracts é folha e core/adapters dependem dele). Garante que
+ * nenhum secret bruto chega ao SQLite mesmo que o chamador não tenha passado
+ * pelo redaction do runtime: substitui secrets por [REDACTED] e corta em
+ * maxDurableTupiniquimTurnTextChars. Menção textual a ".env" NÃO é redigida.
+ */
+export const redactTupiniquimDurableText = (value: string): string => value
+  .replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gu, '[REDACTED]')
+  .replace(/(authorization|api[_-]?key|token)\s*[:=]\s*\S+/giu, '$1=[REDACTED]')
+  .slice(0, maxDurableTupiniquimTurnTextChars)
+
+/** Turns duráveis são somente conversa pública redigida (user/assistant), strict. */
 export const tupiniquimDurableTurnSchema = tupiniquimTurnSchema.extend({
   role: z.enum(['user', 'assistant']),
   text: z.string().max(maxDurableTupiniquimTurnTextChars)
-})
+}).strict()
 export type TupiniquimDurableTurn = z.infer<typeof tupiniquimDurableTurnSchema>
 
 export const tupiniquimSeenByProviderSchema = z.record(z.string(), z.array(z.string().uuid())).refine(
@@ -35,13 +50,15 @@ export const tupiniquimDurableSnapshotSchema = z.object({
   turns: z.array(tupiniquimDurableTurnSchema).max(maxDurableTupiniquimTurns),
   providerBindings: z.array(tupiniquimProviderBindingSchema),
   seenByProvider: tupiniquimSeenByProviderSchema
-})
+}).strict()
 export type TupiniquimDurableSnapshot = z.infer<typeof tupiniquimDurableSnapshotSchema>
 
 /**
  * Valida a consistência relacional de um snapshot durável já conformante ao
  * schema. Retorna a lista de violações (vazia = íntegro). Usado pelo
- * getTupiniquimSessionSnapshot para fail-closed e pelos testes.
+ * getTupiniquimSessionSnapshot (fail-closed na leitura), pelo
+ * putTupiniquimSessionSnapshot (validação pré-commit, zero escrita) e pelos
+ * testes.
  *
  * Validação contra AIThread completa (binding → thread existente, provider da
  * thread, workspaceRoot da thread, modelo) fica para o Incremento 2.

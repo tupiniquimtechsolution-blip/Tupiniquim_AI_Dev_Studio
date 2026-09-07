@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   maxDurableTupiniquimTurns,
   maxDurableTupiniquimTurnTextChars,
+  redactTupiniquimDurableText,
   tupiniquimDurableSnapshotSchema,
   validateTupiniquimSessionSnapshotIntegrity,
   type TupiniquimDurableSnapshot
@@ -52,17 +53,27 @@ const makeSnapshot = (overrides: Partial<TupiniquimDurableSnapshot> = {}): Tupin
 }
 
 describe('contrato durável do snapshot da sessão Tupiniquim', () => {
-  it('aceita snapshot durável íntegro e rejeita authority/payload privado por schema', () => {
+  it('aceita snapshot durável íntegro', () => {
     const snapshot = makeSnapshot()
     expect(tupiniquimDurableSnapshotSchema.safeParse(snapshot).success).toBe(true)
-    // Campos efêmeros/privilegiados não fazem parte do contrato (strict shape).
-    expect('proposalAuthority' in snapshot).toBe(false)
-    expect('proposalIds' in snapshot).toBe(false)
-    expect('pendingByTurn' in snapshot).toBe(false)
-    expect('inProgress' in snapshot).toBe(false)
-    expect('settledSuccess' in snapshot).toBe(false)
-    expect('settledFailure' in snapshot).toBe(false)
-    expect('finalizedTurns' in snapshot).toBe(false)
+  })
+
+  it('rejeita campos privilegiados extras (strict, fail-closed) em vez de descartá-los', () => {
+    const snapshot = makeSnapshot()
+    // Campos efêmeros/privilegiados não fazem parte do contrato e são REJEITADOS
+    // pelo schema strict — nunca silenciosamente stripped.
+    expect(tupiniquimDurableSnapshotSchema.safeParse({
+      ...snapshot,
+      proposalAuthority: { provider: 'ollama', threadId: 'thread-ollama', proposalIds: [randomUUID()] }
+    }).success).toBe(false)
+    expect(tupiniquimDurableSnapshotSchema.safeParse({ ...snapshot, proposalIds: [randomUUID()] }).success).toBe(false)
+    expect(tupiniquimDurableSnapshotSchema.safeParse({ ...snapshot, privateProposalPayload: 'conteúdo privado' }).success).toBe(false)
+    expect(tupiniquimDurableSnapshotSchema.safeParse({ ...snapshot, pendingByTurn: {}, inProgress: {}, settledSuccess: [], settledFailure: [], finalizedTurns: [] }).success).toBe(false)
+    // Campo extra dentro de um durable turn também é rejeitado (strict no turn).
+    expect(tupiniquimDurableSnapshotSchema.safeParse({
+      ...snapshot,
+      turns: [{ ...snapshot.turns[0]!, payloadPrivado: 'x' }]
+    }).success).toBe(false)
   })
 
   it('rejeita texto de turn acima do limite durável de 2.000 chars após redaction', () => {
@@ -93,6 +104,35 @@ describe('contrato durável do snapshot da sessão Tupiniquim', () => {
     const snapshot = makeSnapshot()
     expect(tupiniquimDurableSnapshotSchema.safeParse({ ...snapshot, seenByProvider: { ollama: ['nao-e-uuid'] } }).success).toBe(false)
     expect(tupiniquimDurableSnapshotSchema.safeParse({ ...snapshot, seenByProvider: { 'provider-desconhecido': [] } }).success).toBe(false)
+  })
+})
+
+describe('redactor canônico da boundary durável', () => {
+  it('redige secrets reais de teste e preserva menção textual a .env', () => {
+    const samples = [
+      'chave sk-proj-EXAMPLE123456789 usada',
+      'header authorization=BearerExampleSecret fim',
+      'linha api_key=ExampleSecretValue',
+      'config token=ExampleSecretValue fim'
+    ]
+    for (const sample of samples) {
+      expect(sample).not.toContain('[REDACTED]')
+      expect(redactTupiniquimDurableText(sample)).toContain('[REDACTED]')
+    }
+    expect(redactTupiniquimDurableText('sk-proj-EXAMPLE123456789')).toBe('[REDACTED]')
+    expect(redactTupiniquimDurableText('authorization=BearerExampleSecret')).toBe('authorization=[REDACTED]')
+    expect(redactTupiniquimDurableText('api_key=ExampleSecretValue')).toBe('api_key=[REDACTED]')
+    expect(redactTupiniquimDurableText('token=ExampleSecretValue')).toBe('token=[REDACTED]')
+    // Menção textual a .env permanece permitida e preservada.
+    expect(redactTupiniquimDurableText('.env')).toBe('.env')
+    expect(redactTupiniquimDurableText('carregue o arquivo .env manualmente')).toBe('carregue o arquivo .env manualmente')
+  })
+
+  it('impõe o limite durável final de 2.000 chars após redaction', () => {
+    const long = `texto ${'x'.repeat(2_500)}`
+    const redacted = redactTupiniquimDurableText(long)
+    expect(redacted).toHaveLength(2_000)
+    expect(redacted.startsWith('texto ')).toBe(true)
   })
 })
 

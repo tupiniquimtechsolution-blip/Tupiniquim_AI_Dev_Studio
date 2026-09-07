@@ -50,14 +50,14 @@ const makeSession = (workspaceRoot: string): TupiniquimSession => ({
 const makeTurn = (
   session: TupiniquimSession,
   index: number,
-  input: { role?: 'user' | 'assistant'; provider?: 'ollama' | 'codex-app-server'; createdAt?: string } = {}
+  input: { role?: 'user' | 'assistant'; provider?: 'ollama' | 'codex-app-server'; createdAt?: string; text?: string } = {}
 ): TupiniquimDurableSnapshot['turns'][number] => {
   const provider = input.provider ?? 'ollama'
   return {
     id: randomUUID(),
     sessionId: session.id,
     role: input.role ?? 'user',
-    text: `turno ${provider} ${index}`,
+    text: input.text ?? `turno ${provider} ${index}`,
     provider,
     model: provider === 'ollama' ? 'qwen-local' : 'codex-test-model',
     threadId: provider === 'ollama' ? 'thread-ollama' : 'thread-codex',
@@ -498,7 +498,7 @@ describe('Tupiniquim session snapshot durável — SQLite v5 real', () => {
     expect(await database.getTupiniquimSessionSnapshot(rootA)).toBeNull()
   })
 
-  it('retorna null para workspace sem snapshot e rejeita put fora do contrato antes da transação', async () => {
+  it('retorna null para workspace sem snapshot e normaliza/rejeita foras do contrato antes da escrita', async () => {
     const database = openDatabase()
     const rootA = path.join(fixture, 'workspace-a')
     const rootB = path.join(fixture, 'workspace-b')
@@ -508,21 +508,210 @@ describe('Tupiniquim session snapshot durável — SQLite v5 real', () => {
     await database.putTupiniquimSessionSnapshot(snapshot)
     expect(await database.getTupiniquimSessionSnapshot(rootB)).toBeNull()
 
-    // Texto acima do limite durável (2.000 após redaction) rejeita o put sem
-    // tocar no SQLite (fail-loud do contrato antes de BEGIN IMMEDIATE).
+    // Texto acima do limite durável é NORMALIZADO na boundary (redactor
+    // canônico corta em 2.000 chars), nunca persiste texto maior.
     const longText = makeSnapshot(rootA, { turnCount: 0, seenByProvider: {} })
-    const invalid = {
+    const oversized = {
       ...longText,
-      turns: [{ ...makeTurn(snapshot.session, 9), sessionId: longText.session.id, text: 'y'.repeat(maxDurableTupiniquimTurnTextChars + 1) }]
+      turns: [{ ...makeTurn(longText.session, 9), text: `prefixo ${'y'.repeat(maxDurableTupiniquimTurnTextChars + 500)}` }]
     }
-    await expect(database.putTupiniquimSessionSnapshot(invalid)).rejects.toThrow()
+    await expect(database.putTupiniquimSessionSnapshot(oversized)).resolves.toBeUndefined()
+    const stored = await database.getTupiniquimSessionSnapshot(rootA)
+    expect(stored?.turns[0]?.text).toHaveLength(maxDurableTupiniquimTurnTextChars)
+    expect(stored?.turns[0]?.text.startsWith('prefixo ')).toBe(true)
+    expect(stored?.turns[0]?.text).not.toContain('y'.repeat(maxDurableTupiniquimTurnTextChars + 1))
+
+    // Role fora do contrato durável (system/error) rejeita o put sem tocar no
+    // SQLite (schema strict, zero escrita). Cast via unknown: o tipo durável já
+    // exclui system — o teste exercita a rejeição no runtime (zod).
+    const s2 = makeSnapshot(rootA, { turnCount: 0, seenByProvider: {} })
+    const invalidRole = {
+      ...s2,
+      turns: [{ ...makeTurn(s2.session, 9), role: 'system' as const }]
+    } as unknown as TupiniquimDurableSnapshot
+    await expect(database.putTupiniquimSessionSnapshot(invalidRole)).rejects.toThrow()
     const connection = raw()
     try {
-      expect(rawCount(connection, 'tupiniquim_turns')).toBe(3)
-      expect(rawCount(connection, 'tupiniquim_sessions')).toBe(1)
+      const sessions = connection.prepare('SELECT COUNT(*) AS total FROM tupiniquim_sessions').get() as { total: number }
+      expect(sessions.total).toBe(1)
     } finally {
       connection.close()
     }
-    expect((await database.getTupiniquimSessionSnapshot(rootA))?.session.id).toBe(snapshot.session.id)
+    expect((await database.getTupiniquimSessionSnapshot(rootA))?.session.id).toBe(stored?.session.id)
+  })
+
+  it('failAfter é rejeitado fora de ambiente de teste; produção normal segue sem opções', () => {
+    const savedNodeEnv = process.env.NODE_ENV
+    const savedVitest = process.env.VITEST
+    process.env.NODE_ENV = 'production'
+    delete process.env.VITEST
+    try {
+      expect(() => {
+        new LocalDatabase(fixture, { failAfter: { snapshotWriteStatements: 1 } })
+      }).toThrow(/exclusivamente test-only/)
+      // Produção normal: new LocalDatabase(dataRoot) sem opções continua válido.
+      const production = new LocalDatabase(fixture)
+      databases.push(production)
+    } finally {
+      if (savedNodeEnv === undefined) delete process.env.NODE_ENV
+      else process.env.NODE_ENV = savedNodeEnv
+      if (savedVitest === undefined) delete process.env.VITEST
+      else process.env.VITEST = savedVitest
+    }
+  })
+
+  it('validação pré-commit rejeita S2 relacionalmente inválido e preserva S1 exato (zero linhas parciais)', async () => {
+    const database = openDatabase()
+    const rootA = path.join(fixture, 'workspace-a')
+    const s1 = makeSnapshot(rootA, { turnCount: 3 })
+    await database.putTupiniquimSessionSnapshot(s1)
+
+    const corruptions: Array<{ name: string; build: (valid: TupiniquimDurableSnapshot) => TupiniquimDurableSnapshot }> = [
+      {
+        name: 'turn com sessionId divergente',
+        build: (valid) => ({
+          ...valid,
+          turns: valid.turns.map((turn, index) => index === 0 ? { ...turn, sessionId: randomUUID() } : turn)
+        })
+      },
+      {
+        name: 'turn id duplicado',
+        build: (valid) => ({
+          ...valid,
+          turns: [...valid.turns, { ...valid.turns[0]!, text: 'duplicado' }]
+        })
+      },
+      {
+        name: 'binding duplicado para o mesmo provider',
+        build: (valid) => ({
+          ...valid,
+          providerBindings: [
+            ...valid.providerBindings,
+            { provider: valid.providerBindings[0]!.provider, threadId: 'thread-outra', model: 'outro-modelo' }
+          ]
+        })
+      },
+      {
+        name: 'mesma thread em dois providers',
+        build: (valid) => ({
+          ...valid,
+          providerBindings: [
+            valid.providerBindings[0]!,
+            { provider: 'codex-app-server' as const, threadId: valid.providerBindings[0]!.threadId, model: 'x' }
+          ]
+        })
+      },
+      {
+        name: 'turn com threadId sem binding compatível do provider',
+        build: (valid) => ({
+          ...valid,
+          turns: valid.turns.map((turn, index) => index === 0 ? { ...turn, threadId: 'thread-sem-binding' } : turn)
+        })
+      }
+    ]
+
+    for (const corruption of corruptions) {
+      const valid = makeSnapshot(rootA, { turnCount: 3 })
+      const invalid = corruption.build(valid)
+      // Validação pré-commit: rejeita ANTES do BEGIN IMMEDIATE (mensagem própria),
+      // não apenas por PK/FK do SQLite no meio da transação.
+      await expect(database.putTupiniquimSessionSnapshot(invalid)).rejects.toThrow(/pré-commit/)
+
+      // S1 permanece exatamente intacto; nenhuma linha parcial da tentativa.
+      const stored = await database.getTupiniquimSessionSnapshot(rootA)
+      expect(stored?.session.id).toBe(s1.session.id)
+      expect(stored?.turns.map((turn) => turn.id)).toEqual(s1.turns.map((turn) => turn.id))
+      const storedBindings = [...(stored?.providerBindings ?? [])].sort((a, b) => a.provider.localeCompare(b.provider))
+      const s1Bindings = [...s1.providerBindings].sort((a, b) => a.provider.localeCompare(b.provider))
+      expect(storedBindings).toEqual(s1Bindings)
+      const connection = raw()
+      try {
+        const orphan = connection.prepare('SELECT COUNT(*) AS total FROM tupiniquim_turns WHERE session_id = ?').get(valid.session.id) as { total: number }
+        expect(orphan.total).toBe(0)
+        expect(rawCount(connection, 'tupiniquim_turns')).toBe(3)
+        expect(rawCount(connection, 'tupiniquim_sessions')).toBe(1)
+        expect(rawCount(connection, 'tupiniquim_bindings')).toBe(2)
+        expect(rawCount(connection, 'tupiniquim_seen')).toBe(3)
+      } finally {
+        connection.close()
+      }
+    }
+  })
+
+  it('redige secrets na boundary durável antes do SQLite e preserva .env', async () => {
+    const database = openDatabase()
+    const rootA = path.join(fixture, 'workspace-a')
+    const session = makeSession(rootA)
+    const secrets = [
+      'chave exposta sk-proj-EXAMPLE123456789 no texto',
+      'cabecalho authorization=BearerExampleSecret fim',
+      'config api_key=ExampleSecretValue persistida',
+      'segredo token=ExampleSecretValue aqui',
+      '.env'
+    ]
+    const turns = secrets.map((text, index) => makeTurn(session, index, { text }))
+    const rawSecrets = ['sk-proj-EXAMPLE123456789', 'BearerExampleSecret', 'ExampleSecretValue']
+    const snapshot = makeSnapshot(rootA, { session, turnCount: 0, seenByProvider: {} })
+    await database.putTupiniquimSessionSnapshot({ ...snapshot, turns })
+
+    const stored = await database.getTupiniquimSessionSnapshot(rootA)
+    expect(stored?.turns).toHaveLength(5)
+    const storedTexts = stored?.turns.map((turn) => turn.text) ?? []
+    expect(storedTexts.join('\n')).not.toContain('sk-proj-EXAMPLE123456789')
+    expect(storedTexts.join('\n')).not.toContain('BearerExampleSecret')
+    expect(storedTexts.join('\n')).not.toContain('ExampleSecretValue')
+    expect(storedTexts.join('\n').match(/\[REDACTED\]/g)?.length).toBeGreaterThanOrEqual(4)
+    // Menção textual a .env permanece permitida e exatamente preservada.
+    expect(storedTexts.at(-1)).toBe('.env')
+
+    // Leitura do SQLite BRUTO: nenhum secret original presente em payload algum.
+    const connection = raw()
+    try {
+      const payloads = connection.prepare('SELECT payload FROM tupiniquim_turns WHERE session_id = ?').all(session.id) as Array<{ payload: string }>
+      const joined = payloads.map((row) => row.payload).join('\n')
+      for (const secret of rawSecrets) expect(joined).not.toContain(secret)
+      expect(joined).toContain('[REDACTED]')
+      expect(joined).toContain('"text":".env"')
+      // Campos originais preservados no SQLite (id/sessionId/provider/model/threadId/turnId/createdAt).
+      expect(joined).toContain(session.id)
+      expect(joined).toContain('"provider":"ollama"')
+      expect(joined).toContain('"model":"qwen-local"')
+      expect(joined).toContain('"threadId":"thread-ollama"')
+    } finally {
+      connection.close()
+    }
+  })
+
+  it('rejeita campos privilegiados extras no put (schema strict) e prova ausência no SQLite', async () => {
+    const database = openDatabase()
+    const rootA = path.join(fixture, 'workspace-a')
+    const s1 = makeSnapshot(rootA, { turnCount: 3 })
+    await database.putTupiniquimSessionSnapshot(s1)
+
+    const privatePayload = 'PAYLOAD_PRIVADO_QUE_NAO_PODE_PERSISTIR'
+    const poisoned = makeSnapshot(rootA, { turnCount: 0, seenByProvider: {} })
+    const attempted = {
+      ...poisoned,
+      proposalAuthority: { provider: 'ollama', threadId: 'thread-ollama', proposalIds: [randomUUID()] },
+      proposalIds: [randomUUID()],
+      privateProposalPayload: privatePayload,
+      turns: [{ ...makeTurn(poisoned.session, 0), text: `texto ${privatePayload}` }]
+    } as unknown as TupiniquimDurableSnapshot
+    await expect(database.putTupiniquimSessionSnapshot(attempted)).rejects.toThrow()
+
+    // S1 intacto e NENHUMA linha da sessão tentada; payload privado ausente do SQLite bruto.
+    const stored = await database.getTupiniquimSessionSnapshot(rootA)
+    expect(stored?.session.id).toBe(s1.session.id)
+    expect(stored?.turns.map((turn) => turn.id)).toEqual(s1.turns.map((turn) => turn.id))
+    const connection = raw()
+    try {
+      expect(rawCount(connection, 'tupiniquim_sessions')).toBe(1)
+      expect(rawCount(connection, 'tupiniquim_turns')).toBe(3)
+      const rows = connection.prepare("SELECT payload FROM tupiniquim_turns UNION ALL SELECT updated_at FROM tupiniquim_sessions").all() as Array<{ payload: string }>
+      const rawJoined = JSON.stringify(rows)
+      expect(rawJoined).not.toContain(privatePayload)
+    } finally {
+      connection.close()
+    }
   })
 })

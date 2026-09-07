@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { maxDurableTupiniquimTurns, tupiniquimDurableSnapshotSchema, validateTupiniquimSessionSnapshotIntegrity, type AIProviderKind, type AIEvent, type AIThread, type AITurn, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan, type PromptTemplate, type TupiniquimDurableSnapshot, type TupiniquimSession, type UIProfile, type VisualAsset } from '@tupiniquim/contracts'
+import { maxDurableTupiniquimTurns, redactTupiniquimDurableText, tupiniquimDurableSnapshotSchema, validateTupiniquimSessionSnapshotIntegrity, type AIProviderKind, type AIEvent, type AIThread, type AITurn, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan, type PromptTemplate, type TupiniquimDurableSnapshot, type TupiniquimSession, type UIProfile, type VisualAsset } from '@tupiniquim/contracts'
 
 type DatabaseOperation =
   | { type: 'initialize' }
@@ -290,18 +290,32 @@ parentPort.on('message', (request) => {
 })
 `
 
+/**
+ * Opção interna EXCLUSIVAMENTE test-only: `failAfter` injeta falha na
+ * transação real de snapshot no worker SQLite após N statements executados
+ * (uma única vez), provando ROLLBACK/atomicidade no caminho real.
+ *
+ * Guard de ambiente obrigatório: fora de ambiente de teste (Vitest ativo ou
+ * NODE_ENV=test) a opção é REJEITADA no construtor. Produção normal segue
+ * `new LocalDatabase(dataRoot)` sem opções; IPC/renderer nunca recebem fault
+ * injection (nada disso é exposto em preload/ipc/API geral).
+ */
+export interface LocalDatabaseInternalOptions {
+  failAfter?: { snapshotWriteStatements?: number }
+}
+
 export class LocalDatabase {
   private readonly worker: Worker
   private readonly pending = new Map<string, Pending>()
   private readonly ready: Promise<void>
 
-  /**
-   * @param options Opção interna EXCLUSIVAMENTE test-only: `failAfter` injeta
-   * falha na transação real de snapshot no worker SQLite após N statements
-   * executados (uma única vez), provando ROLLBACK/atomicidade no caminho real.
-   * Não é exposta via IPC, renderer ou API geral; produção nunca a utiliza.
-   */
-  public constructor(dataRoot: string, options: { failAfter?: { snapshotWriteStatements?: number } } = {}) {
+  public constructor(dataRoot: string, options: LocalDatabaseInternalOptions = {}) {
+    if (options.failAfter !== undefined) {
+      const testEnvironment = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
+      if (!testEnvironment) {
+        throw new Error('Falha injetada (failAfter) é exclusivamente test-only; não é permitida fora de ambiente de teste.')
+      }
+    }
     const databaseRoot = path.join(dataRoot, 'database')
     const backupRoot = path.join(dataRoot, 'backups', 'database')
     this.worker = new Worker(workerSource, { eval: true, workerData: { databasePath: path.join(databaseRoot, 'studio.sqlite'), backupRoot, failAfter: options.failAfter?.snapshotWriteStatements ?? 0 } })
@@ -338,16 +352,25 @@ export class LocalDatabase {
   /**
    * Persiste o snapshot durável da sessão Tupiniquim do workspace em uma única
    * transação atômica do worker SQLite (BEGIN IMMEDIATE/COMMIT, ROLLBACK em
-   * erro). Antes da transação aplica a retenção canônica: últimos 200 turns
-   * públicos, podando `seenByProvider` para ids ainda retidos no mesmo commit.
+   * erro). Antes de QUALQUER escrita a boundary garante, em ordem:
+   *
+   * 1. redaction canônico do texto de todos os durable turns (nenhum secret
+   *    bruto chega ao SQLite; limite final 2.000 chars);
+   * 2. seen referenciando apenas turns presentes no snapshot (fail-loud);
+   * 3. retenção canônica: últimos 200 turns, seen podado no mesmo snapshot;
+   * 4. schema durável strict (campos privilegiados extras são rejeitados);
+   * 5. validação relacional pré-commit (validateTupiniquimSessionSnapshotIntegrity)
+   *    — qualquer violação lança erro com ZERO escrita.
    */
   public async putTupiniquimSessionSnapshot(snapshot: TupiniquimDurableSnapshot): Promise<void> {
     await this.ready
-    // seen só pode referenciar turns presentes no snapshot recebido; referência
-    // a turn de outro workspace/sessão é erro de produtor (fail-loud antes de
-    // qualquer transação). A constraint FK do SQLite permanece como backstop.
-    assertSeenIdsWithinSnapshot(snapshot)
-    const durable = applyDurableSnapshotRetention(snapshot)
+    const sanitized = sanitizeDurableTurnTexts(snapshot)
+    assertSeenIdsWithinSnapshot(sanitized)
+    const durable = applyDurableSnapshotRetention(sanitized)
+    const violations = validateTupiniquimSessionSnapshotIntegrity(durable)
+    if (violations.length > 0) {
+      throw new Error(`Snapshot durável rejeitado na validação pré-commit: ${violations.join('; ')}`)
+    }
     await this.requestRaw({ type: 'putTupiniquimSessionSnapshot', snapshot: durable })
   }
 
@@ -397,6 +420,17 @@ interface StoredTupiniquimSessionSnapshot {
   bindings: Array<{ provider: AIProviderKind; threadId: string; model: string | null }>
   seen: Array<{ provider: AIProviderKind; turnId: string }>
 }
+
+/**
+ * Redaction na boundary durável: aplica o redactor canônico compartilhado
+ * (contracts) ao texto de TODOS os durable turns, preservando id, sessionId,
+ * provider, model, threadId, turnId e createdAt. Não confia no appendTurn do
+ * runtime: qualquer chamador do put passa por esta sanitização antes do SQLite.
+ */
+const sanitizeDurableTurnTexts = (snapshot: TupiniquimDurableSnapshot): TupiniquimDurableSnapshot => ({
+  ...snapshot,
+  turns: snapshot.turns.map((turn) => ({ ...turn, text: redactTupiniquimDurableText(turn.text) }))
+})
 
 /**
  * Validação relacional pré-transação: cada id em `seenByProvider` precisa
