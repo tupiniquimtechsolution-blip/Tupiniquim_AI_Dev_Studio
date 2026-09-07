@@ -30,6 +30,20 @@ O Dev Studio é multi-LLM. Um agente tem papel, capacidades, permissões e loado
 - OpenReply → automação social por APIs oficiais.
 - Strix → pentest/remediação somente em alvos próprios/autorizados.
 - Vibe Coding Toolkit → **Engineering Playbook Source**, não runtime: brainstorm→plan, orquestração de subagentes, revisão multiagente, quality gates e memória.
+- Google Skills → **First-Party Skill Source** para Google Cloud, Gemini, Agent Platform, Google Ads, Analytics, Firebase e demais produtos Google; resolução sob demanda via `finding-google-skills`.
+
+## Google skill routing
+
+Para pedidos relacionados a produtos Google, consultar primeiro `google/skills:skills/developers/finding-google-skills` quando a skill específica ainda não estiver carregada.
+
+Prioridades atuais:
+- Gemini API / multimodal / function calling → `skills/cloud/gemini-api`;
+- voz e streaming bidirecional → `skills/cloud/gemini-live-api`;
+- Skill Registry Google → `skills/cloud/agent-platform-skill-registry`;
+- segurança multiagente Google Cloud → `skills/cloud/google-cloud-solution-multi-agent-security`;
+- Google Ads MCP → `skills/ads/google-ads-api-mcp-setup`.
+
+A fonte é oficial, mas qualquer shell, rede, credencial, OAuth, instalação ou mudança de infraestrutura continua subordinada às políticas Tupiniquim. A escolha de modelo/provider continua sob controle do usuário.
 
 ## Design routing
 
@@ -72,7 +86,7 @@ Implementação:
 Esta integração não muda a Wave atual.
 
 - Wave 1: concluir runtime local/propostas/browser QA.
-- Wave 2: Research, Knowledge, Technology/Tool/MCP/Skill Registries + catálogos de referência.
+- Wave 2: Research, Knowledge, Technology/Tool/MCP/Skill Registries + catálogos de referência + `google/skills` como First-Party Skill Source.
 - Wave 3: hardening/dogfood + adoção seletiva de engineering playbooks/quality gates.
 - Wave 4: Agent Registry runtime e equipes por projeto.
 - Wave 5: multimodal/voz/social, incluindo Media Agent e provider Gemini quando aprovado.

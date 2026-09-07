@@ -43,10 +43,11 @@ Use esta skill em qualquer projeto da Tupiniquim quando estiver planejando, impl
 - Referências de aprendizagem/descoberta → Free Programming Books, Public APIs, Docker Awesome Compose, TheAlgorithms e Coding Interview University.
 - Supabase → capability/platform candidate por projeto, nunca dependência global.
 - Inferência Kimi experimental → kimi-k3-in-c.
+- Produtos Google/Gemini/Google Cloud/Google Ads → `google/skills`; se a skill específica ainda não estiver carregada, usar `finding-google-skills` como roteador oficial sob demanda.
 
 ## Regra de carga
 
-Não empilhe skills só porque existem. Selecione a menor combinação capaz de resolver a tarefa. Popularidade ou presença no Top 500 não equivale a aprovação de segurança.
+Não empilhe skills só porque existem. Selecione a menor combinação capaz de resolver a tarefa. Popularidade ou presença no Top 500 não equivale a aprovação de segurança. Para tarefas Google, uma skill oficial de `google/skills` deve ser preferida a uma alternativa comunitária equivalente, mas ainda passa pelo Skill Gate.
 
 ## Segurança
 

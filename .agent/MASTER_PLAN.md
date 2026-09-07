@@ -33,6 +33,7 @@ O ambiente desta máquina usa `F:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0012 su
 - Free Programming Books, TheAlgorithms e Coding Interview University como referências de aprendizagem/fundamentos.
 - Docker Awesome Compose como biblioteca de padrões de ambiente.
 - Skill Registry com Top 500 All-Time, Top 500 Trending e `find-skills` pinned.
+- `google/skills` registrado como First-Party Skill Source; `finding-google-skills` atua como roteador condicional para produtos Google, sem carregamento global.
 - Skill Gate com licença, custo, dependências, permissões, provenance e aprovação.
 - Metadados de UI UX Pro Max, Emil Skills e Taste Skill disponíveis para loadout sob demanda.
 - Supabase registrado como platform candidate por projeto; nenhuma adoção global implícita.
@@ -55,6 +56,7 @@ O ambiente desta máquina usa `F:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0012 su
 - `Anil-matcha/Open-Generative-AI` como principal capability source do Illustrator / Media Agent.
 - Gemini video presets (`/reveal`, `/teardown`, `/explodedview`) como aliases internos de prompt; provider real somente após contrato aprovado.
 - Pocket TTS para TTS local/voz.
+- Gemini Live API e Gemini API podem usar skills oficiais de `google/skills` como referência de implementação, sem antecipar provider real antes dos contratos/gates.
 - OpenReply para automação social.
 - kimi-k3-in-c apenas como pesquisa experimental.
 

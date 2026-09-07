@@ -261,7 +261,32 @@
       "Leonxlnx/taste-skill:design-taste-frontend"
     ],
     "installPolicy": "metadata-first; audit-and-approve-before-activation",
-    "source": "https://skills.sh"
+    "source": "https://skills.sh",
+    "firstPartySkillSources": [
+      {
+        "id": "google/skills",
+        "type": "FIRST_PARTY_SKILL_SOURCE",
+        "license": "Apache-2.0",
+        "activation": "on-demand",
+        "router": "google/skills:skills/developers/finding-google-skills",
+        "domains": [
+          "google-cloud",
+          "gemini",
+          "agent-platform",
+          "google-ads",
+          "google-analytics",
+          "firebase",
+          "google-developer-platforms"
+        ],
+        "priorityRule": "prefer over equivalent community skills for Google-specific tasks after Skill Gate"
+      }
+    ],
+    "conditionalPinned": [
+      {
+        "when": "request touches a Google product/API/developer platform and no specific official Google skill is already loaded",
+        "skill": "google/skills:skills/developers/finding-google-skills"
+      }
+    ]
   },
   "referenceLibraries": [
     "EbookFoundation/free-programming-books",

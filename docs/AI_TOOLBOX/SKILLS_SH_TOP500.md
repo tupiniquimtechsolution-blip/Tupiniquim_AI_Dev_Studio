@@ -11,6 +11,8 @@ O Tupiniquim manterá duas listas derivadas do skills.sh:
 
 A skill `vercel-labs/skills/find-skills` é **PINNED** e deve estar sempre disponível para descoberta.
 
+Além do leaderboard comunitário, o Tupiniquim mantém **fontes oficiais de primeira parte** fora do Top 500. A primeira registrada é `google/skills`. Para pedidos Google, o roteador `google/skills:skills/developers/finding-google-skills` tem preferência sobre descoberta comunitária equivalente, sempre sujeito ao Skill Gate.
+
 O skills.sh informa que o leaderboard é baseado em telemetria agregada de instalações do Skills CLI. O endpoint oficial `GET /api/v1/skills` suporta `view=all-time|trending|hot` e `per_page` de até 500.
 
 ## Por que catálogo em vez de instalar 500 skills de uma vez
@@ -28,6 +30,19 @@ Isso evita:
 - ampliação automática da superfície de ataque;
 - permissões excessivas;
 - custo e serviços externos ativados sem consentimento.
+
+## First-party sources
+
+### google/skills
+
+- tipo: `FIRST_PARTY_SKILL_SOURCE`;
+- licença declarada: Apache-2.0;
+- instalação upstream suportada via `npx skills add google/skills`;
+- não instalar/carregar todas as skills por padrão;
+- usar `finding-google-skills` como roteador condicional;
+- detalhes e skills prioritárias em `docs/AI_TOOLBOX/GOOGLE_SKILLS.md`.
+
+Primeira parte reduz risco de procedência e obsolescência, mas não equivale a aprovação automática de rede, shell, credenciais, OAuth, cloud ou custos.
 
 ## Find Skills
 
