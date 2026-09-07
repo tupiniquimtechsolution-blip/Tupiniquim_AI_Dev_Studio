@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import {
+  maxDurableTupiniquimTurnTextChars,
   maxTupiniquimSessionContextChars,
   tupiniquimConversationSchema,
   type AIProviderKind,
@@ -488,7 +489,9 @@ const isSuccessfulTurnStatus = (status: string): boolean => {
   return normalized === 'COMPLETED' || normalized === 'SUCCESS'
 }
 
-const redact = (value: string): string => value
+export const redactTupiniquimSessionText = (value: string): string => value
   .replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gu, '[REDACTED]')
   .replace(/(authorization|api[_-]?key|token)\s*[:=]\s*\S+/giu, '$1=[REDACTED]')
-  .slice(0, 2_000)
+  .slice(0, maxDurableTupiniquimTurnTextChars)
+
+const redact = redactTupiniquimSessionText
