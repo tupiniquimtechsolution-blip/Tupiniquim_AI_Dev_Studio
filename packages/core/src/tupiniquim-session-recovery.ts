@@ -29,12 +29,11 @@ import type { TupiniquimSessionService } from './tupiniquim-session'
  *
  * Depois o renderer chama `agent.session()` e recebe o estado recuperado.
  *
- * LIMITAÇÃO EXPLÍCITA deste incremento (não escondida): somente a Tupiniquim
- * Session, bindings, turns e seen são restaurados. O `OllamaAdapter` continua
- * com conversations in-memory, portanto um NOVO send Ollama pós-restart sobre a
- * thread restaurada é recusado pelo próprio adapter ("Thread Ollama persistida
- * não pode ser retomada sem o histórico em memória desta sessão."). Ollama
- * conversation hydrate é escopo do Incremento 3.
+ * Este módulo restaura somente a Tupiniquim Session, bindings, turns e seen.
+ * No Incremento 3/4, o processo main usa esse binding já validado para hidratar
+ * a conversation Ollama com o histórico público recuperado antes do primeiro
+ * send pós-restart. O hydrate não faz parte deste módulo e nunca é autorizado
+ * por um threadId avulso do renderer sem binding da sessão.
  *
  * Este módulo NÃO faz write-through (nenhuma escrita de snapshot), NÃO altera
  * shutdown e NÃO toca em `.agent/*`.

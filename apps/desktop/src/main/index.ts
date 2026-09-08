@@ -566,12 +566,25 @@ const registerIpc = (): void => {
        * persistida validada e model de provenance verificado. Os contextos
        * (workspace metadata-only e session) continuam efêmeros por request.
        */
+      const sessionBoundThread = tupiniquimSession.threadFor(provider)
       const boundThread = tupiniquimSession.resolveChatThread(provider, input.threadId)
-      if (provider === 'ollama' && boundThread !== undefined && !ollamaAgent.hasConversation(boundThread)) {
+      if (
+        provider === 'ollama' &&
+        sessionBoundThread !== undefined &&
+        boundThread === sessionBoundThread &&
+        !ollamaAgent.hasConversation(sessionBoundThread)
+      ) {
+        /**
+         * Hydrate só tem autoridade para a thread efetivamente vinculada à
+         * Tupiniquim Session já validada pelo recovery. Um threadId fornecido
+         * pelo renderer sem binding não pode criar conversation vazia e
+         * contornar a recusa fail-closed do Ollama para thread persistida sem
+         * histórico público recuperável.
+         */
         await ollamaAgent.hydrateConversation({
-          threadId: boundThread,
+          threadId: sessionBoundThread,
           model: tupiniquimSession.modelFor('ollama'),
-          messages: tupiniquimSession.durableConversationForThread(boundThread)
+          messages: tupiniquimSession.durableConversationForThread(sessionBoundThread)
         })
       }
       const routedInput = input.proposalContext !== undefined

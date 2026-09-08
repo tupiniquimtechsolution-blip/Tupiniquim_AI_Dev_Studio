@@ -531,10 +531,18 @@ describe('OllamaAdapter', () => {
     threads.set('thread-model-divergente', { id: 'thread-model-divergente', provider: 'ollama', workspaceRoot: currentWorkspaceRoot, model: 'mistral-local', createdAt: now, updatedAt: now })
     await expect(adapter.hydrateConversation({ threadId: 'thread-model-divergente', model: 'qwen-local', messages: [] }))
       .rejects.toThrow('diverge do model da thread')
+    threads.set('thread-model-persistido-string-binding-null', { id: 'thread-model-persistido-string-binding-null', provider: 'ollama', workspaceRoot: currentWorkspaceRoot, model: 'qwen-local', createdAt: now, updatedAt: now })
+    await expect(adapter.hydrateConversation({ threadId: 'thread-model-persistido-string-binding-null', model: null, messages: [] }))
+      .rejects.toThrow('diverge do model da thread')
+    threads.set('thread-model-persistido-null-binding-string', { id: 'thread-model-persistido-null-binding-string', provider: 'ollama', workspaceRoot: currentWorkspaceRoot, model: null, createdAt: now, updatedAt: now })
+    await expect(adapter.hydrateConversation({ threadId: 'thread-model-persistido-null-binding-string', model: 'qwen-local', messages: [] }))
+      .rejects.toThrow('diverge do model da thread')
     // Nenhuma instalação parcial: nada foi hidratado.
     expect(adapter.hasConversation('thread-codex')).toBe(false)
     expect(adapter.hasConversation('thread-outro-ws')).toBe(false)
     expect(adapter.hasConversation('thread-model-divergente')).toBe(false)
+    expect(adapter.hasConversation('thread-model-persistido-string-binding-null')).toBe(false)
+    expect(adapter.hasConversation('thread-model-persistido-null-binding-string')).toBe(false)
     await adapter.close()
   })
 

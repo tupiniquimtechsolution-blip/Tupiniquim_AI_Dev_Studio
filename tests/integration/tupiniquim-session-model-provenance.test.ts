@@ -157,12 +157,17 @@ const createRuntime = (input: {
     history: input.database
   })
   const send = async (message: string, options: { threadId?: string; workspaceContext?: string } = {}) => {
+    const sessionBoundThread = sessions.threadFor(provider)
     const boundThread = sessions.resolveChatThread(provider, options.threadId)
-    if (boundThread !== undefined && !adapter.hasConversation(boundThread)) {
+    if (
+      sessionBoundThread !== undefined &&
+      boundThread === sessionBoundThread &&
+      !adapter.hasConversation(sessionBoundThread)
+    ) {
       await adapter.hydrateConversation({
-        threadId: boundThread,
+        threadId: sessionBoundThread,
         model: sessions.modelFor(provider),
-        messages: sessions.durableConversationForThread(boundThread)
+        messages: sessions.durableConversationForThread(sessionBoundThread)
       })
     }
     const pendingContext = sessions.unseenPublicContext(provider)
@@ -215,6 +220,36 @@ afterEach(async () => {
 })
 
 describe('Wave 16 inc3 — model provenance real com write-through atômico', () => {
+  it('não hidrata thread Ollama persistida indicada só pelo renderer sem binding de sessão', async () => {
+    const root = path.join(fixture, 'workspace-thread-sem-binding')
+    const database = openDatabase()
+    const threadId = 'thread-persistida-sem-binding'
+    const now = new Date().toISOString()
+    await database.putAIThread({
+      id: threadId,
+      provider: 'ollama',
+      workspaceRoot: root,
+      model: modelA,
+      createdAt: now,
+      updatedAt: now
+    })
+
+    const runtime = createRuntime({ database, root })
+    await runtime.adapter.connect()
+    runtime.adapter.selectModel(modelA)
+    expect(runtime.sessions.threadFor('ollama')).toBeUndefined()
+    expect(runtime.adapter.hasConversation(threadId)).toBe(false)
+
+    await expect(runtime.send('renderer não pode dar autoridade de hydrate', { threadId }))
+      .rejects.toThrow('Thread Ollama persistida não pode ser retomada sem o histórico em memória desta sessão.')
+
+    expect(runtime.sessions.threadFor('ollama')).toBeUndefined()
+    expect(runtime.adapter.hasConversation(threadId)).toBe(false)
+    expect(runtime.chatBodies).toHaveLength(0)
+    expect(await database.getTupiniquimSessionSnapshot(root)).toBeNull()
+    await runtime.adapter.close()
+  })
+
   it('A: modelo real no turn — A → A; selecionar B na mesma thread → B (nunca A falsificado)', async () => {
     const root = path.join(fixture, 'workspace-a')
     const database = openDatabase()

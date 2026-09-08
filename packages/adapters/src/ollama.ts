@@ -252,7 +252,7 @@ export class OllamaAdapter implements AIProvider {
     if (parsedThread.workspaceRoot !== workspaceRoot) {
       throw new Error('Thread Ollama a hidratar pertence a outro workspace.')
     }
-    if (input.model !== null && parsedThread.model !== null && input.model !== parsedThread.model) {
+    if (input.model !== parsedThread.model) {
       throw new Error('Model do binding diverge do model da thread Ollama persistida.')
     }
     const restoreSelection = this.selectedModel === null && input.model !== null
