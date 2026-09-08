@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { _electron as electron, expect, test, type Locator, type Page } from '@playwright/test'
+import { _electron as electron, expect, test, type ElectronApplication, type Locator, type Page } from '@playwright/test'
 
 const execFileAsync = promisify(execFile)
 const ollamaModel = 'tupiniquim-e2e-model'
@@ -858,6 +858,460 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
   } finally {
     try {
       if (application !== null) await application.close()
+    } finally {
+      try {
+        if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
+        if (workspaceRootB !== '') await rm(workspaceRootB, { recursive: true, force: true })
+      } finally {
+        await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
+      }
+    }
+  }
+})
+
+test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma Tupiniquim Session', async () => {
+  const projectRoot = process.cwd()
+  /**
+   * Wave 16 — Incremento 4/4: restart E2E REAL.
+   *
+   *   Electron processo 1 → shutdown normal (sequenciador aguardável)
+   *   → processo realmente encerra (exit code 0, single-instance lock liberado)
+   *   → Electron processo 2 (MESMO dataRoot) → recovery da MESMA session S.
+   *
+   * Não são aceitos como substituto deste teste: recriar service, reabrir só o
+   * SQLite, reinstanciar adapter no mesmo processo ou mock lógico de restart.
+   * O gate real continua sendo a máquina Windows F: (pnpm test:e2e).
+   */
+  const tempEnv = process.env.TEMP
+  test.skip(
+    process.platform !== 'win32' || tempEnv === undefined || path.parse(tempEnv).root.toUpperCase() !== 'F:\\',
+    `E2E de restart requer Windows real com TEMP em F: e display Electron (plataforma=${process.platform}, TEMP=${tempEnv ?? 'ausente'}). Executar na máquina Windows F: via pnpm test:e2e.`
+  )
+  const temp = tempEnv as string
+
+  // Marcador privado EXCLUSIVO da execução (nunca deve vazar para artefato público).
+  const privateMarker = `E2E_WAVE16_PRIVATE_${randomUUID()}`
+  const newPrivateMarker = `E2E_WAVE16_PRIVATE_NEW_${randomUUID()}`
+  const restartProposalTarget = 'proposta-restart-wave16.txt'
+  const continuityMessage = 'Meu projeto usa arquitetura X'
+  const codexMessage = 'Continue a análise'
+  const ollamaResumeMessage = 'Retome no Ollama.'
+  const postRestartMessage = 'Nova pergunta pós-restart'
+  const postRestartMessage2 = 'Mais uma pergunta pós-restart'
+
+  interface ChatRequest { model: string; messages: Array<{ role: string; content: string }> }
+  const chatRequests: ChatRequest[] = []
+  let toolRequestCount = 0
+  const server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/api/tags') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+      response.end(JSON.stringify({ models: [{ name: ollamaModel, model: ollamaModel, modified_at: '2026-08-20T12:00:00.000Z', size: 1_024 }] }))
+      return
+    }
+    if (request.method === 'POST' && request.url === '/api/chat') {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.once('end', () => {
+        try {
+          const parsed = JSON.parse(body) as ChatRequest & { tools?: unknown[] }
+          chatRequests.push(parsed)
+          const usesTools = Array.isArray(parsed.tools) && parsed.tools.length > 0
+          // A PRIMEIRA proposal (fase 1) carrega o marcador privado original;
+          // a segunda (fase 2) carrega um payload novo — o antigo nunca pode
+          // ressuscitar depois do restart.
+          if (usesTools) toolRequestCount += 1
+          const proposalContent = `${toolRequestCount === 1 ? privateMarker : newPrivateMarker}\n`
+          response.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8' })
+          response.end(`${JSON.stringify(usesTools ? {
+            message: {
+              content: '',
+              tool_calls: [{
+                function: {
+                  name: 'tupiniquim_workspace_write_proposal',
+                  arguments: { relativePath: restartProposalTarget, content: proposalContent, operation: 'CREATE' }
+                }
+              }]
+            },
+            done: true
+          } : {
+            message: { content: 'TUPINIQUIM_SESSION_OK' },
+            done: true
+          })}\n`)
+        } catch {
+          response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+          response.end(JSON.stringify({ error: 'invalid request' }))
+        }
+      })
+      return
+    }
+    response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
+    response.end(JSON.stringify({ error: 'not found' }))
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('Mock não recebeu porta.')
+  const mockUrl = `http://127.0.0.1:${String(address.port)}`
+
+  const launchEnv = {
+    ...process.env,
+    ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
+    TUPINIQUIM_OLLAMA_BASE_URL: mockUrl,
+    TUPINIQUIM_CODEX_PATH: process.execPath,
+    TUPINIQUIM_CODEX_SERVER_ARGS: JSON.stringify([path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs')])
+  }
+  const provenanceRegion = (page: Page): Locator => page.getByRole('region', { name: 'Proveniência da proposta de escrita' })
+  const proposalIdOf = (region: Locator): Locator => region.locator('dt').filter({ hasText: /^Proposal$/u }).locator('..').locator('dd')
+  const waitForRealExit = async (application: ElectronApplication, budgetMs = 120_000): Promise<number | null> => {
+    const child = application.process()
+    if (child.exitCode !== null) return child.exitCode
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(-1), budgetMs)
+      child.once('exit', (code) => { clearTimeout(timer); resolve(code) })
+    })
+  }
+
+  let application: ElectronApplication | null = null
+  let workspaceRoot = ''
+  let workspaceRootB = ''
+  try {
+    workspaceRoot = await mkdtemp(path.join(temp, 'tupiniquim-e2e-restart-a-'))
+    await writeFile(path.join(workspaceRoot, 'README.md'), '# E2E Restart A\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot })
+    workspaceRootB = await mkdtemp(path.join(temp, 'tupiniquim-e2e-restart-b-'))
+    await writeFile(path.join(workspaceRootB, 'README.md'), '# E2E Restart B\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRootB })
+
+    // ══════════════════════════ FASE 1 — PROCESSO 1 ══════════════════════════
+    application = await electron.launch({ args: ['.'], cwd: projectRoot, timeout: 180_000, env: launchEnv })
+    const processErrors: string[] = []
+    application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
+    const page = await application.firstWindow({ timeout: 180_000 }).catch((cause: unknown) => {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(`${detail}\nElectron stderr:\n${processErrors.join('')}`)
+    })
+    await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
+    await application.evaluate(({ dialog }, roots) => {
+      const queue = [roots.root, roots.nextRoot, roots.root]
+      let pickCount = 0
+      Object.defineProperty(dialog, 'showOpenDialog', {
+        configurable: true,
+        value: () => Promise.resolve({ canceled: false, filePaths: [queue[pickCount++ % queue.length] ?? roots.root] })
+      })
+      Object.defineProperty(dialog, 'showMessageBox', {
+        configurable: true,
+        value: () => Promise.resolve({ response: 0, checkboxChecked: false })
+      })
+    }, { root: workspaceRoot, nextRoot: workspaceRootB })
+    await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
+    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    const sessionIdA = await page.getByLabel('Sessão Tupiniquim').getAttribute('data-session-id')
+    if (sessionIdA === null || sessionIdA === '') throw new Error('Sessão Tupiniquim ausente na fase 1.')
+    const systemInfo1 = await page.evaluate(async () => await window.studio.system.info())
+    if (!systemInfo1.ok) throw new Error('system.info indisponível na fase 1.')
+
+    // CHAT inicial (binding Ollama + conversa pública).
+    await page.getByLabel('Provedor de IA').selectOption('ollama')
+    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
+    await expect(page.locator('.availability')).toHaveText('READY')
+    await page.locator('.mode-switch').getByRole('button', { name: 'Chat', exact: true }).click()
+    await page.getByLabel('Mensagem ao agente').fill(continuityMessage)
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    await expect(page.locator('.agent-conversation')).toContainText(continuityMessage)
+    await expect(page.locator('.agent-conversation')).toContainText('TUPINIQUIM_SESSION_OK', { timeout: 30_000 })
+
+    // Proposal efêmera com marcador privado (authority efêmera).
+    const proposalSlot = await page.evaluate(async () => {
+      const created = await window.studio.planning.create({ objective: 'E2E restart proposal authority', mode: 'PLAN' })
+      if (!created.ok) throw new Error(`planning.create falhou: ${created.error.message}`)
+      const stepId = created.value.plan.steps.find((step) => step.requiresApproval)?.id
+      if (stepId === undefined) throw new Error('Plano E2E sem passo de escrita aprovável.')
+      const sent = await window.studio.agent.send({
+        message: 'Proponha um arquivo para o teste de restart.',
+        mode: 'PLAN',
+        proposalContext: { executionId: created.value.execution.id, stepId }
+      })
+      if (!sent.ok) throw new Error(`agent.send falhou: ${sent.error.message}`)
+      return { executionId: created.value.execution.id, stepId, threadId: sent.value.threadId }
+    })
+    await expect(provenanceRegion(page)).toBeVisible({ timeout: 30_000 })
+    await expect(provenanceRegion(page).locator('header span')).toHaveText('PENDING_REVIEW')
+    const proposalIdA = await proposalIdOf(provenanceRegion(page)).textContent()
+    if (proposalIdA === null) throw new Error('Proposal da fase 1 sem ID.')
+
+    // Troca de provider mantendo a MESMA Tupiniquim Session.
+    await page.getByLabel('Provedor de IA').selectOption('codex-app-server')
+    await expect(page.locator('.availability')).toHaveText('READY')
+    await expect(page.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
+    await expect(provenanceRegion(page).filter({ has: page.locator('dd', { hasText: proposalIdA }) }).locator('header span')).toHaveText('EXPIRED')
+
+    // CHAT no Codex: produz turno público de outro provider (contexto cruzado).
+    await page.getByLabel('Mensagem ao agente').fill(codexMessage)
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    await expect(page.locator('.agent-conversation')).toContainText('CONTEXTO_TUPINIQUIM_OK', { timeout: 30_000 })
+
+    // Volta ao Ollama: o contexto não visto (turnos Codex) é entregue via
+    // sessionContext e ACKado em SUCCESS — visto/seen fica durável.
+    await page.getByLabel('Provedor de IA').selectOption('ollama')
+    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
+    await expect(page.locator('.availability')).toHaveText('READY')
+    await page.getByLabel('Mensagem ao agente').fill(ollamaResumeMessage)
+    await page.getByRole('button', { name: 'Enviar', exact: true }).click()
+    await expect(page.locator('.agent-conversation')).toContainText('TUPINIQUIM_SESSION_OK', { timeout: 30_000 })
+    const resumeRequest = chatRequests.at(-1)
+    if (resumeRequest === undefined) throw new Error('Request de retomada não registrado.')
+    expect(JSON.stringify(resumeRequest)).toContain('CONTEXTO DA SESSÃO TUPINIQUIM')
+    expect(JSON.stringify(resumeRequest)).toContain(codexMessage)
+    expect(JSON.stringify(resumeRequest)).not.toContain(privateMarker)
+
+    const beforeQuit = await page.evaluate(async () => await window.studio.agent.session())
+    if (!beforeQuit.ok || beforeQuit.value === null) throw new Error('Sessão Tupiniquim indisponível antes do shutdown.')
+    expect(beforeQuit.value.session.id).toBe(sessionIdA)
+    expect(beforeQuit.value.proposalAuthority).toBeNull()
+    const threadsBeforeQuit = [...beforeQuit.value.providerThreads].sort((left, right) => left.provider.localeCompare(right.provider))
+
+    // ── SHUTDOWN NORMAL REAL: app.quit() → before-quit → sequenciador
+    // aguardável → processo realmente encerra com exit code 0. ──────────────
+    const chatRequestsPhase1 = chatRequests.length
+    await application.evaluate(({ app }) => { app.quit() })
+    const exitCode = await waitForRealExit(application)
+    expect(exitCode, `Processo 1 não encerrou limpo (stderr: ${processErrors.join('').slice(0, 2_000)}).`).toBe(0)
+    application = null
+
+    // O shutdown aguardável deixou evidência sanitizada no AuditLog ANTES da saída.
+    const dataRoot = `${projectRoot}.data`
+    const auditAfterShutdown = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
+    const shutdownLines = auditAfterShutdown.split('\n').filter((line) => line.includes('"capability":"app.shutdown"'))
+    expect(shutdownLines.length).toBeGreaterThanOrEqual(1)
+    expect(shutdownLines.at(-1) ?? '').toContain('"outcome":"SUCCESS"')
+    expect(shutdownLines.at(-1) ?? '').toContain('databaseClosed=yes')
+    expect(shutdownLines.at(-1) ?? '').toContain('persistenceSettled=yes')
+    expect(shutdownLines.at(-1) ?? '').not.toContain(privateMarker)
+
+    // ══════════════════════════ FASE 2 — PROCESSO 2 ══════════════════════════
+    application = await electron.launch({ args: ['.'], cwd: projectRoot, timeout: 180_000, env: launchEnv })
+    const processErrors2: string[] = []
+    application.process().stderr?.on('data', (chunk: Buffer) => processErrors2.push(chunk.toString('utf8')))
+    const page2 = await application.firstWindow({ timeout: 180_000 }).catch((cause: unknown) => {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(`${detail}\nElectron stderr (processo 2):\n${processErrors2.join('')}`)
+    })
+    await expect(page2).toHaveTitle('Tupiniquim AI Dev Studio')
+    await application.evaluate(({ dialog }, roots) => {
+      const queue = [roots.root, roots.nextRoot, roots.root]
+      let pickCount = 0
+      Object.defineProperty(dialog, 'showOpenDialog', {
+        configurable: true,
+        value: () => Promise.resolve({ canceled: false, filePaths: [queue[pickCount++ % queue.length] ?? roots.root] })
+      })
+      Object.defineProperty(dialog, 'showMessageBox', {
+        configurable: true,
+        value: () => Promise.resolve({ response: 0, checkboxChecked: false })
+      })
+    }, { root: workspaceRoot, nextRoot: workspaceRootB })
+
+    // MESMO dataRoot do processo 1.
+    const systemInfo2 = await page2.evaluate(async () => await window.studio.system.info())
+    if (!systemInfo2.ok) throw new Error('system.info indisponível na fase 2.')
+    expect(systemInfo2.value.dataRoot).toBe(systemInfo1.value.dataRoot)
+
+    // Abrir o MESMO workspace A: recovery da MESMA session S.
+    await page2.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
+    await expect(page2.locator('.notice')).toContainText('Workspace autorizado')
+    await expect(page2.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
+
+    const recovered = await page2.evaluate(async () => await window.studio.agent.session())
+    if (!recovered.ok || recovered.value === null) throw new Error('Sessão Tupiniquim não recuperada no processo 2.')
+    expect(recovered.value.session.id).toBe(sessionIdA)
+    // Bindings restaurados: provider correto, thread correta, model real.
+    const recoveredThreads = [...recovered.value.providerThreads].sort((left, right) => left.provider.localeCompare(right.provider))
+    expect(recoveredThreads).toEqual(threadsBeforeQuit)
+    const ollamaThread = recoveredThreads.find((binding) => binding.provider === 'ollama')
+    const codexThread = recoveredThreads.find((binding) => binding.provider === 'codex-app-server')
+    if (ollamaThread === undefined || codexThread === undefined) throw new Error('Bindings Ollama/Codex não restaurados.')
+    expect(ollamaThread.model).toBe(ollamaModel)
+    expect(codexThread.model).toBe('codex-test-model')
+    // Thread correta: o binding Ollama é a MESMA thread do turno de proposal
+    // da fase 1; o binding Codex é a thread do servidor controlado.
+    expect(ollamaThread.threadId).toBe(proposalSlot.threadId)
+    expect(ollamaThread.threadId).not.toBe(codexThread.threadId)
+    // Turns públicos restaurados, com provenance de model real.
+    expect(recovered.value.turns.some((turn) => turn.text.includes(continuityMessage) && turn.model === ollamaModel)).toBe(true)
+    expect(recovered.value.turns.some((turn) => turn.role === 'assistant' && turn.text.includes('CONTEXTO_TUPINIQUIM_OK') && turn.model === 'codex-test-model')).toBe(true)
+    // Lifecycle efêmero vazio: proposal/authority anteriores ausentes.
+    expect(recovered.value.proposalAuthority).toBeNull()
+    // A proposal antiga não ressuscita: id desconhecido é EXPIRED fail-closed.
+    const oldProposalStatus = await page2.evaluate(async (id: string) => await window.studio.agent.lookupProposalStatus(id), proposalIdA)
+    expect(oldProposalStatus).toMatchObject({ ok: true, value: 'EXPIRED' })
+    const applyOld = await page2.evaluate(async (id) => await window.studio.planning.applyProposedWorkspaceWrite({ proposalId: id }), proposalIdA)
+    expect(applyOld).toMatchObject({ ok: false })
+    // Conversa pública restaurada no renderer.
+    await expect(page2.locator('.agent-conversation')).toContainText(continuityMessage)
+    await expect(page2.locator('.agent-conversation')).toContainText(codexMessage)
+
+    // ── CHAT pós-restart: continuidade legítima com contexto incremental ────
+    await page2.getByLabel('Provedor de IA').selectOption('ollama')
+    await page2.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
+    await expect(page2.locator('.availability')).toHaveText('READY')
+    const firstSend = await page2.evaluate(async (message: string) => await window.studio.agent.send({ message, mode: 'CHAT' }), postRestartMessage)
+    if (!firstSend.ok) throw new Error(`agent.send pós-restart falhou: ${firstSend.error.message}`)
+    expect(firstSend.value.threadId).toBe(ollamaThread.threadId)
+    expect(firstSend.value.model).toBe(ollamaModel)
+    await expect(page2.locator('.agent-conversation')).toContainText('TUPINIQUIM_SESSION_OK', { timeout: 30_000 })
+    const firstPostRestartRequest = chatRequests.at(-1)
+    if (firstPostRestartRequest === undefined) throw new Error('Request pós-restart não registrado.')
+    expect(firstPostRestartRequest.model).toBe(ollamaModel)
+    // Hydrate da thread: histórico público retomado (continuidade legítima).
+    expect(firstPostRestartRequest.messages.some((message) => message.role === 'user' && message.content.includes(continuityMessage))).toBe(true)
+    expect(firstPostRestartRequest.messages.some((message) => message.role === 'assistant' && message.content.includes('TUPINIQUIM_SESSION_OK'))).toBe(true)
+    expect(firstPostRestartRequest.messages.some((message) => message.content.includes(postRestartMessage))).toBe(true)
+    // Contextos EFÊMEROS POR REQUEST: workspace context exatamente 1x.
+    expect(firstPostRestartRequest.messages.filter((message) => message.content.includes('CONTEXTO DO WORKSPACE'))).toHaveLength(1)
+    // Contexto já ACKado NÃO é retransmitido: seen restaurado pelo recovery.
+    expect(firstPostRestartRequest.messages.filter((message) => message.content.includes('CONTEXTO DA SESSÃO TUPINIQUIM'))).toHaveLength(0)
+    expect(JSON.stringify(firstPostRestartRequest)).not.toContain(privateMarker)
+    const firstRequestLength = firstPostRestartRequest.messages.length
+
+    // Segundo CHAT: o histórico cresce exatamente user+assistant; nenhum
+    // system/workspace context é duplicado no histórico Ollama.
+    await page2.getByLabel('Mensagem ao agente').fill(postRestartMessage2)
+    await page2.getByRole('button', { name: 'Enviar', exact: true }).click()
+    await expect(page2.locator('.agent-conversation')).toContainText(postRestartMessage2, { timeout: 30_000 })
+    const secondPostRestartRequest = chatRequests.at(-1)
+    if (secondPostRestartRequest === undefined) throw new Error('Segundo request pós-restart não registrado.')
+    expect(secondPostRestartRequest.messages.filter((message) => message.content.includes('CONTEXTO DO WORKSPACE'))).toHaveLength(1)
+    expect(secondPostRestartRequest.messages.filter((message) => message.content.includes('CONTEXTO DA SESSÃO TUPINIQUIM'))).toHaveLength(0)
+    expect(secondPostRestartRequest.messages.filter((message) => message.content.includes(postRestartMessage2))).toHaveLength(1)
+    expect(secondPostRestartRequest.messages.length - firstRequestLength).toBe(2)
+
+    // ── PLAN/proposal pós-restart: NOVA authority legítima ───────────────────
+    const newProposalSlot = await page2.evaluate(async () => {
+      const created = await window.studio.planning.create({ objective: 'E2E restart new proposal', mode: 'PLAN' })
+      if (!created.ok) throw new Error(`planning.create falhou: ${created.error.message}`)
+      const stepId = created.value.plan.steps.find((step) => step.requiresApproval)?.id
+      if (stepId === undefined) throw new Error('Plano E2E sem passo de escrita aprovável.')
+      const sent = await window.studio.agent.send({
+        message: 'Nova proposta pós-restart.',
+        mode: 'PLAN',
+        proposalContext: { executionId: created.value.execution.id, stepId }
+      })
+      if (!sent.ok) throw new Error(`agent.send falhou: ${sent.error.message}`)
+      return { executionId: created.value.execution.id, stepId, threadId: sent.value.threadId }
+    })
+    await expect(provenanceRegion(page2)).toBeVisible({ timeout: 30_000 })
+    await expect(provenanceRegion(page2).last().locator('header span')).toHaveText('PENDING_REVIEW')
+    const proposalIdB = await proposalIdOf(provenanceRegion(page2).last()).textContent()
+    if (proposalIdB === null) throw new Error('Nova proposal sem ID.')
+    expect(proposalIdB).not.toBe(proposalIdA)
+    const authorityAfterProposal = await page2.evaluate(async () => await window.studio.agent.session())
+    if (!authorityAfterProposal.ok || authorityAfterProposal.value === null) throw new Error('Sessão indisponível após nova proposal.')
+    expect(authorityAfterProposal.value.proposalAuthority).not.toBeNull()
+    expect(authorityAfterProposal.value.proposalAuthority?.provider).toBe('ollama')
+    expect(authorityAfterProposal.value.proposalAuthority?.proposalIds).toContain(proposalIdB)
+    expect(JSON.stringify(authorityAfterProposal.value)).not.toContain(privateMarker)
+
+    // Troca de provider NÃO transfere a authority da nova proposal.
+    await page2.getByLabel('Provedor de IA').selectOption('codex-app-server')
+    await expect(page2.locator('.availability')).toHaveText('READY')
+    const afterProviderSwitch = await page2.evaluate(async () => await window.studio.agent.session())
+    if (!afterProviderSwitch.ok || afterProviderSwitch.value === null) throw new Error('Sessão indisponível após troca de provider.')
+    expect(afterProviderSwitch.value.proposalAuthority).toBeNull()
+    const newProposalAfterSwitch = await page2.evaluate(async (id: string) => await window.studio.agent.lookupProposalStatus(id), proposalIdB)
+    expect(newProposalAfterSwitch).toMatchObject({ ok: true, value: 'EXPIRED' })
+    await expect(provenanceRegion(page2).filter({ has: page2.locator('dd', { hasText: proposalIdB }) }).locator('header span')).toHaveText('EXPIRED')
+    const hijack = await page2.evaluate(async (slot) => await window.studio.agent.send({
+      message: 'Não transfira a authority.',
+      mode: 'PLAN',
+      proposalContext: { executionId: slot.executionId, stepId: slot.stepId }
+    }), newProposalSlot)
+    expect(hijack).toMatchObject({ ok: false })
+
+    // ── A → B → A: B é isolado; A volta com a MESMA session e bindings ──────
+    await page2.getByLabel('Provedor de IA').selectOption('ollama')
+    await page2.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
+    await expect(page2.locator('.availability')).toHaveText('READY')
+    await page2.locator('.project-switcher').click()
+    await expect(page2.locator('.project-switcher')).toContainText(path.basename(workspaceRootB))
+    await expect(page2.locator('.notice')).toContainText('Workspace autorizado')
+    const sessionIdB = await page2.getByLabel('Sessão Tupiniquim').getAttribute('data-session-id')
+    expect(sessionIdB).toBeTruthy()
+    expect(sessionIdB).not.toBe(sessionIdA)
+    await expect(page2.locator('.agent-conversation')).not.toContainText(continuityMessage)
+    await expect(provenanceRegion(page2)).toHaveCount(0)
+    const isolated = await page2.evaluate(async () => await window.studio.agent.session())
+    if (!isolated.ok || isolated.value === null) throw new Error('Sessão do workspace B ausente.')
+    expect(isolated.value.session.id).toBe(sessionIdB)
+    expect(isolated.value.turns).toEqual([])
+    expect(isolated.value.providerThreads).toEqual([])
+    expect(JSON.stringify(isolated.value)).not.toContain(continuityMessage)
+    expect(JSON.stringify(isolated.value)).not.toContain(privateMarker)
+
+    // Volta a A: recupera a session S com bindings preservados.
+    await page2.locator('.project-switcher').click()
+    await expect(page2.locator('.project-switcher')).toContainText(path.basename(workspaceRoot))
+    await expect(page2.locator('.notice')).toContainText('Workspace autorizado')
+    await expect(page2.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
+    const restoredA = await page2.evaluate(async () => await window.studio.agent.session())
+    if (!restoredA.ok || restoredA.value === null) throw new Error('Sessão A não restaurada no processo 2.')
+    expect(restoredA.value.session.id).toBe(sessionIdA)
+    expect([...restoredA.value.providerThreads].sort((left, right) => left.provider.localeCompare(right.provider))).toEqual(threadsBeforeQuit)
+    expect(restoredA.value.turns.some((turn) => turn.text.includes(continuityMessage))).toBe(true)
+    expect(restoredA.value.proposalAuthority).toBeNull()
+
+    // ── Marcador privado AUSENTE de todos os storages aplicáveis ────────────
+    // 1) DOM e conversation pública do renderer.
+    const dom = await page2.content()
+    expect(dom).not.toContain(privateMarker)
+    const conversationText = await page2.locator('.agent-conversation').innerText()
+    expect(conversationText).not.toContain(privateMarker)
+    // 2) Snapshot público da sessão (IPC).
+    expect(JSON.stringify(restoredA.value)).not.toContain(privateMarker)
+    // 3) AI history pública de TODAS as threads reais (Ollama + Codex).
+    const historySweep = await page2.evaluate(async (threadIds) => {
+      const raw: unknown[] = []
+      for (const threadId of threadIds) {
+        const history = await window.studio.agent.history({ threadId })
+        raw.push(history)
+      }
+      return JSON.stringify(raw)
+    }, [ollamaThread.threadId, codexThread.threadId])
+    expect(historySweep).not.toContain(privateMarker)
+    // 4) Flight Recorder (events) das execuções com proposal.
+    const flightRecorder = await page2.evaluate(async (executionIds) => {
+      const collected: unknown[] = []
+      for (const executionId of executionIds) {
+        const events = await window.studio.planning.events({ executionId })
+        collected.push(events)
+      }
+      return JSON.stringify(collected)
+    }, [proposalSlot.executionId, newProposalSlot.executionId])
+    expect(flightRecorder).not.toContain(privateMarker)
+    // 5) AuditLog persistido.
+    const auditLog = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
+    expect(auditLog).not.toContain(privateMarker)
+    // 6) Logs persistidos do dataRoot (todos os arquivos).
+    const logFiles = await readdir(path.join(dataRoot, 'logs'))
+    for (const logFile of logFiles) {
+      const content = await readFile(path.join(dataRoot, 'logs', logFile), 'utf8').catch(() => '')
+      expect(content).not.toContain(privateMarker)
+    }
+    // 7) SQLite (todos os arquivos studio.sqlite*, bytes crus — snapshot + WAL).
+    const databaseFiles = (await readdir(path.join(dataRoot, 'database'))).filter((name) => name.startsWith('studio.sqlite'))
+    expect(databaseFiles.length).toBeGreaterThan(0)
+    const privateMarkerBytes = Buffer.from(privateMarker, 'utf8')
+    for (const databaseFile of databaseFiles) {
+      expect((await readFile(path.join(dataRoot, 'database', databaseFile))).includes(privateMarkerBytes)).toBe(false)
+    }
+
+    // Nenhum request adicional além dos esperados (fase 1 + fase 2).
+    expect(chatRequests.length).toBeGreaterThan(chatRequestsPhase1)
+    await page2.screenshot({ path: path.join(projectRoot, 'test-results', 'restart-recovery.png'), fullPage: true })
+  } finally {
+    try {
+      if (application !== null) await application.close().catch(() => undefined)
     } finally {
       try {
         if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })

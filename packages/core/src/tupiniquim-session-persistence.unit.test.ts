@@ -220,3 +220,123 @@ describe('TupiniquimSessionSnapshotCoordinator — write-through e provenance re
     expect(commits[0]?.snapshot.providerBindings).toEqual([{ provider: 'ollama', threadId: 'thread-a', model: 'modelo-a' }])
   })
 })
+
+describe('TupiniquimSessionSnapshotCoordinator — drain aguardável do shutdown (Incremento 4/4)', () => {
+  it('drain com flush artificialmente lento: espera TODA a fila enfileirada antes da chamada, preservando FIFO', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'modelo-a')
+    const { store, commits } = createStore({ slowMs: 40 })
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, store)
+
+    for (const index of [1, 2, 3]) {
+      sessions.appendTurn({ role: 'user', text: `mensagem ${String(index)}`, provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: `turn-${String(index)}` })
+      coordinator.schedule(workspaceA)
+    }
+    // Enquanto o flush lento está em andamento o drain ainda NÃO resolveu.
+    const drained = coordinator.drain()
+    let resolved = false
+    void drained.then(() => { resolved = true })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(resolved).toBe(false)
+    expect(commits.length).toBeLessThan(3)
+
+    const result = await drained
+    expect(result.dirtyWorkspaces).toEqual([])
+    // A fila inteira (3 write-throughs agendados) foi esperada, em ordem FIFO.
+    expect(commits).toHaveLength(3)
+    expect(commits.map((commit) => commit.snapshot.turns.length)).toEqual([1, 2, 3])
+  })
+
+  it('drain espera somente o que foi enfileirado ANTES da chamada — flush posterior segue na FIFO normal', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'modelo-a')
+    const slow = createStore({ slowMs: 60 })
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, slow.store)
+    sessions.appendTurn({ role: 'user', text: 'antes do drain', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
+    coordinator.schedule(workspaceA)
+    const drained = coordinator.drain()
+    // Enfileirado DEPOIS do início do drain: não é esperado por este drain.
+    sessions.appendTurn({ role: 'user', text: 'depois do drain', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-2' })
+    const late = coordinator.flush(workspaceA)
+
+    await drained
+    expect(slow.commits).toHaveLength(1)
+    expect(await late).toMatchObject({ status: 'COMMITTED' })
+    expect(slow.commits).toHaveLength(2)
+    expect(slow.commits.map((commit) => commit.snapshot.turns.length)).toEqual([1, 2])
+  })
+
+  it('drain vazio resolve imediatamente e drain repetido não duplica trabalho', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    const { store, commits } = createStore()
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, store)
+
+    const first = await coordinator.drain()
+    const second = await coordinator.drain()
+    const third = await coordinator.drain()
+    expect(first.dirtyWorkspaces).toEqual([])
+    expect(second.dirtyWorkspaces).toEqual([])
+    expect(third.dirtyWorkspaces).toEqual([])
+    // Nenhum trabalho foi criado pelo drain: a fila continua vazia.
+    expect(commits).toHaveLength(0)
+
+    // Drain repetido depois de commits concluídos também não duplica nada.
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'modelo-a')
+    sessions.appendTurn({ role: 'user', text: 'única', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
+    await expect(coordinator.flush(workspaceA)).resolves.toMatchObject({ status: 'COMMITTED' })
+    await coordinator.drain()
+    await coordinator.drain()
+    expect(commits).toHaveLength(1)
+  })
+
+  it('drain tolera item FAILED: a fila não quebra e o root permanece dirty no resultado', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'modelo-a')
+    const { store, commits } = createStore({ failures: 2 })
+    const errors: TupiniquimSnapshotFlushOutcome[] = []
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, store, {
+      onFlushError: (outcome) => { errors.push(outcome) }
+    })
+
+    sessions.appendTurn({ role: 'user', text: 'falha no meio da fila', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
+    coordinator.schedule(workspaceA)
+    sessions.appendTurn({ role: 'user', text: 'depois da falha', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-2' })
+    coordinator.schedule(workspaceA)
+
+    const drained = await coordinator.drain()
+    // O item FAILED não quebra a fila: o SEGUNDO flush também foi processado
+    // (falhou de novo, mas a fila seguiu) e nada parcial foi persistido.
+    expect(commits).toHaveLength(0)
+    expect(errors).toHaveLength(2)
+    expect(drained.dirtyWorkspaces).toEqual([workspaceA])
+    expect(coordinator.isDirty(workspaceA)).toBe(true)
+
+    // A fila continua viva: um retry posterior converge e limpa o dirty.
+    sessions.appendTurn({ role: 'user', text: 'retry', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-3' })
+    await expect(coordinator.flush(workspaceA)).resolves.toMatchObject({ status: 'COMMITTED' })
+    expect(await coordinator.drain()).toMatchObject({ dirtyWorkspaces: [] })
+    expect(coordinator.isDirty(workspaceA)).toBe(false)
+  })
+
+  it('drain não fecha a boundary durável nem agenda persistência própria', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    const closed: string[] = []
+    const { store, commits } = createStore()
+    const storeWithClose = {
+      ...store,
+      close: () => { closed.push('closed'); return Promise.resolve() }
+    } as typeof store & { close: () => Promise<void> }
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, storeWithClose)
+
+    await coordinator.drain()
+    await coordinator.drain()
+    expect(commits).toHaveLength(0)
+    expect(closed).toHaveLength(0)
+  })
+})
+

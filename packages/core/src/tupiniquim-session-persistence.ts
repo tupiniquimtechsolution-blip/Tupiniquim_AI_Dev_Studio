@@ -39,8 +39,11 @@ import type { TupiniquimSessionService } from './tupiniquim-session'
  * mutação estável reintenta o commit na mesma fila. O gancho `onFlushError`
  * recebe o resultado para o AuditLog sanitizado do main.
  *
- * LIMITAÇÃO EXPLÍCITA (Incremento 4/4): shutdown one-shot aguardável
- * (before-quit esperando a fila) ainda não faz parte deste incremento.
+ * Wave 16 — Incremento 4/4: `drain()` é a API aguardável do shutdown. Ela
+ * espera TODA a fila enfileirada antes da chamada (FIFO preservada, sem
+ * coalescing implícito), tolera itens FAILED sem quebrar a fila, é idempotente
+ * e NÃO fecha o database — o fechamento é responsabilidade exclusiva do
+ * sequenciador de shutdown, sempre DEPOIS da persistência.
  */
 
 /** Boundary durável exigida do coordinator. `LocalDatabase` satisfaz estruturalmente. */
@@ -77,6 +80,12 @@ export interface TupiniquimSendTurnCommit {
 export interface TupiniquimSessionSnapshotCoordinatorHooks {
   /** Reporta TODA falha de flush (awaited ou scheduled) para auditoria. */
   onFlushError?: (outcome: TupiniquimSnapshotFlushOutcome) => void
+}
+
+/** Resultado sanitizado do drain: somente contagens/ids de workspace, sem conteúdo. */
+export interface TupiniquimSnapshotDrainResult {
+  /** Roots que continuam dirty depois do drain (durabilidade NÃO concluída). */
+  dirtyWorkspaces: string[]
 }
 
 export class TupiniquimSessionSnapshotCoordinator {
@@ -120,6 +129,34 @@ export class TupiniquimSessionSnapshotCoordinator {
   public schedule(workspaceRoot: string): void {
     void this.flush(workspaceRoot)
   }
+
+  /**
+   * Wave 16 — Incremento 4/4: API aguardável do shutdown.
+   *
+   * Aguarda TODO o trabalho enfileirado ANTES desta chamada — inclusive o
+   * flush em execução agora — e devolve os roots que permanecem dirty.
+   *
+   * Garantias:
+   * - FIFO preservada: o drain não reordena, não cancela e não faz coalescing
+   *   de nada que já estava na fila;
+   * - tolera item FAILED: a fila sobrevive a falhas individuais (o `chain`
+   *   engole rejeições), então um flush FAILED nunca bloqueia o drain nem os
+   *   próximos commits — a falha é reportada pelo gancho onFlushError e o root
+   *   permanece dirty no resultado;
+   * - idempotente: chamadas repetidas (fila vazia ou já drenada) resolvem
+   *   imediatamente sem duplicar trabalho — drain() NÃO enfileira nada;
+   * - NÃO fecha o database: fechamento é do sequenciador de shutdown, depois
+   *   da persistência.
+   *
+   * Flushes agendados DEPOIS do início do drain não são esperados por ele
+   * (seguem na FIFO normal): shutdown determinístico exige que o chamador
+   * pare de agendar antes de drenar — o sequenciador cumpre essa ordem.
+   */
+  public async drain(): Promise<TupiniquimSnapshotDrainResult> {
+    await this.chain
+    return { dirtyWorkspaces: [...this.dirtyRoots.keys()] }
+  }
+
   /**
    * Write-through do send: registra o pending context (ACK-only-after-success),
    * resolve o MODEL EFETIVO do request (referência do adapter > AIThread

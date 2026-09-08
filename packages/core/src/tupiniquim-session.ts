@@ -124,6 +124,32 @@ interface WorkspaceSessionState {
 const maxUnsuccessfulTupiniquimTurns = 1_024
 
 /**
+ * Wave 16 — Incremento 4/4: lifecycle efêmero BOUNDED por workspace.
+ *
+ * `finalizedTurns`, `settledSuccess` e `settledFailure` crescem um id por turn
+ * terminal; sem limite, um processo longevo acumula memória indefinidamente.
+ * O teto 256 fica acima da janela durável (200 turns) e a eviction é
+ * oldest-first determinística (ordem de inserção do Set): ao adicionar a
+ * 257ª entrada, a mais antiga sai; as 256 mais recentes ficam.
+ *
+ * Consequência explícita e aceita: um evento de completion duplicado que
+ * chegue para um turn MUITO antigo já evictado é reprocessado como se fosse
+ * novo — o efeito é somente re-adicionar o id nos sets efêmeros (nenhum turn
+ * duplicado é appendado: o append é keyed por inProgress). Estes sets são
+ * efêmeros por contrato: NUNCA entram no snapshot e NUNCA são hidratados.
+ */
+export const maxTupiniquimLifecycleTurns = 256
+
+/** Adição bounded com eviction oldest-first determinística (ordem de inserção). */
+const addBoundedTurnKey = (set: Set<string>, key: string): void => {
+  set.add(key)
+  if (set.size > maxTupiniquimLifecycleTurns) {
+    const oldest = set.values().next().value
+    if (oldest !== undefined) set.delete(oldest)
+  }
+}
+
+/**
  * Wave 16 — Incremento 2/4: resultado do hydrate da Tupiniquim Session a
  * partir do snapshot durável v5.
  *
@@ -487,6 +513,23 @@ export class TupiniquimSessionService {
     return this.activeOrNull()?.bindings.get(provider)?.model ?? null
   }
 
+  /**
+   * Wave 16 — Incremento 4/4: sonda read-only de auditoria do lifecycle
+   * efêmero por lifecycle key (provider, threadId, turnId). Existe para
+   * tornar verificáveis os limites bounded (256) e a eviction oldest-first —
+   * os sets NUNCA são expostos por referência e NUNCA são persistidos.
+   */
+  public turnLifecycleMembership(provider: AIProviderKind, threadId: string, turnId: string): { finalized: boolean; settledSuccess: boolean; settledFailure: boolean } {
+    const state = this.activeOrNull()
+    if (state === null) return { finalized: false, settledSuccess: false, settledFailure: false }
+    const key = turnLifecycleKey(provider, threadId, turnId)
+    return {
+      finalized: state.finalizedTurns.has(key),
+      settledSuccess: state.settledSuccess.has(key),
+      settledFailure: state.settledFailure.has(key)
+    }
+  }
+
   public threadFor(provider: AIProviderKind): string | undefined {
     return this.activeOrNull()?.bindings.get(provider)?.threadId
   }
@@ -653,19 +696,19 @@ export class TupiniquimSessionService {
     if (pending !== undefined) {
       state.pendingByTurn.delete(key)
       if (success && pending.turnIds.length !== 0) this.markTurnsSeen(state, pending.provider, pending.turnIds)
-      state.finalizedTurns.add(key)
+      addBoundedTurnKey(state.finalizedTurns, key)
       return
     }
     if (success) {
-      state.settledSuccess.add(key)
+      addBoundedTurnKey(state.settledSuccess, key)
       state.settledFailure.delete(key)
-      state.finalizedTurns.add(key)
+      addBoundedTurnKey(state.finalizedTurns, key)
       return
     }
     if (status !== undefined) {
-      state.settledFailure.add(key)
+      addBoundedTurnKey(state.settledFailure, key)
       state.settledSuccess.delete(key)
-      state.finalizedTurns.add(key)
+      addBoundedTurnKey(state.finalizedTurns, key)
     }
   }
 

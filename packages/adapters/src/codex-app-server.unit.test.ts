@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AIEvent } from '@tupiniquim/contracts'
-import { CodexAppServerAdapter } from './codex-app-server'
+import { CodexAppServerAdapter, maxCodexTerminalTurns } from './codex-app-server'
 
 const delay = async (): Promise<void> => await new Promise((resolve) => setTimeout(resolve, 20))
 const waitFor = async (predicate: () => boolean): Promise<void> => {
@@ -101,5 +101,46 @@ describe('CodexAppServerAdapter — monotonicidade do turno', () => {
     } finally {
       await adapter.close()
     }
+  })
+})
+
+describe('CodexAppServerAdapter — terminalTurns bounded (Incremento 4/4)', () => {
+  it('65+ conclusões preservam somente as 64 mais recentes, com eviction oldest-first', async () => {
+    const events: AIEvent[] = []
+    const adapter = await createAdapter(events, [existingImmediateFixture])
+    try {
+      expect(maxCodexTerminalTurns).toBe(64)
+      // 66 turns concluídos pelo servidor controlado (imediato).
+      let lastTurnId = ''
+      for (let index = 1; index <= 66; index += 1) {
+        const reference = await adapter.send({ message: `turno ${String(index)}`, mode: 'CHAT' })
+        lastTurnId = reference.turnId
+      }
+      // Espera a ÚLTIMA conclusão chegar: as 66 conclusões resultam em
+      // exatamente 64 ids retidos (eviction das 2 mais antigas).
+      await waitFor(() => adapter.terminalTurnIds().includes(lastTurnId))
+      const retained = adapter.terminalTurnIds()
+      expect(retained).toHaveLength(64)
+      // Eviction oldest-first determinística: as duas mais antigas saíram...
+      expect(retained).not.toContain('turn-controlled-1')
+      expect(retained).not.toContain('turn-controlled-2')
+      // ...as 64 mais recentes ficaram, em ordem de inserção.
+      expect(retained[0]).toBe('turn-controlled-3')
+      expect(retained.at(-1)).toBe('turn-controlled-66')
+      // A sonda devolve cópia estável (o set interno não vaza por referência).
+      expect(adapter.terminalTurnIds()).toEqual(retained)
+    } finally {
+      await adapter.close()
+    }
+  })
+
+  it('close() limpa o lifecycle efêmero — novo adapter (pós-restart) começa vazio', async () => {
+    const events: AIEvent[] = []
+    const adapter = await createAdapter(events, [existingImmediateFixture])
+    const reference = await adapter.send({ message: 'turno único', mode: 'CHAT' })
+    await waitFor(() => adapter.terminalTurnIds().includes(reference.turnId))
+    expect(adapter.terminalTurnIds()).toEqual([reference.turnId])
+    await adapter.close()
+    expect(adapter.terminalTurnIds()).toEqual([])
   })
 })
