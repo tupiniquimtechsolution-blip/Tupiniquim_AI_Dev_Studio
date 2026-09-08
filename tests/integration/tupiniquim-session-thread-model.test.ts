@@ -5,7 +5,7 @@ import path from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LocalDatabase } from '@tupiniquim/adapters'
-import type { AIThread, TupiniquimDurableSnapshot, TupiniquimSession } from '@tupiniquim/contracts'
+import { aiThreadSchema, type AIThread, type TupiniquimDurableSnapshot, type TupiniquimSession } from '@tupiniquim/contracts'
 
 /**
  * Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): contrato da operação
@@ -119,6 +119,40 @@ describe('putTupiniquimSessionSnapshotWithThreadModel — operação SQLite úni
       expect(row.updated_at).toBe(original.updatedAt)
     } finally {
       connection.close()
+    }
+  })
+
+  it('mantém equivalência do datetime do worker com aiThreadSchema (segundos opcionais, Z obrigatório e calendário real)', async () => {
+    const database = openDatabase()
+    const root = path.join(fixture, 'workspace-datetime-equivalence')
+    const threadId = 'thread-ollama-datetime'
+
+    const cases: Array<{ timestamp: string; valid: boolean }> = [
+      { timestamp: '2026-09-08T10:47Z', valid: true },
+      { timestamp: '2026-09-08T10:47:00Z', valid: true },
+      { timestamp: '2026-09-08T10:47:00.123456789Z', valid: true },
+      { timestamp: '2026-09-08T10:47:00+02:00', valid: false },
+      { timestamp: '2024-02-31T10:47Z', valid: false }
+    ]
+
+    for (const item of cases) {
+      const thread: AIThread = {
+        id: threadId,
+        provider: 'ollama',
+        workspaceRoot: root,
+        model: 'modelo-a',
+        createdAt: item.timestamp,
+        updatedAt: item.timestamp
+      }
+      expect(aiThreadSchema.safeParse(thread).success).toBe(item.valid)
+      await database.putAIThread(thread)
+
+      const snapshot = makeSnapshot(root, { threadId, model: 'modelo-a' })
+      if (item.valid) {
+        await expect(database.putTupiniquimSessionSnapshotWithThreadModel(snapshot)).resolves.toBeUndefined()
+      } else {
+        await expect(database.putTupiniquimSessionSnapshotWithThreadModel(snapshot)).rejects.toThrow('contrato completo do aiThreadSchema')
+      }
     }
   })
 

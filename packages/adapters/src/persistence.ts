@@ -180,8 +180,9 @@ const writeTupiniquimSnapshotRows = (snapshot, run) => {
  * AIThread persistida contra a semântica do aiThreadSchema do contracts —
  * id string 1..200 igual ao id da linha, provider em aiProviderKinds,
  * workspaceRoot string 3..4096, model string 1..300 ou null, createdAt e
- * updatedAt datetime ISO-8601 com sufixo Z, segundos fracionários opcionais
- * e calendário REAL (rejeita 2024-02-31, mês 13, hora 24; aceita 2024-02-29
+ * updatedAt datetime ISO-8601 com sufixo Z, segundos opcionais e fração
+ * opcional quando os segundos existem, como z.string().datetime(); calendário
+ * REAL (rejeita 2024-02-31, mês 13, hora 24; aceita 2024-02-29
  * bissexto). Chaves extras são aceitas (z.object não-strict as ignora).
  *
  * A validação vive DENTRO da transação, antes de qualquer UPDATE de
@@ -191,7 +192,7 @@ const writeTupiniquimSnapshotRows = (snapshot, run) => {
  */
 const isoDatetimeContractOk = (value) => {
   if (typeof value !== 'string') return false
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/.exec(value)
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?Z$/.exec(value)
   if (match === null) return false
   const year = Number(match[1])
   const month = Number(match[2])
@@ -204,7 +205,8 @@ const isoDatetimeContractOk = (value) => {
   } else if (day > (month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31)) {
     return false
   }
-  return Number(match[4]) < 24 && Number(match[5]) < 60 && Number(match[6]) < 60
+  const seconds = match[6] === undefined ? 0 : Number(match[6])
+  return Number(match[4]) < 24 && Number(match[5]) < 60 && seconds < 60
 }
 
 const aiThreadContractViolation = (payload, threadId) => {
