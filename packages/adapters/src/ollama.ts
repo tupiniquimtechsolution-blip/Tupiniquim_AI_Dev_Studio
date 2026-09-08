@@ -208,6 +208,68 @@ export class OllamaAdapter implements AIProvider {
     this.updateStatus({ detail: null })
   }
 
+  /** Existe conversation viva em memória para a thread (decide o hydrate pós-restart). */
+  public hasConversation(threadId: string): boolean {
+    return this.conversations.has(threadId)
+  }
+
+  /**
+   * Wave 16 — Incremento 3/4: hydrate da conversation Ollama a partir do
+   * histórico PÚBLICO (user/assistant) da Tupiniquim Session, para retomar a
+   * thread persistida após restart.
+   *
+   * Fail-closed integral — TODA validação acontece antes de qualquer mutação:
+   * - somente Ollama, thread persistida com provider/workspaceRoot válidos;
+   * - model do binding compatível com o model da thread persistida
+   *   (provenance); o model só é restaurado como seleção se ainda não houver
+   *   escolha do usuário E o model continuar instalado — nunca instala/baixa
+   *   modelo automaticamente;
+   * - a conversa viva em memória NUNCA é sobrescrita pelo hydrate;
+   * - `messages` é filtrada a user/assistant públicos e re-redigida; nenhum
+   *   workspaceContext/sessionContext é armazenado (contextos continuam
+   *   efêmeros por request no send).
+   */
+  public async hydrateConversation(input: {
+    threadId: string
+    model: string | null
+    messages: ReadonlyArray<{ role: 'user' | 'assistant'; content: string }>
+  }): Promise<void> {
+    if (this.conversations.has(input.threadId)) return
+    const status = await this.connect()
+    if (status.state !== 'READY') throw new Error(status.detail ?? 'Ollama local indisponível.')
+    const workspaceRoot = this.options.getWorkspaceRoot?.() ?? 'local://ollama'
+    const persisted = await this.options.history?.getAIThread?.(input.threadId)
+    if (persisted === undefined || persisted === null) {
+      throw new Error('Thread Ollama a hidratar não está persistida; provenance inválida.')
+    }
+    const parsedThread = aiThreadSchema.parse(persisted)
+    if (parsedThread.id !== input.threadId) {
+      throw new Error('Thread Ollama hidratada diverge do id solicitado.')
+    }
+    if (parsedThread.provider !== 'ollama') {
+      throw new Error('Thread a hidratar não pertence ao runtime Ollama.')
+    }
+    if (parsedThread.workspaceRoot !== workspaceRoot) {
+      throw new Error('Thread Ollama a hidratar pertence a outro workspace.')
+    }
+    if (input.model !== parsedThread.model) {
+      throw new Error('Model do binding diverge do model da thread Ollama persistida.')
+    }
+    const restoreSelection = this.selectedModel === null && input.model !== null
+    if (restoreSelection && !this.models.some((model) => model.name === input.model)) {
+      throw new Error('O modelo Ollama vinculado à thread não está mais disponível; selecione um modelo para continuar.')
+    }
+    const messages = input.messages
+      .filter((message) => message.role === 'user' || message.role === 'assistant')
+      .map((message) => ({ role: message.role, content: redact(message.content) }))
+    this.conversationWorkspaces.set(input.threadId, workspaceRoot)
+    this.conversations.set(input.threadId, messages)
+    if (restoreSelection) {
+      this.selectedModel = input.model
+      this.updateStatus({ detail: null })
+    }
+  }
+
   public async send(rawInput: z.input<typeof providerSendInputSchema>): Promise<AgentTurnReference> {
     const input = providerSendInputSchema.parse(rawInput)
     if (input.proposalContext !== undefined && input.mode !== 'PLAN') {
@@ -216,6 +278,14 @@ export class OllamaAdapter implements AIProvider {
     const status = await this.connect()
     if (status.state !== 'READY') throw new Error(status.detail ?? 'Ollama local indisponível.')
     if (this.selectedModel === null) throw new Error('Selecione um modelo Ollama local antes de enviar uma mensagem.')
+    /**
+     * Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): o model efetivo do
+     * request é lido UMA vez, no momento exato do dispatch, e viaja na
+     * referência do turn. O runtime privilegiado usa exatamente este valor no
+     * TupiniquimTurn, no binding e na AIThread — nunca o model antigo da
+     * thread, mesmo quando o usuário troca o modelo na mesma thread.
+     */
+    const requestModel = this.selectedModel
 
     const threadId = input.threadId ?? randomUUID()
     const workspaceRoot = this.options.getWorkspaceRoot?.() ?? 'local://ollama'
@@ -234,23 +304,30 @@ export class OllamaAdapter implements AIProvider {
       throw new Error('Thread Ollama não pertence ao workspace atual.')
     }
     const conversation = this.conversations.get(threadId) ?? []
-    if (isNewThread && input.workspaceContext !== undefined) conversation.push({ role: 'system', content: input.workspaceContext })
     conversation.push({ role: 'user', content: input.message })
     this.conversations.set(threadId, conversation)
-    const requestMessages = withSessionContext(conversation, input.sessionContext)
+    /**
+     * Wave 16 — Incremento 3/4: `workspaceContext` (metadata-only) e
+     * `sessionContext` são EFÊMEROS POR REQUEST: compostos somente no request
+     * e nunca armazenados no histórico em memória (nem no snapshot durável da
+     * sessão). Após restart + hydrateConversation, um send na T1 inclui o
+     * workspace context atual exatamente no request, sem duplicação
+     * persistida no histórico Ollama.
+     */
+    const requestMessages = withRequestContext(conversation, input.workspaceContext, input.sessionContext)
     const turnId = randomUUID()
-    const reference = { threadId, turnId }
+    const reference: AgentTurnReference = { threadId, turnId, model: requestModel }
     if (isNewThread) {
       const now = new Date().toISOString()
       await this.options.history?.putAIThread(aiThreadSchema.parse({
         id: threadId,
         provider: 'ollama',
         workspaceRoot: this.options.getWorkspaceRoot?.() ?? 'local://ollama',
-        model: this.selectedModel,
+        model: requestModel,
         createdAt: now,
         updatedAt: now
       }))
-      this.emit({ kind: 'THREAD_STARTED', threadId, detail: 'Modelo ' + this.selectedModel })
+      this.emit({ kind: 'THREAD_STARTED', threadId, detail: 'Modelo ' + requestModel })
     }
     await this.options.history?.putAITurn(aiTurnSchema.parse({
       id: turnId,
@@ -268,7 +345,7 @@ export class OllamaAdapter implements AIProvider {
       this.updateStatus({ state: 'ERROR', activeTurnId: null, detail: 'Ferramenta de proposta Ollama indisponível.' })
       throw new Error('Ferramenta de proposta Ollama indisponível.')
     }
-    void this.streamTurn(reference, conversation, requestMessages, controller, proposalContext)
+    void this.streamTurn(reference, requestModel, conversation, requestMessages, controller, proposalContext)
     return reference
   }
 
@@ -292,6 +369,7 @@ export class OllamaAdapter implements AIProvider {
 
   private async streamTurn(
     reference: AgentTurnReference,
+    requestModel: string,
     stored: LocalMessage[],
     requestMessages: LocalMessage[],
     controller: AbortController,
@@ -309,7 +387,7 @@ export class OllamaAdapter implements AIProvider {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          model: this.selectedModel,
+          model: requestModel,
           messages: requestMessages,
           stream: true,
           ...(proposalContext === undefined ? {} : { tools: [workspaceWriteTool] })
@@ -419,6 +497,24 @@ const withSessionContext = (stored: LocalMessage[], sessionContext: string | und
   const last = stored.at(-1)
   if (last === undefined || last.role !== 'user') return [...stored, { role: 'system', content: sessionContext }]
   return [...stored.slice(0, -1), { role: 'system', content: sessionContext }, last]
+}
+
+/**
+ * Wave 16 — Incremento 3/4: composição EFÊMERA POR REQUEST. O workspaceContext
+ * metadata-only atual é prependado como system somente no request; o
+ * sessionContext é injetado antes da última mensagem user. Nenhum dos dois é
+ * armazenado no histórico em memória — o histórico contém apenas
+ * user/assistant públicos e nunca duplica contextos.
+ */
+const withRequestContext = (
+  stored: LocalMessage[],
+  workspaceContext: string | undefined,
+  sessionContext: string | undefined
+): LocalMessage[] => {
+  let messages = stored
+  if (sessionContext !== undefined) messages = withSessionContext(messages, sessionContext)
+  if (workspaceContext !== undefined) messages = [{ role: 'system', content: workspaceContext }, ...messages]
+  return messages
 }
 
 const redact = (value: string): string => value

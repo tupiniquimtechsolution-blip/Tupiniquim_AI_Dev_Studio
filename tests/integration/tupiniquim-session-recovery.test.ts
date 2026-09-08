@@ -190,7 +190,8 @@ const expectCleanSession = (sessions: TupiniquimSessionService, workspaceRoot: s
     pending: 0,
     settledSuccess: 0,
     settledFailure: 0,
-    finalizedTurns: 0
+    finalizedTurns: 0,
+    unsuccessfulTurns: 0
   })
 }
 
@@ -256,7 +257,8 @@ describe('recovery da Tupiniquim Session — SQLite real, restart real', () => {
       pending: 0,
       settledSuccess: 0,
       settledFailure: 0,
-      finalizedTurns: 0
+      finalizedTurns: 0,
+      unsuccessfulTurns: 0
     })
     expect(result.diagnostic).toContain('outcome=HYDRATED')
     expect(result.diagnostic).toContain('workspace=[REDACTED]')

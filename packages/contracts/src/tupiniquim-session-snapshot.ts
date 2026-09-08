@@ -54,6 +54,26 @@ export const tupiniquimDurableSnapshotSchema = z.object({
 export type TupiniquimDurableSnapshot = z.infer<typeof tupiniquimDurableSnapshotSchema>
 
 /**
+ * Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): semântica da operação
+ * SQLite ÚNICA `putTupiniquimSessionSnapshotWithThreadModel(snapshot)`.
+ *
+ * Os próprios `providerBindings` do snapshot são a fonte da verdade do model
+ * corrente de cada thread da sessão. Na MESMA transação (BEGIN IMMEDIATE /
+ * COMMIT; ROLLBACK em erro) o worker:
+ *
+ * 1. para cada binding do snapshot, lê a AIThread persistida, valida
+ *    provider e workspaceRoot (iguais aos do binding/sessão) e atualiza
+ *    `ai_threads.model` para `binding.model` quando divergente;
+ * 2. escreve o snapshot integral (session + turns + bindings + seen).
+ *
+ * Coerência atômica por construção: nunca existe estado commitado com
+ * `AIThread.model` novo + snapshot antigo, nem snapshot novo + `AIThread.model`
+ * antigo. Crash antes do COMMIT preserva o estado anterior consistente; crash
+ * depois do COMMIT deixa o estado novo consistente (thread + binding + novo
+ * turn com o model REAL do request).
+ */
+
+/**
  * Wave 16 — Incremento 2/4: resultado discriminado da leitura durável.
  *
  * Distingue os dois "null" que a boundary do Incremento 1 colapsava:

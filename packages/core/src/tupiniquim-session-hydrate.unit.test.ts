@@ -220,7 +220,8 @@ describe('hydrateWorkspace — lifecycle efêmero nunca é hidratado (B)', () =>
       pending: 0,
       settledSuccess: 0,
       settledFailure: 0,
-      finalizedTurns: 0
+      finalizedTurns: 0,
+      unsuccessfulTurns: 0
     })
     // A autoridade pós-restart é NOVA e exige o binding restaurado do provider.
     const proposalId = randomUUID()
@@ -474,7 +475,8 @@ describe('hydrateWorkspace — fail-closed integral sem mutação parcial (D)', 
         pending: 0,
         settledSuccess: 0,
         settledFailure: 0,
-        finalizedTurns: 0
+        finalizedTurns: 0,
+        unsuccessfulTurns: 0
       })
 
       // 3) Diagnóstico sanitizado: reason code estável, sem workspace/conversa/secret.

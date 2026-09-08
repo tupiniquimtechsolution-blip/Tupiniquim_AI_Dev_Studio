@@ -428,4 +428,163 @@ describe('OllamaAdapter', () => {
   it('rejeita hosts Ollama remotos', () => {
     expect(() => new OllamaAdapter({ onEvent: () => undefined, baseUrl: 'https://ollama.com' })).toThrow('loopback')
   })
+
+  /**
+   * Wave 16 — Incremento 3/4: hydrateConversation pós-restart + workspaceContext
+   * efêmero por request (presente no request, ausente do histórico armazenado).
+   */
+  it('hidrata a conversation da thread persistida, restaura o model validado e retoma a thread', async () => {
+    const chatBodies: string[] = []
+    const now = new Date().toISOString()
+    const persistedThread: AIThread = { id: 'thread-hidratada', provider: 'ollama', workspaceRoot: currentWorkspaceRoot, model: 'qwen-local', createdAt: now, updatedAt: now }
+    const fetchImpl: typeof fetch = (input, init) => {
+      if (urlFor(input).endsWith('/api/tags')) {
+        return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local' }, { name: 'mistral-local' }] })))
+      }
+      if (typeof init?.body === 'string') chatBodies.push(init.body)
+      return Promise.resolve(ndjsonResponse({ message: { content: 'RETOMADA_OK' }, done: true }))
+    }
+    const adapter = new OllamaAdapter({
+      onEvent: () => undefined,
+      fetchImpl,
+      getWorkspaceRoot: () => currentWorkspaceRoot,
+      history: {
+        getAIThread: (id: string): Promise<AIThread | null> => Promise.resolve(id === persistedThread.id ? persistedThread : null),
+        putAIThread: () => Promise.resolve(),
+        putAITurn: () => Promise.resolve(),
+        appendAIEvent: () => Promise.resolve()
+      }
+    })
+    await adapter.connect()
+    expect(adapter.hasConversation(persistedThread.id)).toBe(false)
+
+    await adapter.hydrateConversation({
+      threadId: persistedThread.id,
+      model: 'qwen-local',
+      messages: [
+        { role: 'user', content: 'pergunta pública antiga' },
+        { role: 'assistant', content: 'resposta pública antiga' }
+      ]
+    })
+    expect(adapter.hasConversation(persistedThread.id)).toBe(true)
+    // Model restaurado como provenance (validado, sem auto-instalação).
+    expect((adapter.status()).detail).toBe(null)
+
+    const workspaceContext = 'CONTEXTO DO WORKSPACE — SOMENTE METADADOS'
+    const reference = await adapter.send({ message: 'nova pergunta pós-restart', mode: 'CHAT', threadId: persistedThread.id, workspaceContext })
+    expect(reference.threadId).toBe(persistedThread.id)
+    expect(reference.model).toBe('qwen-local')
+    await waitFor(() => adapter.status().state === 'READY')
+
+    const body = JSON.parse(chatBodies[0] ?? '{}') as { model: string; messages: Array<{ role: string; content: string }> }
+    expect(body.model).toBe('qwen-local')
+    // Histórico público hidratado + nova mensagem presentes no request.
+    expect(body.messages.map((message) => message.content)).toEqual([
+      workspaceContext,
+      'pergunta pública antiga',
+      'resposta pública antiga',
+      'nova pergunta pós-restart'
+    ])
+    // workspaceContext efêmero por request: exatamente UMA system message, sem
+    // duplicação no histórico armazenado.
+    expect(body.messages.filter((message) => message.role === 'system')).toHaveLength(1)
+
+    // Segundo send: o contexto atual continua presente (por request) e o
+    // histórico público acumulado não ganha system messages.
+    await adapter.send({ message: 'segunda pós-restart', mode: 'CHAT', threadId: persistedThread.id, workspaceContext })
+    await waitFor(() => adapter.status().state === 'READY')
+    const second = JSON.parse(chatBodies[1] ?? '{}') as { messages: Array<{ role: string; content: string }> }
+    expect(second.messages.filter((message) => message.role === 'system')).toHaveLength(1)
+    expect(second.messages.filter((message) => message.role === 'system')[0]?.content).toBe(workspaceContext)
+    expect(second.messages.map((message) => message.content)).toContain('RETOMADA_OK')
+    await adapter.close()
+  })
+
+  it('hydrate falha fechado: thread ausente, provider divergente, workspace divergente ou model divergente', async () => {
+    const now = new Date().toISOString()
+    const threads = new Map<string, AIThread>()
+    const fetchImpl: typeof fetch = (input) => {
+      if (urlFor(input).endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local' }] })))
+      return Promise.resolve(ndjsonResponse({ message: { content: 'x' }, done: true }))
+    }
+    const adapter = new OllamaAdapter({
+      onEvent: () => undefined,
+      fetchImpl,
+      getWorkspaceRoot: () => currentWorkspaceRoot,
+      history: {
+        getAIThread: (id: string): Promise<AIThread | null> => Promise.resolve(threads.get(id) ?? null),
+        putAIThread: (thread: AIThread) => { threads.set(thread.id, thread); return Promise.resolve() },
+        putAITurn: () => Promise.resolve(),
+        appendAIEvent: () => Promise.resolve()
+      }
+    })
+    await adapter.connect()
+
+    await expect(adapter.hydrateConversation({ threadId: 'thread-ausente', model: 'qwen-local', messages: [] }))
+      .rejects.toThrow('não está persistida')
+    threads.set('thread-codex', { id: 'thread-codex', provider: 'codex-app-server', workspaceRoot: currentWorkspaceRoot, model: null, createdAt: now, updatedAt: now })
+    await expect(adapter.hydrateConversation({ threadId: 'thread-codex', model: null, messages: [] }))
+      .rejects.toThrow('não pertence ao runtime Ollama')
+    threads.set('thread-outro-ws', { id: 'thread-outro-ws', provider: 'ollama', workspaceRoot: 'F:\\CODEX\\outro-workspace', model: 'qwen-local', createdAt: now, updatedAt: now })
+    await expect(adapter.hydrateConversation({ threadId: 'thread-outro-ws', model: 'qwen-local', messages: [] }))
+      .rejects.toThrow('outro workspace')
+    threads.set('thread-model-divergente', { id: 'thread-model-divergente', provider: 'ollama', workspaceRoot: currentWorkspaceRoot, model: 'mistral-local', createdAt: now, updatedAt: now })
+    await expect(adapter.hydrateConversation({ threadId: 'thread-model-divergente', model: 'qwen-local', messages: [] }))
+      .rejects.toThrow('diverge do model da thread')
+    threads.set('thread-model-persistido-string-binding-null', { id: 'thread-model-persistido-string-binding-null', provider: 'ollama', workspaceRoot: currentWorkspaceRoot, model: 'qwen-local', createdAt: now, updatedAt: now })
+    await expect(adapter.hydrateConversation({ threadId: 'thread-model-persistido-string-binding-null', model: null, messages: [] }))
+      .rejects.toThrow('diverge do model da thread')
+    threads.set('thread-model-persistido-null-binding-string', { id: 'thread-model-persistido-null-binding-string', provider: 'ollama', workspaceRoot: currentWorkspaceRoot, model: null, createdAt: now, updatedAt: now })
+    await expect(adapter.hydrateConversation({ threadId: 'thread-model-persistido-null-binding-string', model: 'qwen-local', messages: [] }))
+      .rejects.toThrow('diverge do model da thread')
+    // Nenhuma instalação parcial: nada foi hidratado.
+    expect(adapter.hasConversation('thread-codex')).toBe(false)
+    expect(adapter.hasConversation('thread-outro-ws')).toBe(false)
+    expect(adapter.hasConversation('thread-model-divergente')).toBe(false)
+    expect(adapter.hasConversation('thread-model-persistido-string-binding-null')).toBe(false)
+    expect(adapter.hasConversation('thread-model-persistido-null-binding-string')).toBe(false)
+    await adapter.close()
+  })
+
+  it('hydrate não instala modelo indisponível e não sobrescreve conversa viva nem escolha do usuário', async () => {
+    const now = new Date().toISOString()
+    const persistedThread: AIThread = { id: 'thread-viva', provider: 'ollama', workspaceRoot: currentWorkspaceRoot, model: 'qwen-local', createdAt: now, updatedAt: now }
+    const unavailableThread: AIThread = { id: 'thread-model-removido', provider: 'ollama', workspaceRoot: currentWorkspaceRoot, model: 'qwen-antigo', createdAt: now, updatedAt: now }
+    const fetchImpl: typeof fetch = (input) => {
+      if (urlFor(input).endsWith('/api/tags')) return Promise.resolve(new Response(JSON.stringify({ models: [{ name: 'qwen-local' }, { name: 'mistral-local' }] })))
+      return Promise.resolve(ndjsonResponse({ message: { content: 'ok' }, done: true }))
+    }
+    const adapter = new OllamaAdapter({
+      onEvent: () => undefined,
+      fetchImpl,
+      getWorkspaceRoot: () => currentWorkspaceRoot,
+      history: {
+        getAIThread: (id: string): Promise<AIThread | null> => Promise.resolve(id === persistedThread.id ? persistedThread : id === unavailableThread.id ? unavailableThread : null),
+        putAIThread: () => Promise.resolve(),
+        putAITurn: () => Promise.resolve(),
+        appendAIEvent: () => Promise.resolve()
+      }
+    })
+    await adapter.connect()
+
+    // Model do binding não está mais instalado: erro explícito, sem auto-instalar.
+    await expect(adapter.hydrateConversation({ threadId: unavailableThread.id, model: 'qwen-antigo', messages: [] }))
+      .rejects.toThrow('não está mais disponível')
+    expect(adapter.hasConversation(unavailableThread.id)).toBe(false)
+
+    // Escolha explícita do usuário tem precedência sobre o model do binding:
+    // o hydrate não sobrescreve a seleção; a troca real acontece no send.
+    adapter.selectModel('mistral-local')
+    await adapter.hydrateConversation({ threadId: persistedThread.id, model: 'qwen-local', messages: [{ role: 'user', content: 'antiga' }] })
+    const reference = await adapter.send({ message: 'com mistral', mode: 'CHAT', threadId: persistedThread.id })
+    expect(reference.model).toBe('mistral-local')
+    await waitFor(() => adapter.status().state === 'READY')
+
+    // Conversa viva nunca é sobrescrita pelo hydrate (no-op).
+    await adapter.hydrateConversation({ threadId: persistedThread.id, model: 'qwen-local', messages: [{ role: 'user', content: 'tentativa de sobrescrever' }] })
+    const reference2 = await adapter.send({ message: 'segunda', mode: 'CHAT', threadId: persistedThread.id })
+    await waitFor(() => adapter.status().state === 'READY')
+    expect(reference2.threadId).toBe(persistedThread.id)
+    await adapter.close()
+  })
 })
