@@ -39,11 +39,28 @@ import type { TupiniquimSessionService } from './tupiniquim-session'
  * mutação estável reintenta o commit na mesma fila. O gancho `onFlushError`
  * recebe o resultado para o AuditLog sanitizado do main.
  *
- * Wave 16 — Incremento 4/4: `drain()` é a API aguardável do shutdown. Ela
- * espera TODA a fila enfileirada antes da chamada (FIFO preservada, sem
- * coalescing implícito), tolera itens FAILED sem quebrar a fila, é idempotente
- * e NÃO fecha o database — o fechamento é responsabilidade exclusiva do
- * sequenciador de shutdown, sempre DEPOIS da persistência.
+ * Wave 16 — Incremento 4/4 (CORREÇÃO DA AUDITORIA EXTERNA — Bloqueio 1):
+ * SEAL/QUIESCE real do intake. O coordinator possui três estados explícitos:
+ *
+ *   OPEN → SEALED (seal) → FINAL (sealFinal)
+ *
+ * - OPEN: operação normal — flush/schedule/commitSendTurn aceitos;
+ *   `flushFinal` é RECUSADO (é API exclusiva do sequenciador de shutdown);
+ * - SEALED (`seal()`): o shutdown começou. `flush` e `schedule` deixam de
+ *   enfileirar QUALQUER trabalho (flush devolve outcome `SEALED`; schedule é
+ *   no-op — eventos pós-seal são mutações em memória que não podem mais
+ *   originar trabalho durável novo); `commitSendTurn` rejeita FAIL-CLOSED
+ *   antes de qualquer mutação; `flushFinal` passa a ser o ÚNICO caminho de
+ *   escrita (capture final do sequenciador + retry final de roots dirty);
+ * - FINAL (`sealFinal()`): acionado pelo sequenciador imediatamente antes de
+ *   fechar o database — bloqueia ATÉ o `flushFinal`: nenhuma operação
+ *   persistente pode mais ser postada, por nenhum caminho.
+ *
+ * `drain()` com intake selado tem significado FORTE: quando resolve (com
+ * `quiescent: true`), a fila está realmente quiescente — chain vazia E
+ * nenhum novo trabalho pode entrar. Essa é a prova que o shutdown exige
+ * antes de fechar o SQLite (Bloqueio 2 da auditoria): nunca existe
+ * "persistência não quiescente + database fechado + READY_TO_EXIT seguro".
  */
 
 /** Boundary durável exigida do coordinator. `LocalDatabase` satisfaz estruturalmente. */
@@ -56,7 +73,7 @@ export interface TupiniquimSessionSnapshotStore {
   putTupiniquimSessionSnapshotWithThreadModel(snapshot: TupiniquimDurableSnapshot): Promise<void>
 }
 
-export type TupiniquimSnapshotFlushStatus = 'COMMITTED' | 'SKIPPED' | 'FAILED'
+export type TupiniquimSnapshotFlushStatus = 'COMMITTED' | 'SKIPPED' | 'FAILED' | 'SEALED'
 
 export interface TupiniquimSnapshotFlushOutcome {
   workspaceRoot: string
@@ -86,18 +103,66 @@ export interface TupiniquimSessionSnapshotCoordinatorHooks {
 export interface TupiniquimSnapshotDrainResult {
   /** Roots que continuam dirty depois do drain (durabilidade NÃO concluída). */
   dirtyWorkspaces: string[]
+  /**
+   * Prova de quiescência (Bloqueio 1/2 da auditoria): true somente quando o
+   * intake está selado (SEALED/FINAL) E a chain foi aguardada até o fim —
+   * nenhum trabalho novo pode entrar e nenhum trabalho antigo ficou pendente.
+   * Com intake OPEN o drain continua válido como espera FIFO, mas `quiescent`
+   * é false (semântica fraca; insuficiente para fechar o database).
+   */
+  quiescent: boolean
 }
+
+/** Estado do intake de persistência do coordinator (seal do shutdown). */
+export type TupiniquimSnapshotIntakeState = 'OPEN' | 'SEALED' | 'FINAL'
 
 export class TupiniquimSessionSnapshotCoordinator {
   /** Seção crítica: fila serializada FIFO de commits; nunca reordena. */
   private chain: Promise<unknown> = Promise.resolve()
   private readonly dirtyRoots = new Map<string, string>()
+  /** Intake de persistência: OPEN → SEALED (seal) → FINAL (sealFinal). */
+  private intake: TupiniquimSnapshotIntakeState = 'OPEN'
 
   public constructor(
     private readonly sessions: TupiniquimSessionService,
     private readonly store: TupiniquimSessionSnapshotStore,
     private readonly hooks: TupiniquimSessionSnapshotCoordinatorHooks = {}
   ) {}
+
+  /**
+   * Bloqueio 1 da auditoria: sela o intake para o shutdown. Idempotente.
+   * Depois disto, NENHUMA fonte de mutação (publishAgentEvent, completion de
+   * provider, onWorkspaceWriteToolCall, send de renderer, workspace switch)
+   * consegue enfileirar trabalho durável novo por flush/schedule/
+   * commitSendTurn — somente o sequenciador de shutdown usa `flushFinal`.
+   */
+  public seal(): void {
+    if (this.intake === 'OPEN') this.intake = 'SEALED'
+  }
+
+  /**
+   * Selo FINAL (Bloqueio 2 da auditoria): acionado pelo sequenciador
+   * imediatamente antes de fechar o database. Bloqueia ATÉ o `flushFinal` —
+   * depois disto nenhuma operação persistente pode mais ser postada por
+   * NENHUM caminho (produção, evento ou sequenciador). Idempotente.
+   */
+  public sealFinal(): void {
+    this.intake = 'FINAL'
+  }
+
+  public intakeState(): TupiniquimSnapshotIntakeState {
+    return this.intake
+  }
+
+  public isSealed(): boolean {
+    return this.intake !== 'OPEN'
+  }
+
+  private sealedOutcome(workspaceRoot: string): TupiniquimSnapshotFlushOutcome {
+    // Outcome explícito (não silencioso): o chamador sabe que o trabalho não
+    // foi aceito porque o intake está fechado para o shutdown.
+    return { workspaceRoot, status: 'SEALED', turns: 0, bindings: 0, seenProviders: 0 }
+  }
 
   /**
    * Enfileira o flush do workspace e AGUARDA o resultado.
@@ -107,16 +172,13 @@ export class TupiniquimSessionSnapshotCoordinator {
    * agendou — nunca a um estado lido depois, fora de ordem. Commits de todos
    * os workspaces compartilham a mesma fila FIFO (um único worker SQLite),
    * portanto nunca reordenam.
+   *
+   * Intake selado (Bloqueio 1): devolve outcome SEALED sem capturar e sem
+   * enfileirar — nenhuma mutação pós-seal pode virar trabalho durável.
    */
   public flush(workspaceRoot: string): Promise<TupiniquimSnapshotFlushOutcome> {
-    const snapshot = this.sessions.durableSnapshotFor(workspaceRoot)
-    if (snapshot === null) {
-      return Promise.resolve({ workspaceRoot, status: 'SKIPPED', turns: 0, bindings: 0, seenProviders: 0 })
-    }
-    const run = this.chain.then(async (): Promise<TupiniquimSnapshotFlushOutcome> => this.commitNow(workspaceRoot, snapshot))
-    // A fila sobrevive a falhas individuais: erro em um flush nunca bloqueia os próximos.
-    this.chain = run.then(() => undefined, () => undefined)
-    return run
+    if (this.intake !== 'OPEN') return Promise.resolve(this.sealedOutcome(workspaceRoot))
+    return this.enqueueFlush(workspaceRoot)
   }
 
   /**
@@ -125,9 +187,40 @@ export class TupiniquimSessionSnapshotCoordinator {
    * NÃO existe coalescing: cada schedule() gera um flush individual enfileirado
    * na FIFO (um commit por ponto de mutação estável, capturado por valor no
    * agendamento). Coalescing de flushes pendentes é escopo futuro explícito.
+   *
+   * Intake selado (Bloqueio 1): no-op. Eventos de provider que chegam durante
+   * o shutdown continuam mutando a sessão em memória (o processo está
+   * encerrando), mas NUNCA originam trabalho durável novo — o capture final
+   * do sequenciador é a última escrita possível.
    */
   public schedule(workspaceRoot: string): void {
-    void this.flush(workspaceRoot)
+    if (this.intake !== 'OPEN') return
+    void this.enqueueFlush(workspaceRoot)
+  }
+
+  /**
+   * Flush EXCLUSIVO do sequenciador de shutdown (capture final + retry final
+   * de roots dirty). Recusado fail-closed enquanto o intake estiver OPEN
+   * (uso em produção normal é bug) e depois do selo FINAL (nenhuma operação
+   * persistente pode mais ser postada — Bloqueio 2).
+   */
+  public flushFinal(workspaceRoot: string): Promise<TupiniquimSnapshotFlushOutcome> {
+    if (this.intake === 'OPEN') {
+      return Promise.reject(new Error('flushFinal é exclusivo do shutdown: selle o intake antes (seal()).'))
+    }
+    if (this.intake === 'FINAL') return Promise.resolve(this.sealedOutcome(workspaceRoot))
+    return this.enqueueFlush(workspaceRoot)
+  }
+
+  private enqueueFlush(workspaceRoot: string): Promise<TupiniquimSnapshotFlushOutcome> {
+    const snapshot = this.sessions.durableSnapshotFor(workspaceRoot)
+    if (snapshot === null) {
+      return Promise.resolve({ workspaceRoot, status: 'SKIPPED', turns: 0, bindings: 0, seenProviders: 0 })
+    }
+    const run = this.chain.then(async (): Promise<TupiniquimSnapshotFlushOutcome> => this.commitNow(workspaceRoot, snapshot))
+    // A fila sobrevive a falhas individuais: erro em um flush nunca bloqueia os próximos.
+    this.chain = run.then(() => undefined, () => undefined)
+    return run
   }
 
   /**
@@ -148,13 +241,18 @@ export class TupiniquimSessionSnapshotCoordinator {
    * - NÃO fecha o database: fechamento é do sequenciador de shutdown, depois
    *   da persistência.
    *
-   * Flushes agendados DEPOIS do início do drain não são esperados por ele
-   * (seguem na FIFO normal): shutdown determinístico exige que o chamador
-   * pare de agendar antes de drenar — o sequenciador cumpre essa ordem.
+   * QUIESCÊNCIA FORTE (correção da auditoria, Bloqueios 1/2): com o intake
+   * selado (`seal()`), `quiescent: true` no resultado é a PROVA de que a fila
+   * está realmente fechada — chain aguardada até o fim E nenhum novo trabalho
+   * pode entrar (flush/schedule/commitSendTurn recusados; somente
+   * `flushFinal` do sequenciador, e o sequenciador não o chama depois do
+   * drain final). Com intake OPEN o drain continua uma espera FIFO válida,
+   * mas `quiescent: false` — semântica fraca, insuficiente para fechar o
+   * database.
    */
   public async drain(): Promise<TupiniquimSnapshotDrainResult> {
     await this.chain
-    return { dirtyWorkspaces: [...this.dirtyRoots.keys()] }
+    return { dirtyWorkspaces: [...this.dirtyRoots.keys()], quiescent: this.isSealed() }
   }
 
   /**
@@ -177,6 +275,14 @@ export class TupiniquimSessionSnapshotCoordinator {
     pendingContextTurnIds: readonly string[]
     workspaceRoot: string
   }): Promise<TupiniquimSendTurnCommit> {
+    // Bloqueio 1 da auditoria: fail-closed ANTES de qualquer mutação. Com o
+    // intake selado o send não pode registrar turno durável novo — o request
+    // do provider já aconteceu, mas o turno NÃO é aceito na fila de
+    // persistência (o erro sobe para o IPC como falha explícita, nunca
+    // silenciosa).
+    if (this.intake !== 'OPEN') {
+      throw new Error('A fila de persistência está selada para o encerramento; o turn não foi registrado.')
+    }
     this.sessions.notePendingContext(input.provider, input.reference.threadId, input.reference.turnId, [...input.pendingContextTurnIds])
     const effectiveModel = input.reference.model ?? input.persistedThread?.model ?? this.sessions.modelFor(input.provider)
     const threadModelSwapped = input.persistedThread !== null && effectiveModel !== null && input.persistedThread.model !== effectiveModel

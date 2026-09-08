@@ -21,13 +21,17 @@ import {
  * (tests/e2e/desktop.spec.ts), que permanece o gate autoritativo de processo
  * real na máquina Windows F:.
  *
- * Invariantes under test:
- * - a ordem real do shutdown: flush estável → drain → (retry dirty) → drain →
- *   providers → database, com database.close SOMENTE depois da persistência;
+ * Invariantes under test (plan v2 — correção da auditoria externa):
+ * - a ordem real do shutdown: seal → capture final (flushFinal) → drain →
+ *   (retry dirty) → drain → providers → seal FINAL → database, com
+ *   database.close SOMENTE depois da quiescência PROVADA;
  * - o recovery da fase 2 devolve a MESMA session (id), turns, bindings e seen
  *   commitados pela fase 1 antes do close;
  * - flush FAILED com ROLLBACK REAL (failAfter test-only) deixa o root dirty;
  *   o shutdown converte com retry final e NADA parcial é persistido;
+ * - pós-seal (production-path, SQLite real): schedule é no-op,
+ *   commitSendTurn é recusado FAIL-CLOSED antes de qualquer mutação e o
+ *   drain prova quiescência — nenhum trabalho durável novo entra;
  * - lifecycle efêmero da fase 2 começa vazio (idempotência via seenByProvider).
  */
 
@@ -94,15 +98,39 @@ const runFirstLifecycle = async (input: {
   }
 
   const shutdown = new AwaitedShutdownCoordinator({
+    sealForShutdown: () => {
+      persistence.seal()
+    },
     flushStableState: async () => {
       const root = sessions.current()?.workspaceRoot ?? null
       if (root === null) return { status: 'NO_ACTIVE_WORKSPACE' } as const
-      return await persistence.flush(root)
+      // Prova production-path DENTRO da seção crítica (SQLite real): pós-seal,
+      // mutações tardias NÃO entram — schedule é no-op, commitSendTurn é
+      // recusado fail-closed ANTES de qualquer mutação em memória.
+      persistence.schedule(root)
+      const turnsBeforeLateSend = sessions.snapshot()?.turns.length ?? 0
+      await expect(persistence.commitSendTurn({
+        provider: 'ollama',
+        reference: { threadId: 'thread-ollama-shutdown', turnId: 'turn-late-pos-seal', model: 'qwen-local' },
+        message: 'mutação tardia que não pode virar trabalho durável',
+        persistedThread: ollamaThread('qwen-local'),
+        pendingContextTurnIds: [],
+        workspaceRoot: root
+      })).rejects.toThrow(/selada/)
+      expect(sessions.snapshot()?.turns.length ?? 0).toBe(turnsBeforeLateSend)
+      // O intake selado já prova quiescência da fila FIFO neste ponto.
+      const drained = await persistence.drain()
+      expect(drained.quiescent).toBe(true)
+      // O ÚNICO caminho durável restante é o capture final do sequenciador.
+      return await persistence.flushFinal(root)
     },
     drainQueue: async () => await persistence.drain(),
     dirtyWorkspaceRoots: () => [...persistence.dirtyWorkspaces().keys()],
-    retryDirtyWorkspace: async (root) => await persistence.flush(root),
+    retryDirtyWorkspace: async (root) => await persistence.flushFinal(root),
     closeProviders: () => Promise.resolve(),
+    sealFinalPersistence: () => {
+      persistence.sealFinal()
+    },
     closeDatabase: async () => { await input.database.close() }
   })
   const report = await shutdown.begin()
@@ -113,16 +141,29 @@ describe('shutdown aguardável + restart no mesmo dataRoot (SQLite real)', () =>
   it('fase 1 encerra na ordem real e a fase 2 recupera a MESMA session com bindings/seen/turns', async () => {
     const first = new LocalDatabase(dataRoot)
     leftovers.push(first)
-    const { report } = await runFirstLifecycle({ database: first, messages: ['primeira pergunta', 'segunda pergunta'] })
+    const { persistence, report } = await runFirstLifecycle({ database: first, messages: ['primeira pergunta', 'segunda pergunta'] })
 
-    // Shutdown limpo: estado estável commitado, fila drenada, DB fechado 1x.
+    // Shutdown limpo: selo aplicado, estado estável commitado, quiescência
+    // PROVADA, fila drenada, DB fechado 1x.
     expect(report.phase).toBe('READY_TO_EXIT')
+    expect(report.aborted).toBe(false)
+    expect(report.sealed).toBe(true)
     expect(report.stableStateFlush).toBe('COMMITTED')
-    expect(report.persistenceSettled).toBe(true)
+    expect(report.persistenceQuiescent).toBe(true)
     expect(report.dirtyRootsRemaining).toBe(0)
     expect(report.databaseClosed).toBe(true)
     expect(report.providersClosed).toBe(true)
     expect(report.degraded).toBe(false)
+
+    // Pós-shutdown: intake em FINAL — NENHUM trabalho durável pode mais ser
+    // postado por nenhum caminho do coordinator.
+    expect(persistence.intakeState()).toBe('FINAL')
+    const postShutdownDrain = await persistence.drain()
+    expect(postShutdownDrain.quiescent).toBe(true)
+    // schedule pós-FINAL é no-op silencioso (não lança, não enfileira).
+    persistence.schedule(workspaceRoot)
+    // flushFinal pós-FINAL devolve outcome SEALED (não toca o banco fechado).
+    await expect(persistence.flushFinal(workspaceRoot)).resolves.toMatchObject({ status: 'SEALED' })
 
     // O database da fase 1 foi fechado pelo sequenciador (report acima); a
     // prova real de que os dados chegaram ao disco ANTES do close é a fase 2
@@ -191,17 +232,26 @@ describe('shutdown aguardável + restart no mesmo dataRoot (SQLite real)', () =>
     expect(commit.flush.status).toBe('FAILED')
     expect(persistence.isDirty(workspaceRoot)).toBe(true)
 
-    // Shutdown real: o flush estável é o RETRY FINAL — a injeção é one-shot,
+    // Shutdown real: o capture final é o RETRY FINAL — a injeção é one-shot,
     // a nova transação commita integralmente e o dirty é limpo.
     const shutdown = new AwaitedShutdownCoordinator({
-      flushStableState: async () => await persistence.flush(workspaceRoot),
+      sealForShutdown: () => {
+        persistence.seal()
+      },
+      flushStableState: async () => await persistence.flushFinal(workspaceRoot),
       drainQueue: async () => await persistence.drain(),
       dirtyWorkspaceRoots: () => [...persistence.dirtyWorkspaces().keys()],
-      retryDirtyWorkspace: async (root) => await persistence.flush(root),
+      retryDirtyWorkspace: async (root) => await persistence.flushFinal(root),
       closeProviders: () => Promise.resolve(),
+      sealFinalPersistence: () => {
+        persistence.sealFinal()
+      },
       closeDatabase: async () => { await first.close() }
     })
     const report = await shutdown.begin()
+    expect(report.phase).toBe('READY_TO_EXIT')
+    expect(report.sealed).toBe(true)
+    expect(report.persistenceQuiescent).toBe(true)
     expect(report.stableStateFlush).toBe('COMMITTED')
     expect(report.dirtyRootsRemaining).toBe(0)
     expect(report.degraded).toBe(false)
@@ -227,19 +277,27 @@ describe('shutdown aguardável + restart no mesmo dataRoot (SQLite real)', () =>
     const persistence = new TupiniquimSessionSnapshotCoordinator(sessions, first)
 
     const shutdown = new AwaitedShutdownCoordinator({
+      sealForShutdown: () => {
+        persistence.seal()
+      },
       flushStableState: async () => {
         const root = sessions.current()?.workspaceRoot ?? null
         if (root === null) return { status: 'NO_ACTIVE_WORKSPACE' } as const
-        return await persistence.flush(root)
+        return await persistence.flushFinal(root)
       },
       drainQueue: async () => await persistence.drain(),
       dirtyWorkspaceRoots: () => [...persistence.dirtyWorkspaces().keys()],
-      retryDirtyWorkspace: async (root) => await persistence.flush(root),
+      retryDirtyWorkspace: async (root) => await persistence.flushFinal(root),
       closeProviders: () => Promise.resolve(),
+      sealFinalPersistence: () => {
+        persistence.sealFinal()
+      },
       closeDatabase: async () => { await first.close() }
     })
     const report = await shutdown.begin()
     expect(report.stableStateFlush).toBe('NO_ACTIVE_WORKSPACE')
+    expect(report.sealed).toBe(true)
+    expect(report.persistenceQuiescent).toBe(true)
     expect(report.degraded).toBe(false)
     expect(report.databaseClosed).toBe(true)
 

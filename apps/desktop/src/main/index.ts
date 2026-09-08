@@ -54,10 +54,18 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { AwaitedShutdownCoordinator, PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, TupiniquimSessionSnapshotCoordinator, VisualIntelligenceService, WorkspaceWriteProposalService, isTransientTurnStatus, prepareProviderSendInput, shouldCompleteTurnFromError, switchTupiniquimWorkspaceWithDurableFlush, type AwaitedShutdownReport, type ToolIntent } from '@tupiniquim/core'
+import { AwaitedShutdownCoordinator, PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, TupiniquimSessionSnapshotCoordinator, VisualIntelligenceService, WorkspaceWriteProposalService, agentRuntimeSealedMessage, isTransientTurnStatus, prepareProviderSendInput, resolveDataRoot, shouldCompleteTurnFromError, switchTupiniquimWorkspaceWithDurableFlush, type AwaitedShutdownReport, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
+/**
+ * Wave 16 — Incremento 4/4 (correção da auditoria, Bloqueio 3): resolução do
+ * dataRoot com override ESTRITAMENTE test-only (TUPINIQUIM_E2E=1 +
+ * TUPINIQUIM_E2E_DATA_ROOT absoluto em F:). Produção normal usa EXATAMENTE o
+ * dataRoot operacional canônico; o modo E2E recusa fail-loud qualquer path
+ * fora do volume autorizado — nunca cai silenciosamente no root operacional.
+ * Resolvido UMA vez no boot, a partir de process.env; sem setter via IPC.
+ */
+const dataRoot = resolveDataRoot(process.env)
 const requiredDataDirectories = ['logs', 'tmp', 'session', 'user-data', 'crash-dumps', 'backups', 'assets', 'research', 'database', 'codex-home']
 for (const directory of requiredDataDirectories) mkdirSync(path.join(dataRoot, directory), { recursive: true })
 
@@ -236,21 +244,38 @@ const redactContextMetadata = (value: string): string => value
   .replace(/(authorization|api[_-]?key|token)\s*[:=]\s*\S+/giu, '$1=[REDACTED]')
   .slice(0, 300)
 /**
- * Wave 16 — Incremento 4/4: shutdown one-shot aguardável.
+ * Wave 16 — Incremento 4/4 (correção da auditoria — Bloqueios 1/2):
+ * shutdown one-shot aguardável com SEAL/QUIESCE real.
  *
  * Substitui o `before-quit` fire-and-forget (`void close()`): a primeira
  * solicitação normal de encerramento NÃO sai imediatamente — ela inicia a
  * ÚNICA execução do sequenciador (state machine RUNNING → SHUTTING_DOWN →
- * READY_TO_EXIT com guarda de reentrada) e a saída final só acontece depois
- * de, na ordem: flush do estado estável atual → drain da fila Tupiniquim →
- * retry final único de roots dirty (falha = durabilidade NÃO declarada, sem
- * bloquear) → drain → close aguardado dos providers → close do SQLite.
- * Nenhuma persistência ocorre depois do database fechado.
+ * READY_TO_EXIT | ABORTED com guarda de reentrada) e a saída final só
+ * acontece depois de, na ordem:
+ *
+ *   1. SEAL — runtime gate travado (send/switch/provider select recusados)
+ *      + intake do coordinator selado: NENHUMA fonte (publishAgentEvent,
+ *      onWorkspaceWriteToolCall, send, workspace switch) consegue enfileirar
+ *      trabalho durável novo;
+ *   2. capture final do estado estável atual (flushFinal);
+ *   3. drain com PROVA de quiescência (quiescent: true);
+ *   4. retry final único de roots dirty (falha = durabilidade NÃO declarada);
+ *   5. drain final;
+ *   6. providers (timeout AUXILIAR — o seal isola a persistência);
+ *   7. selo FINAL do intake (nem flushFinal pode mais postar);
+ *   8. close do SQLite SOMENTE com quiescência provada (sem timeout próprio).
+ *
+ * O database NUNCA fecha com persistência não quiescente: hang real da seção
+ * crítica transita para ABORTED (database não fechado, nada declarado seguro,
+ * saída forçada via app.exit(1) — semântica honesta de crash). O relatório
+ * sanitizado vai para o AuditLog em ambos os caminhos.
  */
 const formatShutdownAuditTarget = (report: AwaitedShutdownReport): string => redactContextMetadata([
-  'app.shutdown sequenciado',
+  `app.shutdown ${report.aborted ? 'ABORTED' : 'sequenciado'}`,
+  `abortReason=${report.abortReason}`,
+  `sealed=${report.sealed ? 'yes' : 'no'}`,
+  `persistenceQuiescent=${report.persistenceQuiescent ? 'yes' : 'no'}`,
   `stableFlush=${report.stableStateFlush}`,
-  `persistenceSettled=${report.persistenceSettled ? 'yes' : 'no'}`,
   `dirtyRetried=${String(report.dirtyRootsRetried)}`,
   `dirtyRemaining=${String(report.dirtyRootsRemaining)}`,
   `providersClosed=${report.providersClosed ? 'yes' : 'no'}`,
@@ -260,18 +285,23 @@ const formatShutdownAuditTarget = (report: AwaitedShutdownReport): string => red
   `durationMs=${String(report.durationMs)}`
 ].join(' · '))
 const shutdownCoordinator = new AwaitedShutdownCoordinator({
+  sealForShutdown: () => {
+    runtimeGate.sealForShutdown()
+    tupiniquimPersistence.seal()
+  },
   flushStableState: async () => {
     const workspaceRoot = tupiniquimSession.current()?.workspaceRoot ?? null
     if (workspaceRoot === null) return { status: 'NO_ACTIVE_WORKSPACE' } as const
-    return await tupiniquimPersistence.flush(workspaceRoot)
+    return await tupiniquimPersistence.flushFinal(workspaceRoot)
   },
   drainQueue: async () => await tupiniquimPersistence.drain(),
   dirtyWorkspaceRoots: () => [...tupiniquimPersistence.dirtyWorkspaces().keys()],
-  retryDirtyWorkspace: async (workspaceRoot) => await tupiniquimPersistence.flush(workspaceRoot),
+  retryDirtyWorkspace: async (workspaceRoot) => await tupiniquimPersistence.flushFinal(workspaceRoot),
   closeProviders: async () => {
     await codexAgent.close()
     await ollamaAgent.close()
   },
+  sealFinalPersistence: () => { tupiniquimPersistence.sealFinal() },
   closeDatabase: async () => { await database.close() }
 }, {
   onReport: async (report) => {
@@ -282,10 +312,11 @@ const shutdownCoordinator = new AwaitedShutdownCoordinator({
       target: formatShutdownAuditTarget(report),
       outcome: report.degraded ? 'ERROR' : 'SUCCESS',
       durationMs: report.durationMs,
-      ...(report.degraded ? { errorCode: report.timedOutSteps.length > 0 ? 'APP_SHUTDOWN_STEP_TIMEOUT' : 'APP_SHUTDOWN_DEGRADED' } : {})
+      ...(report.degraded ? { errorCode: report.aborted ? 'APP_SHUTDOWN_ABORTED' : report.timedOutSteps.length > 0 ? 'APP_SHUTDOWN_STEP_TIMEOUT' : 'APP_SHUTDOWN_DEGRADED' } : {})
     })
   },
-  onReadyToExit: () => { app.exit(0) }
+  onReadyToExit: () => { app.exit(0) },
+  onAbort: () => { app.exit(1) }
 })
 const formatAgentWorkspaceContext = (context: WorkspaceContext): string => [
   'CONTEXTO DO WORKSPACE — SOMENTE METADADOS',
@@ -555,6 +586,7 @@ const registerIpc = (): void => {
   register(ipcChannels.terminalKill, terminalKillInputSchema, 'terminal.kill', ({ terminalId }) => terminal.kill(terminalId))
   register(ipcChannels.agentStatus, z.undefined(), 'agent.status', () => tupiniquimSession.scopedStatus(activeAgent().status()))
   register(ipcChannels.agentProviderSelect, agentProviderSelectInputSchema, 'agent.provider.select', async ({ provider }) => {
+    if (runtimeGate.isSealedForShutdown()) throw new Error(agentRuntimeSealedMessage)
     if (provider === selectedAgentProvider) {
       if (runtimeGate.locked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
       return tupiniquimSession.scopedStatus(activeAgent().status())

@@ -11,6 +11,32 @@ const ollamaModel = 'tupiniquim-e2e-model'
 const proposalTarget = 'proposta-gerada-pelo-ollama.txt'
 const proposalContent = 'TUPINIQUIM_E2E_PROPOSAL_PRIVATE_CONTENT\n'
 
+/**
+ * Wave 16 — Incremento 4/4 (correção da auditoria externa, Bloqueio 3):
+ * dataRoot ISOLADO e exclusivo do E2E. O Electron é lançado com o override
+ * test-only `TUPINIQUIM_E2E=1` + `TUPINIQUIM_E2E_DATA_ROOT` apontando para um
+ * mkdtemp sob o TEMP oficial do gate (sempre no volume autorizado F:). O
+ * dataRoot OPERACIONAL de produção (F:\CODEX\Tupiniquim-AI-Dev-Studio.data)
+ * NUNCA é usado pelos testes: nenhuma leitura de marcador constrói
+ * `${projectRoot}.data` — todas usam o dataRoot CONFIRMADO pelo runtime via
+ * `window.studio.system.info()`, e o cleanup remove o root isolado junto com
+ * os workspaces.
+ */
+const createIsolatedE2eDataRoot = async (temp: string): Promise<string> =>
+  await mkdtemp(path.join(temp, 'tupiniquim-e2e-data-'))
+
+const withIsolatedE2eDataRoot = (env: NodeJS.ProcessEnv, e2eDataRoot: string): { [key: string]: string } => {
+  // electron.launch exige env sem valores indefinidos: copia apenas as
+  // entradas definidas e adiciona o override test-only do dataRoot.
+  const merged: { [key: string]: string } = {}
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) merged[key] = value
+  }
+  merged.TUPINIQUIM_E2E = '1'
+  merged.TUPINIQUIM_E2E_DATA_ROOT = e2eDataRoot
+  return merged
+}
+
 interface MockOllamaServer {
   url: string
   chatRequests: unknown[]
@@ -84,16 +110,24 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
   const processErrors: string[] = []
   let workspaceRoot = ''
 
+  let e2eDataRoot = ''
+
   try {
+    const temp = process.env.TEMP
+    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de E2E precisa estar em F:.')
+    // dataRoot ISOLADO (Bloqueio 3): o processo Electron recebe o override
+    // test-only; o dataRoot operacional nunca é tocado.
+    e2eDataRoot = await createIsolatedE2eDataRoot(temp)
     application = await electron.launch({
       args: ['.'],
       cwd: projectRoot,
       timeout: 180_000,
-      env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', TUPINIQUIM_OLLAMA_BASE_URL: mockOllama.url }
+      env: withIsolatedE2eDataRoot(
+        { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', TUPINIQUIM_OLLAMA_BASE_URL: mockOllama.url },
+        e2eDataRoot
+      )
     })
     application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
-    const temp = process.env.TEMP
-    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de E2E precisa estar em F:.')
     workspaceRoot = await mkdtemp(path.join(temp, 'tupiniquim-e2e-'))
     await writeFile(path.join(workspaceRoot, 'README.md'), '# Workspace E2E\n', 'utf8')
     await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot })
@@ -228,7 +262,12 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
       return { execution, events, history }
     }, { executionId, threadId: proposalThreadId })
     expect(JSON.stringify(persistedEvidence)).not.toContain(proposalContent.trim())
-    const dataRoot = `${projectRoot}.data`
+    // dataRoot CONFIRMADO pelo runtime (Bloqueio 3): leituras NUNCA usam o
+    // root operacional — o override test-only aponta para o root isolado.
+    const systemInfo = await page.evaluate(async () => await window.studio.system.info())
+    if (!systemInfo.ok) throw new Error('system.info indisponível.')
+    expect(systemInfo.value.dataRoot).toBe(e2eDataRoot)
+    const dataRoot = systemInfo.value.dataRoot
     const auditLog = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
     expect(auditLog).not.toContain(proposalContent.trim())
     const databaseFiles = (await readdir(path.join(dataRoot, 'database'))).filter((name) => name.startsWith('studio.sqlite'))
@@ -313,6 +352,7 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
     } finally {
       try {
         if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
+        if (e2eDataRoot !== '') await rm(e2eDataRoot, { recursive: true, force: true })
       } finally {
         await mockOllama.close()
       }
@@ -393,12 +433,17 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
   let workspaceRootB = ''
   const provenanceRegion = (page: Page): Locator => page.getByRole('region', { name: 'Proveniência da proposta de escrita' })
   const proposalIdOf = (region: Locator): Locator => region.locator('dt').filter({ hasText: /^Proposal$/u }).locator('..').locator('dd')
+  let e2eDataRoot = ''
+
   try {
+    // dataRoot ISOLADO (Bloqueio 3): override test-only; o dataRoot
+    // operacional nunca é tocado por este teste.
+    e2eDataRoot = await createIsolatedE2eDataRoot(temp)
     application = await electron.launch({
       args: ['.'],
       cwd: projectRoot,
       timeout: 180_000,
-      env: { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', TUPINIQUIM_OLLAMA_BASE_URL: mockUrl }
+      env: withIsolatedE2eDataRoot({ ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', TUPINIQUIM_OLLAMA_BASE_URL: mockUrl }, e2eDataRoot)
     })
     const processErrors: string[] = []
     application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
@@ -575,8 +620,13 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
     }, executionIds)
     for (const marker of markers) expect(flightRecorder).not.toContain(marker)
 
-    // 5) AuditLog.
-    const dataRoot = `${projectRoot}.data`
+    // 5) AuditLog — dataRoot CONFIRMADO pelo runtime (Bloqueio 3): as
+    // leituras usam o root isolado retornado pelo próprio processo, nunca o
+    // root operacional.
+    const systemInfo = await page.evaluate(async () => await window.studio.system.info())
+    if (!systemInfo.ok) throw new Error('system.info indisponível.')
+    expect(systemInfo.value.dataRoot).toBe(e2eDataRoot)
+    const dataRoot = systemInfo.value.dataRoot
     const auditLog = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
     for (const marker of markers) expect(auditLog).not.toContain(marker)
 
@@ -616,6 +666,7 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
       try {
         if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
         if (workspaceRootB !== '') await rm(workspaceRootB, { recursive: true, force: true })
+        if (e2eDataRoot !== '') await rm(e2eDataRoot, { recursive: true, force: true })
       } finally {
         await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
       }
@@ -689,18 +740,23 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
   let workspaceRoot = ''
   let workspaceRootB = ''
   const provenanceRegion = (page: Page): Locator => page.getByRole('region', { name: 'Proveniência da proposta de escrita' })
+  let e2eDataRoot = ''
+
   try {
+    // dataRoot ISOLADO (Bloqueio 3): override test-only; o dataRoot
+    // operacional nunca é tocado por este teste.
+    e2eDataRoot = await createIsolatedE2eDataRoot(temp)
     application = await electron.launch({
       args: ['.'],
       cwd: projectRoot,
       timeout: 180_000,
-      env: {
+      env: withIsolatedE2eDataRoot({
         ...process.env,
         ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
         TUPINIQUIM_OLLAMA_BASE_URL: mockUrl,
         TUPINIQUIM_CODEX_PATH: process.execPath,
         TUPINIQUIM_CODEX_SERVER_ARGS: JSON.stringify([path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs')])
-      }
+      }, e2eDataRoot)
     })
     const processErrors: string[] = []
     application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
@@ -820,7 +876,12 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     expect(resumedOllama).toContain(continuityMessage)
     expect(resumedOllama).not.toContain(sessionProposalContent)
 
-    const dataRoot = `${projectRoot}.data`
+    // dataRoot CONFIRMADO pelo runtime (Bloqueio 3): leituras do root
+    // isolado retornado pelo próprio processo, nunca o root operacional.
+    const systemInfo = await page.evaluate(async () => await window.studio.system.info())
+    if (!systemInfo.ok) throw new Error('system.info indisponível.')
+    expect(systemInfo.value.dataRoot).toBe(e2eDataRoot)
+    const dataRoot = systemInfo.value.dataRoot
     const auditLog = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
     expect(auditLog).not.toContain(sessionProposalContent)
     const databaseFiles = (await readdir(path.join(dataRoot, 'database'))).filter((name) => name.startsWith('studio.sqlite'))
@@ -862,6 +923,7 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
       try {
         if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
         if (workspaceRootB !== '') await rm(workspaceRootB, { recursive: true, force: true })
+        if (e2eDataRoot !== '') await rm(e2eDataRoot, { recursive: true, force: true })
       } finally {
         await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
       }
@@ -881,6 +943,14 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
    * Não são aceitos como substituto deste teste: recriar service, reabrir só o
    * SQLite, reinstanciar adapter no mesmo processo ou mock lógico de restart.
    * O gate real continua sendo a máquina Windows F: (pnpm test:e2e).
+   *
+   * Correção da auditoria externa (Bloqueio 3): os DOIS processos usam o
+   * dataRoot E2E ISOLADO (TUPINIQUIM_E2E=1 + TUPINIQUIM_E2E_DATA_ROOT =
+   * mkdtemp sob o TEMP oficial F:). O dataRoot operacional
+   * (F:\CODEX\Tupiniquim-AI-Dev-Studio.data) NUNCA é usado, construído ou
+   * removido; a prova é tripla — processo1.dataRoot === processo2.dataRoot
+   * === e2eDataRoot — e as leituras de marcador usam o root CONFIRMADO pelo
+   * runtime (window.studio.system.info()).
    */
   const tempEnv = process.env.TEMP
   test.skip(
@@ -956,13 +1026,16 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
   if (address === null || typeof address === 'string') throw new Error('Mock não recebeu porta.')
   const mockUrl = `http://127.0.0.1:${String(address.port)}`
 
-  const launchEnv = {
+  // dataRoot E2E ISOLADO (Bloqueio 3): MESMO root para os DOIS processos —
+  // criado uma única vez antes do launch; o cleanup remove no final.
+  const e2eDataRoot = await createIsolatedE2eDataRoot(temp)
+  const launchEnv = withIsolatedE2eDataRoot({
     ...process.env,
     ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
     TUPINIQUIM_OLLAMA_BASE_URL: mockUrl,
     TUPINIQUIM_CODEX_PATH: process.execPath,
     TUPINIQUIM_CODEX_SERVER_ARGS: JSON.stringify([path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs')])
-  }
+  }, e2eDataRoot)
   const provenanceRegion = (page: Page): Locator => page.getByRole('region', { name: 'Proveniência da proposta de escrita' })
   const proposalIdOf = (region: Locator): Locator => region.locator('dt').filter({ hasText: /^Proposal$/u }).locator('..').locator('dd')
   const waitForRealExit = async (application: ElectronApplication, budgetMs = 120_000): Promise<number | null> => {
@@ -1012,6 +1085,9 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     if (sessionIdA === null || sessionIdA === '') throw new Error('Sessão Tupiniquim ausente na fase 1.')
     const systemInfo1 = await page.evaluate(async () => await window.studio.system.info())
     if (!systemInfo1.ok) throw new Error('system.info indisponível na fase 1.')
+    // Bloqueio 3 (1/3 da prova tripla): o processo 1 roda no dataRoot E2E
+    // isolado — nunca no operacional.
+    expect(systemInfo1.value.dataRoot).toBe(e2eDataRoot)
 
     // CHAT inicial (binding Ollama + conversa pública).
     await page.getByLabel('Provedor de IA').selectOption('ollama')
@@ -1081,14 +1157,18 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     expect(exitCode, `Processo 1 não encerrou limpo (stderr: ${processErrors.join('').slice(0, 2_000)}).`).toBe(0)
     application = null
 
-    // O shutdown aguardável deixou evidência sanitizada no AuditLog ANTES da saída.
-    const dataRoot = `${projectRoot}.data`
+    // O shutdown aguardável deixou evidência sanitizada no AuditLog ANTES da
+    // saída. Leituras usam o dataRoot CONFIRMADO pelo runtime (Bloqueio 3) —
+    // o teste NUNCA constrói `${projectRoot}.data` (root operacional).
+    const dataRoot = systemInfo1.value.dataRoot
+    expect(dataRoot).toBe(e2eDataRoot)
     const auditAfterShutdown = await readFile(path.join(dataRoot, 'logs', 'audit.jsonl'), 'utf8')
     const shutdownLines = auditAfterShutdown.split('\n').filter((line) => line.includes('"capability":"app.shutdown"'))
     expect(shutdownLines.length).toBeGreaterThanOrEqual(1)
     expect(shutdownLines.at(-1) ?? '').toContain('"outcome":"SUCCESS"')
     expect(shutdownLines.at(-1) ?? '').toContain('databaseClosed=yes')
-    expect(shutdownLines.at(-1) ?? '').toContain('persistenceSettled=yes')
+    expect(shutdownLines.at(-1) ?? '').toContain('sealed=yes')
+    expect(shutdownLines.at(-1) ?? '').toContain('persistenceQuiescent=yes')
     expect(shutdownLines.at(-1) ?? '').not.toContain(privateMarker)
 
     // ══════════════════════════ FASE 2 — PROCESSO 2 ══════════════════════════
@@ -1113,10 +1193,13 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
       })
     }, { root: workspaceRoot, nextRoot: workspaceRootB })
 
-    // MESMO dataRoot do processo 1.
+    // Prova TRIPLA do dataRoot isolado (Bloqueio 3): processo1.dataRoot ===
+    // processo2.dataRoot === e2eDataRoot — os DOIS processos rodam
+    // EXATAMENTE no root E2E, nunca no operacional.
     const systemInfo2 = await page2.evaluate(async () => await window.studio.system.info())
     if (!systemInfo2.ok) throw new Error('system.info indisponível na fase 2.')
     expect(systemInfo2.value.dataRoot).toBe(systemInfo1.value.dataRoot)
+    expect(systemInfo2.value.dataRoot).toBe(e2eDataRoot)
 
     // Abrir o MESMO workspace A: recovery da MESMA session S.
     await page2.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
@@ -1316,6 +1399,7 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
       try {
         if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
         if (workspaceRootB !== '') await rm(workspaceRootB, { recursive: true, force: true })
+        if (e2eDataRoot !== '') await rm(e2eDataRoot, { recursive: true, force: true })
       } finally {
         await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
       }

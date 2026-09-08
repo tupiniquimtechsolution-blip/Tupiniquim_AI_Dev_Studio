@@ -26,6 +26,7 @@ import {
 
 export const workspaceSwitchBusyMessage = 'Aguarde o turno do agente terminar antes de trocar de workspace.'
 export const agentRuntimeBusyMessage = 'Aguarde o turno ou a transição de provider em andamento.'
+export const agentRuntimeSealedMessage = 'O aplicativo está encerrando; novas operações não são aceitas.'
 
 export const assertIdleForWorkspaceSwitch = (locked: boolean): void => {
   if (locked) throw new Error(workspaceSwitchBusyMessage)
@@ -44,14 +45,30 @@ export class PrivilegedRuntimeGate {
   private workspaceTransitioning = false
   private providerTransitioning = false
   private sendPreparing = false
+  /**
+   * Wave 16 — Incremento 4/4 (correção da auditoria, Bloqueio 1): selo do
+   * shutdown. Depois de selado, NENHUMA operação user-driven/privilegiada
+   * começa (send, workspace switch, provider select) — o gate fica
+   * permanentemente locked com mensagem explícita de encerramento.
+   */
+  private sealedForShutdown = false
 
   public constructor(private readonly agentBusy: () => boolean = () => false) {}
 
+  public sealForShutdown(): void {
+    this.sealedForShutdown = true
+  }
+
+  public isSealedForShutdown(): boolean {
+    return this.sealedForShutdown
+  }
+
   public locked(): boolean {
-    return this.workspaceTransitioning || this.providerTransitioning || this.sendPreparing || this.agentBusy()
+    return this.sealedForShutdown || this.workspaceTransitioning || this.providerTransitioning || this.sendPreparing || this.agentBusy()
   }
 
   public beginWorkspaceSwitch(): void {
+    if (this.sealedForShutdown) throw new Error(agentRuntimeSealedMessage)
     assertIdleForWorkspaceSwitch(this.locked())
     this.workspaceTransitioning = true
   }
@@ -61,6 +78,7 @@ export class PrivilegedRuntimeGate {
   }
 
   public beginSend(): void {
+    if (this.sealedForShutdown) throw new Error(agentRuntimeSealedMessage)
     if (this.locked()) throw new Error(agentRuntimeBusyMessage)
     this.sendPreparing = true
   }
@@ -70,6 +88,7 @@ export class PrivilegedRuntimeGate {
   }
 
   public beginProviderSelect(): void {
+    if (this.sealedForShutdown) throw new Error(agentRuntimeSealedMessage)
     if (this.locked()) throw new Error(agentRuntimeBusyMessage)
     this.providerTransitioning = true
   }

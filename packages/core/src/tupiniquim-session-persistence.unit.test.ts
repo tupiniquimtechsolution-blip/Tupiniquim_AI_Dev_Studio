@@ -340,3 +340,123 @@ describe('TupiniquimSessionSnapshotCoordinator — drain aguardável do shutdown
   })
 })
 
+describe('TupiniquimSessionSnapshotCoordinator — seal/quiesce do shutdown (correção da auditoria externa)', () => {
+  it('intake OPEN: drain é espera FIFO válida, mas quiescent é FALSE (semântica fraca)', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    const { store, commits } = createStore()
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, store)
+
+    expect(coordinator.intakeState()).toBe('OPEN')
+    expect(coordinator.isSealed()).toBe(false)
+    const drained = await coordinator.drain()
+    expect(drained.quiescent).toBe(false)
+    expect(commits).toHaveLength(0)
+  })
+
+  it('pós-seal: schedule é no-op e flush devolve SEALED sem tocar a boundary durável', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    const { store, commits } = createStore()
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, store)
+
+    coordinator.seal()
+    expect(coordinator.intakeState()).toBe('SEALED')
+    expect(coordinator.isSealed()).toBe(true)
+
+    // Nenhuma mutação pós-seal pode virar trabalho durável.
+    coordinator.schedule(workspaceA)
+    const outcome = await coordinator.flush(workspaceA)
+    expect(outcome).toMatchObject({ status: 'SEALED', turns: 0 })
+    const drained = await coordinator.drain()
+    expect(drained.quiescent).toBe(true)
+    expect(drained.dirtyWorkspaces).toEqual([])
+    expect(commits).toHaveLength(0)
+
+    // seal() é idempotente.
+    coordinator.seal()
+    expect(coordinator.intakeState()).toBe('SEALED')
+  })
+
+  it('pós-seal: commitSendTurn é recusado FAIL-CLOSED antes de qualquer mutação em memória', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'modelo-a')
+    const { store, commits } = createStore()
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, store)
+
+    coordinator.seal()
+    await expect(coordinator.commitSendTurn({
+      provider: 'ollama',
+      reference: { threadId: 'thread-ollama', turnId: 'turn-late', model: 'modelo-a' },
+      message: 'pergunta tardia que não pode integrar o snapshot final',
+      persistedThread: threadFor('modelo-a'),
+      pendingContextTurnIds: [],
+      workspaceRoot: workspaceA
+    })).rejects.toThrow(/selada/)
+
+    // Fail-closed ANTES da mutação: nem o turn público nem o binding entraram.
+    expect(sessions.snapshot()?.turns).toEqual([])
+    expect(sessions.durableSnapshotFor(workspaceA)?.turns).toEqual([])
+    expect(commits).toHaveLength(0)
+  })
+
+  it('flushFinal é exclusivo do shutdown: recusado com intake OPEN, ativo com SEALED', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.appendTurn({ role: 'user', text: 'pergunta estável', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
+    const { store, commits } = createStore()
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, store)
+
+    // Uso em produção normal (intake OPEN) é bug: fail-closed.
+    await expect(coordinator.flushFinal(workspaceA)).rejects.toThrow(/exclusivo do shutdown/)
+
+    coordinator.seal()
+    const outcome = await coordinator.flushFinal(workspaceA)
+    expect(outcome).toMatchObject({ status: 'COMMITTED', turns: 1 })
+    expect(commits).toHaveLength(1)
+    const drained = await coordinator.drain()
+    expect(drained.quiescent).toBe(true)
+    expect(drained.dirtyWorkspaces).toEqual([])
+  })
+
+  it('selo FINAL (sealFinal): bloqueia ATÉ o flushFinal — nenhuma operação persistente restante', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    const { store, commits } = createStore()
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, store)
+
+    coordinator.seal()
+    coordinator.sealFinal()
+    expect(coordinator.intakeState()).toBe('FINAL')
+
+    // Nem o flushFinal do sequenciador passa do selo FINAL (e não lança).
+    await expect(coordinator.flushFinal(workspaceA)).resolves.toMatchObject({ status: 'SEALED' })
+    // schedule continua no-op; drain continua quiescente.
+    coordinator.schedule(workspaceA)
+    expect(await coordinator.drain()).toMatchObject({ quiescent: true, dirtyWorkspaces: [] })
+    expect(commits).toHaveLength(0)
+
+    // sealFinal() é idempotente.
+    coordinator.sealFinal()
+    expect(coordinator.intakeState()).toBe('FINAL')
+  })
+
+  it('mutação pré-seal aguardada normalmente: drain pós-seal espera a fila ENFILEIRADA terminar', async () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.appendTurn({ role: 'user', text: 'pergunta pré-seal', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
+    const { store, commits } = createStore({ slowMs: 30 })
+    const coordinator = new TupiniquimSessionSnapshotCoordinator(sessions, store)
+
+    coordinator.schedule(workspaceA)
+    coordinator.seal()
+
+    // O flush pré-seal NÃO é cancelado pelo seal: a FIFO é aguardada até o fim.
+    const drained = await coordinator.drain()
+    expect(drained.quiescent).toBe(true)
+    expect(drained.dirtyWorkspaces).toEqual([])
+    expect(commits).toHaveLength(1)
+    expect(commits[0]?.snapshot.turns).toHaveLength(1)
+  })
+})
