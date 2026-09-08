@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
   aiProviderKinds,
+  maxDurableTupiniquimTurns,
   maxTupiniquimSessionContextChars,
   redactTupiniquimDurableText,
   tupiniquimConversationSchema,
@@ -107,7 +108,20 @@ interface WorkspaceSessionState {
   settledSuccess: Set<string>
   settledFailure: Set<string>
   finalizedTurns: Set<string>
+  /**
+   * Wave 16 — Incremento 3/4: ids de turns assistant que terminaram em
+   * FAILED/CANCELLED. O texto parcial de um turno falho nunca vira snapshot
+   * durável final; o set é efêmero, bounded e não é hidratado.
+   */
+  unsuccessfulTurns: Set<string>
 }
+
+/**
+ * Limite do set efêmero de turns não bem-sucedidos. Escolhido bem acima da
+ * janela durável (200 turns) para que nenhum id saia do set enquanto o turn
+ * correspondente ainda poderia estar dentro da janela retida.
+ */
+const maxUnsuccessfulTupiniquimTurns = 1_024
 
 /**
  * Wave 16 — Incremento 2/4: resultado do hydrate da Tupiniquim Session a
@@ -139,6 +153,7 @@ export interface TupiniquimEphemeralLifecycle {
   settledSuccess: number
   settledFailure: number
   finalizedTurns: number
+  unsuccessfulTurns: number
 }
 
 const rejectedHydrate = (
@@ -190,7 +205,8 @@ export class TupiniquimSessionService {
       pendingByTurn: new Map(),
       settledSuccess: new Set(),
       settledFailure: new Set(),
-      finalizedTurns: new Set()
+      finalizedTurns: new Set(),
+      unsuccessfulTurns: new Set()
     }
     this.sessionsByWorkspace.set(workspaceRoot, created)
     this.activeWorkspaceRoot = workspaceRoot
@@ -280,7 +296,8 @@ export class TupiniquimSessionService {
       pendingByTurn: new Map(),
       settledSuccess: new Set(),
       settledFailure: new Set(),
-      finalizedTurns: new Set()
+      finalizedTurns: new Set(),
+      unsuccessfulTurns: new Set()
     }
     this.sessionsByWorkspace.set(workspaceRoot, state)
     return { status: 'HYDRATED', session: state.session, restored }
@@ -295,6 +312,93 @@ export class TupiniquimSessionService {
       providerThreads: [...state.bindings.values()],
       proposalAuthority: this.proposalAuthorityFrom(state)
     })
+  }
+
+  /**
+   * Wave 16 — Incremento 3/4: capture durável (por valor) do snapshot do
+   * workspace solicitado (default: o ativo). É a fonte única do write-through
+   * e da troca de workspace (flush do root que sai).
+   *
+   * Regras do capture — TODAS exigidas pelos invariantes duráveis:
+   * - somente turns públicos user/assistant (error/system nunca são duráveis);
+   * - assistant em streaming (inProgress) NUNCA entra: deltas parciais não
+   *   viram snapshot durável final;
+   * - assistant que terminou em FAILED/CANCELLED (unsuccessfulTurns) nunca
+   *   entra, pelo mesmo motivo;
+   * - nenhum assistant terminal sem o user causal correspondente
+   *   (completion-before-send-return): sem o par (provider, threadId, turnId)
+   *   do user, o assistant fica apenas em memória;
+   * - retenção canônica: últimos 200 turns elegíveis, ids originais
+   *   preservados e pares user→assistant preservados atomicamente na janela
+   *   (assistant cujo user caiu fora da janela é podado junto);
+   * - seen podado no mesmo snapshot para ids ainda retidos.
+   *
+   * Retorna null quando não existe estado para o workspace (nada a persistir).
+   */
+  public durableSnapshotFor(workspaceRoot?: string): TupiniquimDurableSnapshot | null {
+    const state = workspaceRoot === undefined
+      ? this.activeOrNull()
+      : this.sessionsByWorkspace.get(workspaceRoot) ?? null
+    if (state === null) return null
+    const inProgressIds = new Set<string>()
+    for (const turn of state.inProgress.values()) inProgressIds.add(turn.id)
+    const causalUserByTurnKey = new Map<string, string>()
+    for (const turn of state.turns) {
+      if (turn.role === 'user' && turn.provider !== null && turn.threadId !== null && turn.turnId !== null) {
+        causalUserByTurnKey.set(turnLifecycleKey(turn.provider, turn.threadId, turn.turnId), turn.id)
+      }
+    }
+    const eligible: TupiniquimDurableSnapshot['turns'] = state.turns.filter((turn): turn is TupiniquimDurableSnapshot['turns'][number] => {
+      if (turn.role === 'user') return true
+      if (turn.role !== 'assistant') return false
+      if (inProgressIds.has(turn.id)) return false
+      if (state.unsuccessfulTurns.has(turn.id)) return false
+      if (turn.provider === null || turn.threadId === null || turn.turnId === null) return false
+      return causalUserByTurnKey.has(turnLifecycleKey(turn.provider, turn.threadId, turn.turnId))
+    })
+    const retained = eligible.slice(-maxDurableTupiniquimTurns)
+    const retainedIds = new Set(retained.map((turn) => turn.id))
+    const pairSafe = retained.filter((turn) => {
+      if (turn.role !== 'assistant') return true
+      const causalId = turn.provider !== null && turn.threadId !== null && turn.turnId !== null
+        ? causalUserByTurnKey.get(turnLifecycleKey(turn.provider, turn.threadId, turn.turnId))
+        : undefined
+      return causalId !== undefined && retainedIds.has(causalId)
+    })
+    const finalIds = new Set(pairSafe.map((turn) => turn.id))
+    const seenByProvider: Record<string, string[]> = {}
+    for (const [provider, turnIds] of state.seenByProvider) {
+      const kept = [...turnIds].filter((turnId) => finalIds.has(turnId))
+      if (kept.length > 0) seenByProvider[provider] = kept
+    }
+    return {
+      session: { ...state.session },
+      turns: pairSafe.map((turn) => ({ ...turn })),
+      providerBindings: [...state.bindings.values()].map((binding) => ({ ...binding })),
+      seenByProvider
+    }
+  }
+
+  /**
+   * Wave 16 — Incremento 3/4: histórico público (user/assistant) da thread,
+   * pronto para o hydrateConversation do adapter Ollama após restart.
+   * Somente turns terminais com texto já redigido pelo runtime; nada de
+   * lifecycle, payload privado ou contextos efêmeros.
+   */
+  public durableConversationForThread(threadId: string): Array<{ role: 'user' | 'assistant'; content: string }> {
+    const state = this.activeOrNull()
+    if (state === null) return []
+    const inProgressIds = new Set<string>()
+    for (const turn of state.inProgress.values()) inProgressIds.add(turn.id)
+    const messages: Array<{ role: 'user' | 'assistant'; content: string }> = []
+    for (const turn of state.turns) {
+      if (turn.threadId !== threadId) continue
+      if (turn.role === 'user') messages.push({ role: 'user', content: turn.text })
+      else if (turn.role === 'assistant' && !inProgressIds.has(turn.id) && !state.unsuccessfulTurns.has(turn.id)) {
+        messages.push({ role: 'assistant', content: turn.text })
+      }
+    }
+    return messages
   }
 
   public publicProviderContext(): string | undefined {
@@ -365,7 +469,7 @@ export class TupiniquimSessionService {
   public ephemeralLifecycle(): TupiniquimEphemeralLifecycle {
     const state = this.activeOrNull()
     if (state === null) {
-      return { authority: null, proposalIds: 0, inProgress: 0, pending: 0, settledSuccess: 0, settledFailure: 0, finalizedTurns: 0 }
+      return { authority: null, proposalIds: 0, inProgress: 0, pending: 0, settledSuccess: 0, settledFailure: 0, finalizedTurns: 0, unsuccessfulTurns: 0 }
     }
     return {
       authority: this.proposalAuthorityFrom(state),
@@ -374,7 +478,8 @@ export class TupiniquimSessionService {
       pending: state.pendingByTurn.size,
       settledSuccess: state.settledSuccess.size,
       settledFailure: state.settledFailure.size,
-      finalizedTurns: state.finalizedTurns.size
+      finalizedTurns: state.finalizedTurns.size,
+      unsuccessfulTurns: state.unsuccessfulTurns.size
     }
   }
 
@@ -426,7 +531,16 @@ export class TupiniquimSessionService {
     }
     const binding: TupiniquimProviderBinding = { provider, threadId, model }
     state.bindings.set(provider, binding)
-    if (model !== null) {
+    /**
+     * Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): o back-fill de model
+     * null → conhecido acontece SOMENTE quando o model da thread fica
+     * conhecido pela primeira vez (binding novo ou model antes null). Uma
+     * troca real A → B na mesma thread NUNCA reescreve o model de turns
+     * antigos: provenance histórica é imutável e cada TupiniquimTurn mantém o
+     * model que realmente executou aquele turn.
+     */
+    const modelBecameKnown = model !== null && (current === undefined || current.model === null)
+    if (modelBecameKnown) {
       for (const turn of state.turns) {
         if (turn.provider === provider && turn.threadId === threadId && turn.model === null) turn.model = model
       }
@@ -463,6 +577,27 @@ export class TupiniquimSessionService {
     return turn
   }
 
+  /**
+   * Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): re-stampeia o model dos
+   * turns do request (provider, threadId, turnId) com o model EFETIVO
+   * reportado pela referência do send. Deltas que chegaram entre o dispatch e
+   * o retorno do send herdaram o model do binding antigo; o model real do
+   * request é autoritativo e nunca pode ficar com o valor antigo (race real
+   * de completion-before-send-return).
+   */
+  public stampRequestTurnModel(provider: AIProviderKind, threadId: string, turnId: string, model: string | null): void {
+    const state = this.activeOrNull()
+    if (state === null || model === null) return
+    let touched = false
+    for (const turn of state.turns) {
+      if (turn.provider === provider && turn.threadId === threadId && turn.turnId === turnId && turn.model !== model) {
+        turn.model = model
+        touched = true
+      }
+    }
+    if (touched) this.touch(state)
+  }
+
   public applyAssistantDelta(input: {
     provider: AIProviderKind
     model: string | null
@@ -497,10 +632,24 @@ export class TupiniquimSessionService {
     if (state === null) return
     if (isTransientTurnStatus(status)) return
     const key = turnLifecycleKey(provider, threadId, turnId)
+    const inFlight = state.inProgress.get(key)
     state.inProgress.delete(key)
     if (state.finalizedTurns.has(key)) return
     const pending = state.pendingByTurn.get(key)
     const success = status !== undefined && isSuccessfulTurnStatus(status)
+    if (!success && status !== undefined && inFlight !== undefined) {
+      /**
+       * Wave 16 — Incremento 3/4: assistant que terminou em FAILED/CANCELLED
+       * carrega texto parcial; nunca vira snapshot durável final. O id entra no
+       * set efêmero bounded e é excluído do capture durável (o turn permanece
+       * em memória para a conversa viva do processo).
+       */
+      state.unsuccessfulTurns.add(inFlight.id)
+      if (state.unsuccessfulTurns.size > maxUnsuccessfulTupiniquimTurns) {
+        const oldest = state.unsuccessfulTurns.values().next().value
+        if (oldest !== undefined) state.unsuccessfulTurns.delete(oldest)
+      }
+    }
     if (pending !== undefined) {
       state.pendingByTurn.delete(key)
       if (success && pending.turnIds.length !== 0) this.markTurnsSeen(state, pending.provider, pending.turnIds)

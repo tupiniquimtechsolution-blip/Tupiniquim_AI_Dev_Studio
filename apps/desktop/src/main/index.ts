@@ -54,7 +54,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, shouldCompleteTurnFromError, type ToolIntent } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, TupiniquimSessionSnapshotCoordinator, VisualIntelligenceService, WorkspaceWriteProposalService, isTransientTurnStatus, prepareProviderSendInput, shouldCompleteTurnFromError, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
@@ -90,10 +90,30 @@ const tupiniquimSession = new TupiniquimSessionService()
 /**
  * Wave 16 — Incremento 2/4: recovery fail-closed da Tupiniquim Session a partir
  * do snapshot durável v5, com validação de bindings contra a AIThread persistida.
- * Somente leitura: nenhum write-through, nenhum shutdown aguardável e nenhum
- * hydrate de conversation Ollama (Incremento 3).
  */
 const tupiniquimRecovery = new TupiniquimSessionRecovery(tupiniquimSession, database, database)
+/**
+ * Wave 16 — Incremento 3/4: write-through durável da Tupiniquim Session.
+ * Seção crítica serializada de commits de snapshot; TODO commit usa a operação
+ * SQLite única putTupiniquimSessionSnapshotWithThreadModel (snapshot +
+ * ai_threads.model corrente dos bindings na mesma transação — MODEL PROVENANCE
+ * REAL). Falha de flush NÃO declara durabilidade concluída: o root fica dirty,
+ * o snapshot anterior commitado permanece íntegro e a próxima mutação estável
+ * reintenta; o ganho abaixo reporta toda falha no AuditLog sanitizado.
+ */
+const tupiniquimPersistence = new TupiniquimSessionSnapshotCoordinator(tupiniquimSession, database, {
+  onFlushError: (outcome) => {
+    void audit.write({
+      requestId: randomUUID(),
+      at: new Date().toISOString(),
+      capability: 'workspace.session.snapshot',
+      target: `tupiniquim session snapshot flush · workspace=[REDACTED] · outcome=FAILED · turns=${String(outcome.turns)} · bindings=${String(outcome.bindings)} · ${redactContextMetadata(outcome.error ?? 'falha desconhecida')}`,
+      outcome: 'ERROR',
+      durationMs: 0,
+      errorCode: 'SESSION_SNAPSHOT_FLUSH_ERROR'
+    }).catch(() => undefined)
+  }
+})
 const controlledCodexArgs = ((): string[] | undefined => {
   const raw = process.env.TUPINIQUIM_CODEX_SERVER_ARGS
   if (raw === undefined || raw === '') return undefined
@@ -109,6 +129,7 @@ const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
   const foreignThread = !tupiniquimSession.acceptsProviderEvent(provider, event.threadId)
   if (tupiniquimSession.current() !== null && !foreignThread) {
     const model = tupiniquimSession.modelFor(provider)
+    const sessionWorkspaceRoot = tupiniquimSession.current()?.workspaceRoot ?? null
     if (event.kind === 'MESSAGE_DELTA' && event.threadId !== undefined && event.turnId !== undefined) {
       tupiniquimSession.applyAssistantDelta({
         provider,
@@ -119,6 +140,13 @@ const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
       })
     } else if (event.kind === 'TURN_COMPLETED' && event.threadId !== undefined && event.turnId !== undefined) {
       tupiniquimSession.completeTurn(provider, event.threadId, event.turnId, event.status)
+      // Write-through: turno terminal + ACK/seen de completion SUCCESS.
+      // FAILED/CANCELLED não avançam seen; assistants parciais/falhos nunca
+      // entram no snapshot (capture filtra), mas o user turn causal permanece
+      // durável. RETRYING é transitório: nada a persistir.
+      if (sessionWorkspaceRoot !== null && !isTransientTurnStatus(event.status)) {
+        tupiniquimPersistence.schedule(sessionWorkspaceRoot)
+      }
     } else if (event.kind === 'ERROR') {
       if (
         event.threadId !== undefined &&
@@ -135,6 +163,9 @@ const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
         threadId: event.threadId ?? null,
         turnId: event.turnId ?? null
       })
+      // Write-through do turn de erro: o user turn causal precisa ficar durável
+      // mesmo quando o assistant falhou (o próprio turn de erro não é durável).
+      if (sessionWorkspaceRoot !== null) tupiniquimPersistence.schedule(sessionWorkspaceRoot)
     }
   }
   if (selectedAgentProvider === provider && (event.kind === 'STATUS' || !foreignThread)) {
@@ -178,6 +209,10 @@ const ollamaAgent = new OllamaAdapter({
         threadId: proposal.threadId,
         turnId: proposal.turnId
       })
+      // Write-through: assistant terminal público da proposta (payload privado
+      // permanece fora do snapshot; somente o resumo sanitizado é durável).
+      const proposalWorkspaceRoot = tupiniquimSession.current()?.workspaceRoot ?? null
+      if (proposalWorkspaceRoot !== null) tupiniquimPersistence.schedule(proposalWorkspaceRoot)
       await audit.write({ requestId: envelope.callId, at: new Date().toISOString(), capability: 'agent.workspace.propose', target: redactContextMetadata(proposal.effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
       mainWindow?.webContents.send(ipcChannels.agentWorkspaceWriteProposal, proposal)
       return proposal
@@ -405,6 +440,20 @@ const registerIpc = (): void => {
     try {
       const configured = await workspace.configure(root)
       /**
+       * Wave 16 — Incremento 3/4: write-through do snapshot que sai. O flush do
+       * root anterior acontece ANTES da transição (o estado por workspace
+       * continua vivo em memória, mas o commit explícito aqui preserva a
+       * durabilidade da saída). Se o flush falhar, a troca NÃO é declarada como
+       * durabilidade concluída: o root permanece dirty com garantia explícita
+       * (o último snapshot commitado permanece íntegro; a próxima mutação
+       * estável daquele workspace reintenta o commit) e a falha é reportada no
+       * AuditLog sanitizado pelo gancho do coordinator.
+       */
+      const previousRoot = tupiniquimSession.current()?.workspaceRoot ?? null
+      if (previousRoot !== null && previousRoot !== configured) {
+        await tupiniquimPersistence.flush(previousRoot)
+      }
+      /**
        * Recovery da Tupiniquim Session (fail-closed integral):
        * - sessão viva em memória → switch/activate SEM hydrate (nunca
        *   sobrescrita pelo snapshot antigo do SQLite);
@@ -502,15 +551,22 @@ const registerIpc = (): void => {
         }
       }
       /**
-       * Binding restaurado pelo hydrate da Wave 16 (Incremento 2) é provenance
-       * válida: para o Codex o provider retoma a thread (thread/resume). Para o
-       * Ollama a conversation continua in-memory no adapter, então um send
-       * pós-restart sobre a thread restaurada é RECUSADO explicitamente pelo
-       * próprio adapter ("Thread Ollama persistida não pode ser retomada sem o
-       * histórico em memória desta sessão."). Limitação conhecida e não
-       * escondida: Ollama conversation hydrate é escopo do Incremento 3.
+       * Binding restaurado pelo hydrate da Wave 16 é provenance válida. O
+       * Codex retoma a thread via thread/resume. O Ollama é stateless no
+       * runtime local: a conversation da thread vinculada é reconstruída
+       * (Incremento 3/4) a partir do histórico PÚBLICO user/assistant da
+       * Tupiniquim Session — somente Ollama, mesmo workspace, thread
+       * persistida validada e model de provenance verificado. Os contextos
+       * (workspace metadata-only e session) continuam efêmeros por request.
        */
       const boundThread = tupiniquimSession.resolveChatThread(provider, input.threadId)
+      if (provider === 'ollama' && boundThread !== undefined && !ollamaAgent.hasConversation(boundThread)) {
+        await ollamaAgent.hydrateConversation({
+          threadId: boundThread,
+          model: tupiniquimSession.modelFor('ollama'),
+          messages: tupiniquimSession.durableConversationForThread(boundThread)
+        })
+      }
       const routedInput = input.proposalContext !== undefined
         ? { message: input.message, mode: input.mode, proposalContext: input.proposalContext }
         : boundThread === undefined
@@ -539,17 +595,26 @@ const registerIpc = (): void => {
         workspaceContext: formatAgentWorkspaceContext(await workspace.context(64, 3)),
         ...(pendingContext.text === undefined ? {} : { sessionContext: pendingContext.text })
       })
-      tupiniquimSession.notePendingContext(provider, reference.threadId, reference.turnId, pendingContext.turnIds)
       const persistedThread = await database.getAIThread(reference.threadId)
-      const model = persistedThread?.model ?? tupiniquimSession.modelFor(provider)
-      tupiniquimSession.bindProviderThread(provider, reference.threadId, model)
-      tupiniquimSession.appendTurn({
-        role: 'user',
-        text: input.message,
+      /**
+       * Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): o commit do turn usa
+       * o MODEL EFETIVO do request (reference.model, reportado pelo adapter no
+       * momento do dispatch — ex.: o modelo Ollama selecionado para este
+       * request), nunca simplesmente o model antigo da thread. O write-through
+       * commita TupiniquimTurn (model real), binding e AIThread.model na
+       * MESMA operação SQLite (putTupiniquimSessionSnapshotWithThreadModel):
+       * uma troca A → B na mesma thread nunca fica meio-commitada. Se o flush
+       * falhar, o send não falha (o request é real), mas a durabilidade NÃO é
+       * declarada concluída — o root fica dirty com garantia explícita e a
+       * falha é auditada pelo gancho do coordinator.
+       */
+      await tupiniquimPersistence.commitSendTurn({
         provider,
-        model,
-        threadId: reference.threadId,
-        turnId: reference.turnId
+        reference,
+        message: input.message,
+        persistedThread,
+        pendingContextTurnIds: pendingContext.turnIds,
+        workspaceRoot: workspace.getRoot()
       })
       return reference
     } finally {

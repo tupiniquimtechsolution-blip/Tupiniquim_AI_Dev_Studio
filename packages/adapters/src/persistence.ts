@@ -30,6 +30,7 @@ type DatabaseOperation =
   | { type: 'putPreference'; key: string; profile: UIProfile }
   | { type: 'getPreference'; key: string }
   | { type: 'putTupiniquimSessionSnapshot'; snapshot: TupiniquimDurableSnapshot }
+  | { type: 'putTupiniquimSessionSnapshotWithThreadModel'; snapshot: TupiniquimDurableSnapshot }
   | { type: 'getTupiniquimSessionSnapshot'; workspaceRoot: string }
   | { type: 'close' }
 
@@ -130,6 +131,83 @@ const initialize = () => {
   return { version: 5 }
 }
 
+/**
+ * Statement runner do snapshot transacional: conta statements para a injeção
+ * de falha EXCLUSIVAMENTE test-only (workerData.failAfter) — a transação que
+ * atingir o N-ésimo statement falha antes do COMMIT e o ROLLBACK real é
+ * exercitado. Compartilhado pelo put simples e pelo put atômico com thread
+ * model, para que a falha injetada cubra também a atualização de ai_threads.
+ */
+const makeSnapshotRun = () => (sql, ...params) => {
+  db.prepare(sql).run(...params)
+  snapshotWriteStatements += 1
+  // Igualdade exata: o contador é monotônico e só cruza o limite uma vez
+  // na vida do worker (one-shot), mantendo as transações seguintes reais.
+  if (snapshotWriteFaultLimit > 0 && snapshotWriteStatements === snapshotWriteFaultLimit) {
+    throw new Error('Falha injetada (failAfter test-only) após ' + snapshotWriteStatements + ' statements do snapshot transacional.')
+  }
+}
+
+/**
+ * Escrita integral do snapshot por workspace: DELETE + INSERTs cobrem
+ * session + turns + bindings + seen. Qualquer erro (incluindo FK de seen
+ * cross-workspace) faz ROLLBACK real na transação do chamador e nunca deixa
+ * snapshot parcial. A substituição S1 -> S2 no mesmo workspace remove as
+ * linhas de S1 na mesma transação (sem órfãos).
+ */
+const writeTupiniquimSnapshotRows = (snapshot, run) => {
+  const workspaceRoot = snapshot.session.workspaceRoot
+  run('DELETE FROM tupiniquim_seen WHERE session_id IN (SELECT id FROM tupiniquim_sessions WHERE workspace_root = ?)', workspaceRoot)
+  run('DELETE FROM tupiniquim_bindings WHERE session_id IN (SELECT id FROM tupiniquim_sessions WHERE workspace_root = ?)', workspaceRoot)
+  run('DELETE FROM tupiniquim_turns WHERE session_id IN (SELECT id FROM tupiniquim_sessions WHERE workspace_root = ?)', workspaceRoot)
+  run('DELETE FROM tupiniquim_sessions WHERE workspace_root = ?', workspaceRoot)
+  run('INSERT INTO tupiniquim_sessions(id,workspace_root,created_at,updated_at) VALUES(?,?,?,?)', snapshot.session.id, workspaceRoot, snapshot.session.createdAt, snapshot.session.updatedAt)
+  snapshot.turns.forEach((turn, position) => {
+    run('INSERT INTO tupiniquim_turns(id,session_id,position,payload) VALUES(?,?,?,?)', turn.id, snapshot.session.id, position, JSON.stringify(turn))
+  })
+  snapshot.providerBindings.forEach((binding) => {
+    run('INSERT INTO tupiniquim_bindings(session_id,provider,thread_id,model) VALUES(?,?,?,?)', snapshot.session.id, binding.provider, binding.threadId, binding.model)
+  })
+  for (const provider of Object.keys(snapshot.seenByProvider)) {
+    for (const turnId of snapshot.seenByProvider[provider]) {
+      run('INSERT INTO tupiniquim_seen(session_id,provider,turn_id) VALUES(?,?,?)', snapshot.session.id, provider, turnId)
+    }
+  }
+}
+
+/**
+ * Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): atualização de
+ * ai_threads.model para o model corrente de cada binding do snapshot,
+ * DENTRO da transação do chamador. Fail-loud em provenance divergente:
+ * thread ausente, ilegível, de outro provider ou de outro workspace aborta a
+ * transação inteira (ROLLBACK) — nunca commitamos snapshot novo com
+ * AIThread.model antigo, nem o contrário.
+ */
+const syncTupiniquimThreadModels = (snapshot, run) => {
+  for (const binding of snapshot.providerBindings) {
+    const row = db.prepare('SELECT payload FROM ai_threads WHERE id = ?').get(binding.threadId)
+    if (row === undefined) {
+      throw new Error('AIThread do binding não existe para a atualização atômica de model: ' + binding.threadId)
+    }
+    let payload
+    try {
+      payload = JSON.parse(row.payload)
+    } catch {
+      throw new Error('AIThread do binding está ilegível para a atualização atômica de model: ' + binding.threadId)
+    }
+    if (payload.provider !== binding.provider) {
+      throw new Error('AIThread do binding pertence a outro provider na atualização atômica de model: ' + binding.threadId)
+    }
+    if (payload.workspaceRoot !== snapshot.session.workspaceRoot) {
+      throw new Error('AIThread do binding pertence a outro workspace na atualização atômica de model: ' + binding.threadId)
+    }
+    if (payload.model === binding.model) continue
+    payload.model = binding.model
+    payload.updatedAt = new Date().toISOString()
+    run('UPDATE ai_threads SET payload = ?, updated_at = ? WHERE id = ?', JSON.stringify(payload), payload.updatedAt, binding.threadId)
+  }
+}
+
 const execute = (operation) => {
   if (operation.type === 'initialize') return initialize()
   if (!db) throw new Error('Banco não inicializado.')
@@ -219,32 +297,28 @@ const execute = (operation) => {
     const snapshot = operation.snapshot
     db.exec('BEGIN IMMEDIATE')
     try {
-      const workspaceRoot = snapshot.session.workspaceRoot
-      const run = (sql, ...params) => {
-        db.prepare(sql).run(...params)
-        snapshotWriteStatements += 1
-        // Igualdade exata: o contador é monotônico e só cruza o limite uma vez
-        // na vida do worker (one-shot), mantendo as transações seguintes reais.
-        if (snapshotWriteFaultLimit > 0 && snapshotWriteStatements === snapshotWriteFaultLimit) {
-          throw new Error('Falha injetada (failAfter test-only) após ' + snapshotWriteStatements + ' statements do snapshot transacional.')
-        }
-      }
-      run('DELETE FROM tupiniquim_seen WHERE session_id IN (SELECT id FROM tupiniquim_sessions WHERE workspace_root = ?)', workspaceRoot)
-      run('DELETE FROM tupiniquim_bindings WHERE session_id IN (SELECT id FROM tupiniquim_sessions WHERE workspace_root = ?)', workspaceRoot)
-      run('DELETE FROM tupiniquim_turns WHERE session_id IN (SELECT id FROM tupiniquim_sessions WHERE workspace_root = ?)', workspaceRoot)
-      run('DELETE FROM tupiniquim_sessions WHERE workspace_root = ?', workspaceRoot)
-      run('INSERT INTO tupiniquim_sessions(id,workspace_root,created_at,updated_at) VALUES(?,?,?,?)', snapshot.session.id, workspaceRoot, snapshot.session.createdAt, snapshot.session.updatedAt)
-      snapshot.turns.forEach((turn, position) => {
-        run('INSERT INTO tupiniquim_turns(id,session_id,position,payload) VALUES(?,?,?,?)', turn.id, snapshot.session.id, position, JSON.stringify(turn))
-      })
-      snapshot.providerBindings.forEach((binding) => {
-        run('INSERT INTO tupiniquim_bindings(session_id,provider,thread_id,model) VALUES(?,?,?,?)', snapshot.session.id, binding.provider, binding.threadId, binding.model)
-      })
-      for (const provider of Object.keys(snapshot.seenByProvider)) {
-        for (const turnId of snapshot.seenByProvider[provider]) {
-          run('INSERT INTO tupiniquim_seen(session_id,provider,turn_id) VALUES(?,?,?)', snapshot.session.id, provider, turnId)
-        }
-      }
+      writeTupiniquimSnapshotRows(snapshot, makeSnapshotRun())
+      db.exec('COMMIT')
+      return undefined
+    } catch (cause) {
+      try { db.exec('ROLLBACK') } catch {}
+      throw cause
+    }
+  }
+  if (operation.type === 'putTupiniquimSessionSnapshotWithThreadModel') {
+    // Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): operação SQLite ÚNICA.
+    // Na MESMA transação: (1) ai_threads.model de cada binding assume o model
+    // corrente do binding (provenance validada: provider e workspaceRoot);
+    // (2) o snapshot integral é escrito. Crash antes do COMMIT preserva o
+    // estado anterior consistente; depois do COMMIT o estado novo é consistente
+    // (thread + binding + turn com o model REAL do request). NUNCA existe
+    // AIThread.model novo + snapshot antigo, nem snapshot novo + AIThread antigo.
+    const snapshot = operation.snapshot
+    db.exec('BEGIN IMMEDIATE')
+    try {
+      const run = makeSnapshotRun()
+      syncTupiniquimThreadModels(snapshot, run)
+      writeTupiniquimSnapshotRows(snapshot, run)
       db.exec('COMMIT')
       return undefined
     } catch (cause) {
@@ -364,14 +438,31 @@ export class LocalDatabase {
    */
   public async putTupiniquimSessionSnapshot(snapshot: TupiniquimDurableSnapshot): Promise<void> {
     await this.ready
-    const sanitized = sanitizeDurableTurnTexts(snapshot)
-    assertSeenIdsWithinSnapshot(sanitized)
-    const durable = applyDurableSnapshotRetention(sanitized)
-    const violations = validateTupiniquimSessionSnapshotIntegrity(durable)
-    if (violations.length > 0) {
-      throw new Error(`Snapshot durável rejeitado na validação pré-commit: ${violations.join('; ')}`)
-    }
+    const durable = prepareDurableSnapshotForCommit(snapshot)
     await this.requestRaw({ type: 'putTupiniquimSessionSnapshot', snapshot: durable })
+  }
+
+  /**
+   * Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): operação SQLite ÚNICA
+   * que commita o snapshot durável do workspace e, NA MESMA transação
+   * (BEGIN IMMEDIATE / COMMIT / ROLLBACK no worker), atualiza o `model` da
+   * AIThread persistida de cada binding para o model corrente do binding —
+   * validando provider e workspaceRoot e fail-loud em divergência.
+   *
+   * Os `providerBindings` do snapshot são a fonte da verdade do model corrente
+   * de cada thread da sessão (definidos pelo runtime a partir do model EFETIVO
+   * do request). Garantia por construção: nunca existe estado commitado com
+   * `AIThread.model` novo + snapshot antigo, nem snapshot novo +
+   * `AIThread.model` antigo.
+   *
+   * Boundary pré-commit idêntica ao put simples: redaction canônico, seen
+   * dentro do snapshot, retenção de 200 turns e validação relacional —
+   * qualquer violação lança erro com ZERO escrita.
+   */
+  public async putTupiniquimSessionSnapshotWithThreadModel(snapshot: TupiniquimDurableSnapshot): Promise<void> {
+    await this.ready
+    const durable = prepareDurableSnapshotForCommit(snapshot)
+    await this.requestRaw({ type: 'putTupiniquimSessionSnapshotWithThreadModel', snapshot: durable })
   }
 
   /**
@@ -461,6 +552,23 @@ const assertSeenIdsWithinSnapshot = (snapshot: TupiniquimDurableSnapshot): void 
       }
     }
   }
+}
+
+/**
+ * Boundary pré-commit compartilhada pelo put simples e pelo put atômico com
+ * thread model. Em ordem: redaction canônico dos durable turns, seen dentro
+ * do snapshot, retenção canônica (200 turns + seen podado) e validação
+ * relacional — qualquer violação lança erro com ZERO escrita.
+ */
+const prepareDurableSnapshotForCommit = (snapshot: TupiniquimDurableSnapshot): TupiniquimDurableSnapshot => {
+  const sanitized = sanitizeDurableTurnTexts(snapshot)
+  assertSeenIdsWithinSnapshot(sanitized)
+  const durable = applyDurableSnapshotRetention(sanitized)
+  const violations = validateTupiniquimSessionSnapshotIntegrity(durable)
+  if (violations.length > 0) {
+    throw new Error(`Snapshot durável rejeitado na validação pré-commit: ${violations.join('; ')}`)
+  }
+  return durable
 }
 
 /**
