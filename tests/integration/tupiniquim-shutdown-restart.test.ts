@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LocalDatabase } from '@tupiniquim/adapters'
 import {
   AwaitedShutdownCoordinator,
+  PrivilegedRuntimeGate,
   TupiniquimSessionRecovery,
   TupiniquimSessionService,
   TupiniquimSessionSnapshotCoordinator
@@ -21,10 +22,12 @@ import {
  * (tests/e2e/desktop.spec.ts), que permanece o gate autoritativo de processo
  * real na máquina Windows F:.
  *
- * Invariantes under test (plan v2 — correção da auditoria externa):
- * - a ordem real do shutdown: seal → capture final (flushFinal) → drain →
- *   (retry dirty) → drain → providers → seal FINAL → database, com
- *   database.close SOMENTE depois da quiescência PROVADA;
+ * Invariantes under test (plan v3 — SEGUNDA correção da auditoria externa):
+ * - a ordem real do shutdown: seal → RUNTIME QUIESCENCE (gate real) →
+ *   capture final (flushFinal) → drain → (retry dirty) → drain → providers
+ *   (CRÍTICO) → seal FINAL → database (CRÍTICO), com database.close
+ *   SOMENTE depois das provas (runtimeQuiescent + persistenceQuiescent +
+ *   providersClosed);
  * - o recovery da fase 2 devolve a MESMA session (id), turns, bindings e seen
  *   commitados pela fase 1 antes do close;
  * - flush FAILED com ROLLBACK REAL (failAfter test-only) deixa o root dirty;
@@ -97,10 +100,17 @@ const runFirstLifecycle = async (input: {
     persistence.schedule(workspaceRoot)
   }
 
+  // RUNTIME QUIESCENCE (SEGUNDA correção, Bloqueio 1): o MESMO gate real que
+  // o main usa — neste ciclo controlado não há operações em voo, então a
+  // quiescência resolve imediatamente; a prova da espera aguardável está nos
+  // testes unitários concorrentes (workspace switch/send/busy).
+  const runtimeGate = new PrivilegedRuntimeGate(() => false)
   const shutdown = new AwaitedShutdownCoordinator({
     sealForShutdown: () => {
+      runtimeGate.sealForShutdown()
       persistence.seal()
     },
+    awaitRuntimeQuiescent: () => runtimeGate.awaitQuiescent(),
     flushStableState: async () => {
       const root = sessions.current()?.workspaceRoot ?? null
       if (root === null) return { status: 'NO_ACTIVE_WORKSPACE' } as const
@@ -148,6 +158,7 @@ describe('shutdown aguardável + restart no mesmo dataRoot (SQLite real)', () =>
     expect(report.phase).toBe('READY_TO_EXIT')
     expect(report.aborted).toBe(false)
     expect(report.sealed).toBe(true)
+    expect(report.runtimeQuiescent).toBe(true)
     expect(report.stableStateFlush).toBe('COMMITTED')
     expect(report.persistenceQuiescent).toBe(true)
     expect(report.dirtyRootsRemaining).toBe(0)
@@ -234,10 +245,13 @@ describe('shutdown aguardável + restart no mesmo dataRoot (SQLite real)', () =>
 
     // Shutdown real: o capture final é o RETRY FINAL — a injeção é one-shot,
     // a nova transação commita integralmente e o dirty é limpo.
+    const runtimeGate = new PrivilegedRuntimeGate(() => false)
     const shutdown = new AwaitedShutdownCoordinator({
       sealForShutdown: () => {
+        runtimeGate.sealForShutdown()
         persistence.seal()
       },
+      awaitRuntimeQuiescent: () => runtimeGate.awaitQuiescent(),
       flushStableState: async () => await persistence.flushFinal(workspaceRoot),
       drainQueue: async () => await persistence.drain(),
       dirtyWorkspaceRoots: () => [...persistence.dirtyWorkspaces().keys()],
@@ -251,6 +265,7 @@ describe('shutdown aguardável + restart no mesmo dataRoot (SQLite real)', () =>
     const report = await shutdown.begin()
     expect(report.phase).toBe('READY_TO_EXIT')
     expect(report.sealed).toBe(true)
+    expect(report.runtimeQuiescent).toBe(true)
     expect(report.persistenceQuiescent).toBe(true)
     expect(report.stableStateFlush).toBe('COMMITTED')
     expect(report.dirtyRootsRemaining).toBe(0)
@@ -276,10 +291,13 @@ describe('shutdown aguardável + restart no mesmo dataRoot (SQLite real)', () =>
     const sessions = new TupiniquimSessionService()
     const persistence = new TupiniquimSessionSnapshotCoordinator(sessions, first)
 
+    const runtimeGate = new PrivilegedRuntimeGate(() => false)
     const shutdown = new AwaitedShutdownCoordinator({
       sealForShutdown: () => {
+        runtimeGate.sealForShutdown()
         persistence.seal()
       },
+      awaitRuntimeQuiescent: () => runtimeGate.awaitQuiescent(),
       flushStableState: async () => {
         const root = sessions.current()?.workspaceRoot ?? null
         if (root === null) return { status: 'NO_ACTIVE_WORKSPACE' } as const
@@ -297,6 +315,7 @@ describe('shutdown aguardável + restart no mesmo dataRoot (SQLite real)', () =>
     const report = await shutdown.begin()
     expect(report.stableStateFlush).toBe('NO_ACTIVE_WORKSPACE')
     expect(report.sealed).toBe(true)
+    expect(report.runtimeQuiescent).toBe(true)
     expect(report.persistenceQuiescent).toBe(true)
     expect(report.degraded).toBe(false)
     expect(report.databaseClosed).toBe(true)

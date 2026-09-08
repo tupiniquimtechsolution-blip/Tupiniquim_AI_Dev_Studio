@@ -52,6 +52,17 @@ export class PrivilegedRuntimeGate {
    * permanentemente locked com mensagem explícita de encerramento.
    */
   private sealedForShutdown = false
+  /**
+   * Wave 16 — Incremento 4/4 (SEGUNDA correção da auditoria — Bloqueio 1):
+   * waiters de RUNTIME QUIESCENCE. O selo bloqueia operações NOVAS, mas
+   * operações JÁ iniciadas (workspace switch, provider select, send em
+   * preparação/execução, turno de provider em streaming) continuam vivas e
+   * podem tocar adapters/history/SQLite. O shutdown só pode capturar o
+   * estado final DEPOIS de todas elas convergirem — estes waiters são
+   * resolvidos deterministicamente pelo último `end*()`/notificação de
+   * estado com o runtime livre (sem polling).
+   */
+  private readonly quiescenceWaiters: Array<() => void> = []
 
   public constructor(private readonly agentBusy: () => boolean = () => false) {}
 
@@ -67,6 +78,49 @@ export class PrivilegedRuntimeGate {
     return this.sealedForShutdown || this.workspaceTransitioning || this.providerTransitioning || this.sendPreparing || this.agentBusy()
   }
 
+  /**
+   * Trabalho JÁ iniciado (runtime em voo). Diferente de `locked()` — que
+   * também inclui o selo — a quiescência olha APENAS as operações em voo:
+   * transições de workspace/provider/send E o estado busy/starting dos
+   * providers (execuções de turno capazes de gravar AIThread/AITurn/AIEvent
+   * direto no SQLite pelo history repository, fora do snapshot coordinator).
+   */
+  public runtimeInFlight(): boolean {
+    return this.workspaceTransitioning || this.providerTransitioning || this.sendPreparing || this.agentBusy()
+  }
+
+  /**
+   * RUNTIME QUIESCENCE aguardável (SEGUNDA correção, Bloqueio 1):
+   * resolve quando TODAS as operações já iniciadas convergiram —
+   * `workspaceTransitioning === false && providerTransitioning === false &&
+   * sendPreparing === false` e nenhum provider busy/starting. Mecanismo
+   * awaitable determinístico (waiter set + resolução no último `end*()`/
+   * `notifyAgentStateChanged()`), NUNCA polling. Se o runtime já está
+   * quiescente, resolve imediatamente.
+   */
+  public awaitQuiescent(): Promise<void> {
+    if (!this.runtimeInFlight()) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      this.quiescenceWaiters.push(resolve)
+    })
+  }
+
+  /**
+   * Notificação de mudança do estado de provider (ex.: BUSY/STARTING →
+   * READY/ERROR ao fim de um turno). O processo main chama em cada evento de
+   * agente; se o runtime ficou livre, TODOS os waiters de quiescência são
+   * resolvidos neste instante determinístico.
+   */
+  public notifyAgentStateChanged(): void {
+    this.settleQuiescenceWaiters()
+  }
+
+  private settleQuiescenceWaiters(): void {
+    if (this.runtimeInFlight()) return
+    const waiters = this.quiescenceWaiters.splice(0)
+    for (const resolve of waiters) resolve()
+  }
+
   public beginWorkspaceSwitch(): void {
     if (this.sealedForShutdown) throw new Error(agentRuntimeSealedMessage)
     assertIdleForWorkspaceSwitch(this.locked())
@@ -75,6 +129,7 @@ export class PrivilegedRuntimeGate {
 
   public endWorkspaceSwitch(): void {
     this.workspaceTransitioning = false
+    this.settleQuiescenceWaiters()
   }
 
   public beginSend(): void {
@@ -85,6 +140,7 @@ export class PrivilegedRuntimeGate {
 
   public endSend(): void {
     this.sendPreparing = false
+    this.settleQuiescenceWaiters()
   }
 
   public beginProviderSelect(): void {
@@ -95,6 +151,7 @@ export class PrivilegedRuntimeGate {
 
   public endProviderSelect(): void {
     this.providerTransitioning = false
+    this.settleQuiescenceWaiters()
   }
 }
 

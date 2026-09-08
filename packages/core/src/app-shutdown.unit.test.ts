@@ -1,29 +1,35 @@
 import { describe, expect, it } from 'vitest'
 import { AwaitedShutdownCoordinator, type AwaitedShutdownPlan, type AwaitedShutdownReport } from './app-shutdown'
-import { TupiniquimSessionService } from './tupiniquim-session'
+import { PrivilegedRuntimeGate, TupiniquimSessionService, agentRuntimeSealedMessage } from './tupiniquim-session'
 import { TupiniquimSessionSnapshotCoordinator, type TupiniquimSnapshotDrainResult, type TupiniquimSessionSnapshotStore } from './tupiniquim-session-persistence'
 import type { TupiniquimDurableSnapshot } from '@tupiniquim/contracts'
 
 /**
- * Wave 16 — Incremento 4/4 (CORREÇÃO DA AUDITORIA EXTERNA — Bloqueios 1/2):
- * shutdown one-shot aguardável com seal/quiesce real e sem timeout-abandon da
- * seção crítica de persistência.
+ * Wave 16 — Incremento 4/4 (SEGUNDA CORREÇÃO DA AUDITORIA EXTERNA —
+ * Bloqueios 1/2/3): shutdown one-shot aguardável com RUNTIME QUIESCENCE real,
+ * providers e database CRÍTICOS.
  *
  * Invariantes under test:
  * - SEAL real: durante SHUTTING_DOWN, eventos tardios (production-path
  *   schedule/flush/commitSendTurn) NÃO entram na fila após o seal; o drain
  *   retorna quiescent: true; nada é escrito depois do close do database;
- * - ordem real: seal → flushFinal → drain → retry → drain → providers →
- *   sealFinal → database (database NUNCA antes da quiescência provada);
+ * - RUNTIME QUIESCENCE (Bloqueio 1): operações JÁ iniciadas (workspace
+ *   switch, send, provider select, provider busy) convergem ANTES do capture
+ *   final — o MESMO gate que o main usa; novas operações são recusadas
+ *   imediatamente; hang de quiescência → deadline crítico → ABORTED;
+ * - ordem real: seal → runtime quiescence → flushFinal → drain → retry →
+ *   drain → providers (CRÍTICO) → sealFinal → database (CRÍTICO);
+ * - PROVIDERS são CRÍTICOS (Bloqueio 2): providers gravam history DIRETO no
+ *   SQLite (fora do snapshot coordinator) — close pendente NÃO libera
+ *   database.close; falha → ABORTED; zero history write-after-close;
+ * - DATABASE CLOSE é CRÍTICO (Bloqueio 3): rejeição → ABORTED com saída
+ *   forçada (nunca READY_TO_EXIT/app.exit(0) com banco não confirmado);
  * - one-shot + guarda de reentrada: dois quits executam 1x, closes 1x cada;
- * - DELAYED CHAIN (bloqueante da auditoria): flush aguardando a chain não é
- *   abandonado por timeout — o database só fecha DEPOIS da chain destravar e
- *   do drain confirmar quiescência; zero write-after-close;
- * - DEADLINE crítico: hang real transita para ABORTED — database NÃO fecha,
- *   quiescência/databaseClosed NÃO são declarados, READY_TO_EXIT não ocorre,
- *   saída forçada (onAbort);
- * - providers são AUXILIARES: timeout não falsifica segurança (o seal isola a
- *   persistência de eventos tardios do provider);
+ * - DELAYED CHAIN: flush aguardando a chain não é abandonado por timeout —
+ *   o database só fecha DEPOIS da chain destravar e do drain confirmar
+ *   quiescência; zero write-after-close;
+ * - DEADLINE crítico: hang real em QUALQUER etapa crítica transita para
+ *   ABORTED — database NÃO fecha, nada é declarado seguro, saída forçada;
  * - FAILED não trava o shutdown: durabilidade não declarada, término
  *   determinístico, relatório sanitizado.
  */
@@ -78,18 +84,63 @@ const createProductionCoordinator = (recording: RecordingStore): TupiniquimSessi
 const sessionsOf = (coordinator: TupiniquimSessionSnapshotCoordinator): TupiniquimSessionService =>
   (coordinator as unknown as { sessions: TupiniquimSessionService }).sessions
 
-const productionPlan = (persistence: TupiniquimSessionSnapshotCoordinator, recording: RecordingStore, extras: { closeProviders?: () => Promise<void> } = {}): AwaitedShutdownPlan => ({
-  sealForShutdown: () => { persistence.seal() },
-  flushStableState: () => persistence.flushFinal(workspaceA),
+/**
+ * Runtime de produção para os testes: o MESMO PrivilegedRuntimeGate que o
+ * main usa (agentBusy controlável = estado busy/starting dos providers) +
+ * log de passos do plan para provar ordenação.
+ */
+interface ProductionRuntime {
+  gate: PrivilegedRuntimeGate
+  steps: string[]
+  setAgentBusy: (busy: boolean) => void
+}
+
+const createProductionRuntime = (input: { agentBusy?: boolean } = {}): ProductionRuntime => {
+  let agentBusy = input.agentBusy ?? false
+  const steps: string[] = []
+  const gate = new PrivilegedRuntimeGate(() => agentBusy)
+  return { gate, steps, setAgentBusy: (busy: boolean) => { agentBusy = busy } }
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms) })
+
+const deferred = (): { gate: Promise<void>; release: () => void } => {
+  let releaseFn: (() => void) | undefined
+  const gate = new Promise<void>((resolve) => { releaseFn = resolve })
+  return { gate, release: () => releaseFn?.() }
+}
+
+const productionPlan = (
+  persistence: TupiniquimSessionSnapshotCoordinator,
+  recording: RecordingStore,
+  runtime: ProductionRuntime = createProductionRuntime(),
+  extras: { closeProviders?: () => Promise<void>; awaitRuntimeQuiescent?: () => Promise<void> } = {}
+): AwaitedShutdownPlan => ({
+  sealForShutdown: () => {
+    runtime.steps.push('step:sealForShutdown')
+    runtime.gate.sealForShutdown()
+    persistence.seal()
+  },
+  awaitRuntimeQuiescent: extras.awaitRuntimeQuiescent ?? (() => {
+    runtime.steps.push('step:awaitRuntimeQuiescent')
+    return runtime.gate.awaitQuiescent()
+  }),
+  flushStableState: () => {
+    runtime.steps.push('step:flushStableState')
+    return persistence.flushFinal(workspaceA)
+  },
   drainQueue: () => persistence.drain(),
   dirtyWorkspaceRoots: () => [...persistence.dirtyWorkspaces().keys()],
   retryDirtyWorkspace: (root: string) => persistence.flushFinal(root),
-  closeProviders: extras.closeProviders ?? (() => Promise.resolve()),
+  closeProviders: extras.closeProviders ?? (() => {
+    runtime.steps.push('step:closeProviders')
+    return Promise.resolve()
+  }),
   sealFinalPersistence: () => { persistence.sealFinal() },
   closeDatabase: () => recording.closeDatabase()
 })
 
-describe('AwaitedShutdownCoordinator — seal/quiesce e one-shot', () => {
+describe('AwaitedShutdownCoordinator — runtime quiescence, seal/quiesce e one-shot', () => {
   it('flush lento: shutdown espera a persistência terminar ANTES de fechar o database', async () => {
     const recording = createRecordingStore()
     const persistence = createProductionCoordinator(recording)
@@ -99,6 +150,7 @@ describe('AwaitedShutdownCoordinator — seal/quiesce e one-shot', () => {
     expect(report.phase).toBe('READY_TO_EXIT')
     expect(report.aborted).toBe(false)
     expect(report.sealed).toBe(true)
+    expect(report.runtimeQuiescent).toBe(true)
     expect(report.persistenceQuiescent).toBe(true)
     expect(report.stableStateFlush).toBe('COMMITTED')
     expect(report.databaseClosed).toBe(true)
@@ -155,12 +207,8 @@ describe('AwaitedShutdownCoordinator — seal/quiesce e one-shot', () => {
     expect(recording.log.filter((entry) => entry.startsWith('commit:'))).toHaveLength(1)
   })
 
-  it('BLOQUEIO 1 (concorrente, production-path): evento tardio durante SHUTTING_DOWN não entra após o seal; drain quiescente; zero write pós-close', async () => {
-    const release = (() => {
-      let releaseFn: (() => void) | undefined
-      const gate = new Promise<void>((resolve) => { releaseFn = resolve })
-      return { gate, release: () => releaseFn?.() }
-    })()
+  it('selo pós-seal (primeira correção, production-path): evento tardio durante SHUTTING_DOWN não entra após o seal; drain quiescente; zero write pós-close', async () => {
+    const release = deferred()
     const recording = createRecordingStore({ blockFirstCommit: release.gate })
     const persistence = createProductionCoordinator(recording)
     const sessions = sessionsOf(persistence)
@@ -172,7 +220,7 @@ describe('AwaitedShutdownCoordinator — seal/quiesce e one-shot', () => {
     const coordinator = new AwaitedShutdownCoordinator(productionPlan(persistence, recording))
     const finished = coordinator.begin()
     // SHUTTING_DOWN em andamento: a chain está bloqueada no primeiro commit.
-    await new Promise((resolve) => setTimeout(resolve, 15))
+    await sleep(15)
     expect(coordinator.state()).toBe('SHUTTING_DOWN')
     expect(recording.log).toContain('commit:waiting-chain')
     expect(recording.log).not.toContain('database:close')
@@ -197,6 +245,7 @@ describe('AwaitedShutdownCoordinator — seal/quiesce e one-shot', () => {
     release.release()
     const final = await finished
     expect(final.phase).toBe('READY_TO_EXIT')
+    expect(final.runtimeQuiescent).toBe(true)
     expect(final.persistenceQuiescent).toBe(true)
     expect(final.databaseClosed).toBe(true)
     expect(final.degraded).toBe(false)
@@ -211,28 +260,24 @@ describe('AwaitedShutdownCoordinator — seal/quiesce e one-shot', () => {
     expect(drained.dirtyWorkspaces).toEqual([])
   })
 
-  it('BLOQUEIO 2 (delayed chain, bloqueante): flush esperando a chain NÃO é abandonado; database só fecha depois da quiescência real', async () => {
-    const release = (() => {
-      let releaseFn: (() => void) | undefined
-      const gate = new Promise<void>((resolve) => { releaseFn = resolve })
-      return { gate, release: () => releaseFn?.() }
-    })()
+  it('BLOQUEIO 2 primeira correção (delayed chain): flush esperando a chain NÃO é abandonado; database só fecha depois da quiescência real', async () => {
+    const release = deferred()
     const recording = createRecordingStore({ blockFirstCommit: release.gate })
     const persistence = createProductionCoordinator(recording)
     const sessions = sessionsOf(persistence)
 
-    // Reprodução determinística do cenário da auditoria: um flush pré-existente
-    // segura a chain; o capture final do shutdown fica AGUARDANDO a chain.
+    // Reprodução determinística: um flush pré-existente segura a chain; o
+    // capture final do shutdown fica AGUARDANDO a chain.
     sessions.appendTurn({ role: 'user', text: 'flush que segura a chain', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
     persistence.schedule(workspaceA)
     const coordinator = new AwaitedShutdownCoordinator(productionPlan(persistence, recording), { criticalDeadlineMs: 60_000 })
     const finished = coordinator.begin()
 
-    // Orçamento/timeout de passo NÃO existe mais na seção crítica: depois de
+    // Orçamento/timeout de passo NÃO existe na seção crítica: depois de
     // várias voltas do event loop o database continua ABERTO enquanto o flush
     // ainda pode chegar ao commitNow.
     for (let tick = 0; tick < 6; tick += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 15))
+      await sleep(15)
       expect(coordinator.state()).toBe('SHUTTING_DOWN')
       expect(recording.log).not.toContain('database:close')
     }
@@ -251,7 +296,7 @@ describe('AwaitedShutdownCoordinator — seal/quiesce e one-shot', () => {
     expect(recording.commits).toBe(2)
   })
 
-  it('BLOQUEIO 2 (deadline crítico): chain travada para sempre → ABORTED honesto, sem close do database e sem READY_TO_EXIT', async () => {
+  it('BLOQUEIO 2 primeira correção (deadline crítico): chain travada para sempre → ABORTED honesto, sem close do database e sem READY_TO_EXIT', async () => {
     // Chain que NUNCA destrava: sem timeout-abandon, a única saída é o
     // deadline crítico — que não finge databaseClosed/persistenceQuiescent.
     const never = new Promise<void>(() => undefined)
@@ -292,7 +337,7 @@ describe('AwaitedShutdownCoordinator — seal/quiesce e one-shot', () => {
     expect(aborts).toHaveLength(1)
   })
 
-  it('quiescência não provada (drain sem seal) → ABORTED: o database não fecha sem a prova', async () => {
+  it('quiescência de persistência não provada (drain sem seal) → ABORTED: o database não fecha sem a prova', async () => {
     const recording = createRecordingStore()
     const persistence = createProductionCoordinator(recording)
     // Plano INCORRETO de propósito: o drainQueue ignora o seal do coordinator
@@ -327,59 +372,305 @@ describe('AwaitedShutdownCoordinator — seal/quiesce e one-shot', () => {
     expect(recording.log).not.toContain('database:close')
   })
 
-  it('providers são AUXILIARES: close travado expira sem falsificar segurança — quiescência provada e database fechado', async () => {
+  it('BLOQUEIO 1 segunda correção (workspace switch em andamento): quiescência aguardável — capture final SOMENTE depois do switch convergir', async () => {
+    const runtime = createProductionRuntime()
     const recording = createRecordingStore()
     const persistence = createProductionCoordinator(recording)
-    const plan = productionPlan(persistence, recording, {
-      closeProviders: () => new Promise<void>(() => undefined) // nunca resolve
-    })
-    const coordinator = new AwaitedShutdownCoordinator(plan, { stepTimeoutMs: 40, criticalDeadlineMs: 60_000 })
+    const sessions = sessionsOf(persistence)
+    sessions.appendTurn({ role: 'user', text: 'estado estável do workspace A', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
 
-    const report = await coordinator.begin()
+    // Operação JÁ iniciada ANTES do shutdown: workspace switch em andamento
+    // (flush A lento / configure em execução — reprodução do race da
+    // auditoria: o switch continuaria e ativaria B DEPOIS do capture).
+    runtime.gate.beginWorkspaceSwitch()
+
+    const coordinator = new AwaitedShutdownCoordinator(productionPlan(persistence, recording, runtime))
+    const finished = coordinator.begin()
+    await sleep(15)
+
+    // O selo bloqueou NOVAS operações user-driven IMEDIATAMENTE.
+    expect(() => runtime.gate.beginWorkspaceSwitch()).toThrow(agentRuntimeSealedMessage)
+    expect(() => runtime.gate.beginSend()).toThrow(agentRuntimeSealedMessage)
+    expect(() => runtime.gate.beginProviderSelect()).toThrow(agentRuntimeSealedMessage)
+    expect(runtime.gate.isSealedForShutdown()).toBe(true)
+    // Mas o shutdown NÃO prosseguiu: o capture final AINDA NÃO ocorreu porque
+    // o switch antigo continua vivo (runtime não quiescente).
+    expect(coordinator.state()).toBe('SHUTTING_DOWN')
+    expect(runtime.steps).toContain('step:awaitRuntimeQuiescent')
+    expect(runtime.steps).not.toContain('step:flushStableState')
+    expect(recording.log).not.toContain('database:close')
+
+    // O switch antigo converge (endWorkspaceSwitch): o runtime fica
+    // quiescente e SOMENTE ENTÃO o capture final acontece.
+    runtime.gate.endWorkspaceSwitch()
+    const report = await finished
     expect(report.phase).toBe('READY_TO_EXIT')
-    expect(report.providersClosed).toBe(false)
-    expect(report.timedOutSteps).toEqual(['closeProviders'])
-    expect(report.degraded).toBe(true)
-    // A persistência segue PROVADA e o database fechado em segurança: o seal
-    // garante que um provider vivo não consegue agendar persistência nova.
+    expect(report.runtimeQuiescent).toBe(true)
     expect(report.persistenceQuiescent).toBe(true)
     expect(report.databaseClosed).toBe(true)
-    expect(persistence.intakeState()).toBe('FINAL')
+    expect(report.degraded).toBe(false)
+    // Ordem comprovada: quiescência ANTES do capture final.
+    expect(runtime.steps.indexOf('step:awaitRuntimeQuiescent')).toBeLessThan(runtime.steps.indexOf('step:flushStableState'))
     expect(recording.log.at(-1)).toBe('database:close')
   })
 
-  it('close do provider que lança não interrompe o sequenciamento; database fecha com quiescência', async () => {
+  it('BLOQUEIO 1 segunda correção (send em andamento): quiescência aguardável — capture final espera o send antigo estabilizar', async () => {
+    const runtime = createProductionRuntime()
     const recording = createRecordingStore()
     const persistence = createProductionCoordinator(recording)
-    const plan = productionPlan(persistence, recording, {
-      closeProviders: () => Promise.reject(new Error('provider close explodiu'))
-    })
-    const coordinator = new AwaitedShutdownCoordinator(plan)
+    const sessions = sessionsOf(persistence)
+    sessions.appendTurn({ role: 'user', text: 'pergunta estável', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
 
-    const report = await coordinator.begin()
-    expect(report.failedSteps).toEqual(['closeProviders'])
-    expect(report.providersClosed).toBe(false)
+    // Send JÁ iniciado antes do before-quit: a preparação/execução continua
+    // usando adapters/database (agent.send + commitSendTurn).
+    runtime.gate.beginSend()
+
+    const coordinator = new AwaitedShutdownCoordinator(productionPlan(persistence, recording, runtime))
+    const finished = coordinator.begin()
+    await sleep(15)
+
+    // Novos sends são recusados; o send antigo continua vivo.
+    expect(() => runtime.gate.beginSend()).toThrow(agentRuntimeSealedMessage)
+    expect(coordinator.state()).toBe('SHUTTING_DOWN')
+    expect(runtime.steps).not.toContain('step:flushStableState')
+    expect(recording.log).not.toContain('database:close')
+
+    // O send antigo termina (endSend — o commitSendTurn dele já encontrou o
+    // intake selado e falhou closed, o que é o comportamento aprovado): o
+    // runtime fica quiescente e o shutdown prossegue para o capture final.
+    runtime.gate.endSend()
+    const report = await finished
+    expect(report.phase).toBe('READY_TO_EXIT')
+    expect(report.runtimeQuiescent).toBe(true)
     expect(report.databaseClosed).toBe(true)
-    expect(report.persistenceQuiescent).toBe(true)
-    expect(report.degraded).toBe(true)
-    expect(coordinator.state()).toBe('READY_TO_EXIT')
+    expect(runtime.steps.indexOf('step:awaitRuntimeQuiescent')).toBeLessThan(runtime.steps.indexOf('step:flushStableState'))
   })
 
-  it('close do database que lança: READY_TO_EXIT com degraded e databaseClosed=false (sem fingir)', async () => {
+  it('BLOQUEIO 1 segunda correção (provider BUSY): turno em streaming segura a quiescência; notificação de estado resolve os waiters', async () => {
+    // Provider já BUSY no instante do shutdown: o turno continua executando e
+    // pode gravar AIThread/AITurn/AIEvent no SQLite — o runtime NÃO está
+    // quiescente enquanto isso (documentação explícita do caminho seguro).
+    const runtime = createProductionRuntime({ agentBusy: true })
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+
+    const coordinator = new AwaitedShutdownCoordinator(productionPlan(persistence, recording, runtime))
+    const finished = coordinator.begin()
+    await sleep(15)
+
+    expect(coordinator.state()).toBe('SHUTTING_DOWN')
+    expect(runtime.steps).not.toContain('step:flushStableState')
+    expect(recording.log).not.toContain('database:close')
+
+    // O turno termina: busy → livre. A notificação de estado (o que
+    // publishAgentEvent faz no main em CADA evento de agente) resolve os
+    // waiters de quiescência deterministicamente.
+    runtime.setAgentBusy(false)
+    runtime.gate.notifyAgentStateChanged()
+
+    const report = await finished
+    expect(report.phase).toBe('READY_TO_EXIT')
+    expect(report.runtimeQuiescent).toBe(true)
+    expect(report.databaseClosed).toBe(true)
+    expect(runtime.steps.indexOf('step:awaitRuntimeQuiescent')).toBeLessThan(runtime.steps.indexOf('step:flushStableState'))
+  })
+
+  it('BLOQUEIO 1 segunda correção (deadline): operação antiga que NUNCA converge → ABORTED sem capture e sem close', async () => {
+    const runtime = createProductionRuntime()
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+
+    // Workspace switch que nunca termina (operação travada).
+    runtime.gate.beginWorkspaceSwitch()
+
+    const aborts: AwaitedShutdownReport[] = []
+    const exits: AwaitedShutdownReport[] = []
+    const coordinator = new AwaitedShutdownCoordinator(productionPlan(persistence, recording, runtime), {
+      criticalDeadlineMs: 60,
+      onAbort: (report) => { aborts.push(report) },
+      onReadyToExit: (report) => { exits.push(report) }
+    })
+    const report = await coordinator.begin()
+
+    expect(report.phase).toBe('ABORTED')
+    expect(report.abortReason).toBe('CRITICAL_DEADLINE')
+    expect(report.runtimeQuiescent).toBe(false)
+    expect(report.databaseClosed).toBe(false)
+    // O capture final NUNCA aconteceu (quiescência antes do flush).
+    expect(runtime.steps).not.toContain('step:flushStableState')
+    expect(recording.log).not.toContain('database:close')
+    expect(aborts).toHaveLength(1)
+    expect(exits).toHaveLength(0)
+  })
+
+  it('awaitRuntimeQuiescent que rejeita → ABORTED com RUNTIME_NOT_QUIESCENT (nenhum capture, nenhum close)', async () => {
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+    const plan = productionPlan(persistence, recording, undefined, {
+      awaitRuntimeQuiescent: () => Promise.reject(new Error('runtime indisponível'))
+    })
+    const coordinator = new AwaitedShutdownCoordinator(plan)
+    const report = await coordinator.begin()
+    expect(report.phase).toBe('ABORTED')
+    expect(report.abortReason).toBe('RUNTIME_NOT_QUIESCENT')
+    expect(report.failedSteps).toEqual(['awaitRuntimeQuiescent'])
+    expect(report.runtimeQuiescent).toBe(false)
+    expect(report.databaseClosed).toBe(false)
+    expect(recording.log).not.toContain('database:close')
+  })
+
+  it('BLOQUEIO 2 segunda correção: provider close PENDENTE pode gravar history — database.close NÃO acontece até o provider fechar; zero history write-after-close', async () => {
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+    const sessions = sessionsOf(persistence)
+    sessions.appendTurn({ role: 'user', text: 'pergunta estável', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
+
+    const releaseProviderClose = deferred()
+    const plan = productionPlan(persistence, recording, undefined, {
+      // Provider close pendente: o provider ainda está vivo.
+      closeProviders: async () => {
+        recording.log.push('providers:closing')
+        await releaseProviderClose.gate
+        recording.log.push('providers:closed')
+      }
+    })
+    const coordinator = new AwaitedShutdownCoordinator(plan, { criticalDeadlineMs: 60_000 })
+    const finished = coordinator.begin()
+
+    // Espera o shutdown chegar ao passo de providers (capture + drains já
+    // concluídos com quiescência provada).
+    while (!recording.log.includes('providers:closing')) await sleep(5)
+
+    // Provider vivo durante o close pendente: grava history DIRETO no SQLite
+    // (putAIThread/putAITurn/appendAIEvent — fora do snapshot coordinator).
+    recording.log.push('history:turn-late')
+
+    // Enquanto o provider close está pendente, o database NÃO fecha.
+    expect(recording.log).not.toContain('database:close')
+    expect(coordinator.state()).toBe('SHUTTING_DOWN')
+
+    // O provider fecha: somente então o shutdown prossegue para o database.
+    releaseProviderClose.release()
+    const report = await finished
+    expect(report.phase).toBe('READY_TO_EXIT')
+    expect(report.providersClosed).toBe(true)
+    expect(report.databaseClosed).toBe(true)
+
+    // PROVA de zero history write-after-database-close: TODA escrita de
+    // history (e o próprio close dos providers) precede o database:close.
+    expect(recording.log.indexOf('history:turn-late')).toBeLessThan(recording.log.indexOf('database:close'))
+    expect(recording.log.indexOf('providers:closed')).toBeLessThan(recording.log.indexOf('database:close'))
+    expect(recording.log.at(-1)).toBe('database:close')
+  })
+
+  it('BLOQUEIO 2 segunda correção (deadline): provider close que nunca resolve → ABORTED, database NÃO fecha, zero write-after-close', async () => {
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+
+    const plan = productionPlan(persistence, recording, undefined, {
+      closeProviders: () => new Promise<void>(() => undefined) // nunca resolve
+    })
+    const aborts: AwaitedShutdownReport[] = []
+    const exits: AwaitedShutdownReport[] = []
+    const coordinator = new AwaitedShutdownCoordinator(plan, {
+      criticalDeadlineMs: 60,
+      onAbort: (report) => { aborts.push(report) },
+      onReadyToExit: (report) => { exits.push(report) }
+    })
+    const report = await coordinator.begin()
+
+    expect(report.phase).toBe('ABORTED')
+    expect(report.abortReason).toBe('CRITICAL_DEADLINE')
+    // Progresso honesto: quiescências já provadas, mas providers/database NÃO.
+    expect(report.runtimeQuiescent).toBe(true)
+    expect(report.persistenceQuiescent).toBe(true)
+    expect(report.providersClosed).toBe(false)
+    expect(report.databaseClosed).toBe(false)
+    expect(recording.log).not.toContain('database:close')
+    expect(aborts).toHaveLength(1)
+    expect(exits).toHaveLength(0)
+  })
+
+  it('BLOQUEIO 2 segunda correção: close do provider que REJEITA → ABORTED com PROVIDERS_CLOSE_FAILED; database NÃO fecha', async () => {
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+    const plan = productionPlan(persistence, recording, undefined, {
+      closeProviders: () => Promise.reject(new Error('provider close explodiu'))
+    })
+    const aborts: AwaitedShutdownReport[] = []
+    const exits: AwaitedShutdownReport[] = []
+    const coordinator = new AwaitedShutdownCoordinator(plan, {
+      onAbort: (report) => { aborts.push(report) },
+      onReadyToExit: (report) => { exits.push(report) }
+    })
+
+    const report = await coordinator.begin()
+    expect(report.phase).toBe('ABORTED')
+    expect(report.aborted).toBe(true)
+    expect(report.abortReason).toBe('PROVIDERS_CLOSE_FAILED')
+    expect(report.failedSteps).toEqual(['closeProviders'])
+    expect(report.providersClosed).toBe(false)
+    // Progresso honesto: runtime e persistência já estavam provados.
+    expect(report.runtimeQuiescent).toBe(true)
+    expect(report.persistenceQuiescent).toBe(true)
+    // O database NÃO fecha no caminho normal sem providers encerrados.
+    expect(report.databaseClosed).toBe(false)
+    expect(recording.log).not.toContain('database:close')
+    expect(coordinator.state()).toBe('ABORTED')
+    expect(aborts).toHaveLength(1)
+    expect(exits).toHaveLength(0)
+  })
+
+  it('providers CRÍTICOS: close lento é aguardado integralmente; database fecha SOMENTE depois dos providers', async () => {
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+    const plan = productionPlan(persistence, recording, undefined, {
+      closeProviders: async () => {
+        await sleep(30)
+        recording.log.push('providers:closed')
+      }
+    })
+    const coordinator = new AwaitedShutdownCoordinator(plan, { criticalDeadlineMs: 60_000 })
+
+    const report = await coordinator.begin()
+    expect(report.phase).toBe('READY_TO_EXIT')
+    expect(report.providersClosed).toBe(true)
+    expect(report.databaseClosed).toBe(true)
+    expect(report.degraded).toBe(false)
+    // Ordem comprovada: providers encerrados ANTES do database.
+    expect(recording.log.indexOf('providers:closed')).toBeLessThan(recording.log.indexOf('database:close'))
+    expect(recording.log.at(-1)).toBe('database:close')
+  })
+
+  it('BLOQUEIO 3 segunda correção: close do database que REJEITA → ABORTED com DATABASE_CLOSE_FAILED; NUNCA READY_TO_EXIT/exit 0', async () => {
     const recording = createRecordingStore()
     const persistence = createProductionCoordinator(recording)
     const plan: AwaitedShutdownPlan = {
       ...productionPlan(persistence, recording),
       closeDatabase: () => Promise.reject(new Error('worker já morto'))
     }
-    const coordinator = new AwaitedShutdownCoordinator(plan)
+    const aborts: AwaitedShutdownReport[] = []
+    const exits: AwaitedShutdownReport[] = []
+    const coordinator = new AwaitedShutdownCoordinator(plan, {
+      onAbort: (report) => { aborts.push(report) },
+      onReadyToExit: (report) => { exits.push(report) }
+    })
 
     const report = await coordinator.begin()
-    expect(report.phase).toBe('READY_TO_EXIT')
+    // app.exit(0) JAMAIS acontece com o database não confirmado: a falha do
+    // close é ABORTED com saída forçada (app.exit(1) no main).
+    expect(report.phase).toBe('ABORTED')
+    expect(report.aborted).toBe(true)
+    expect(report.abortReason).toBe('DATABASE_CLOSE_FAILED')
     expect(report.failedSteps).toEqual(['closeDatabase'])
     expect(report.databaseClosed).toBe(false)
+    // Progresso honesto: providers JÁ encerrados e quiescências provadas.
+    expect(report.providersClosed).toBe(true)
+    expect(report.runtimeQuiescent).toBe(true)
     expect(report.persistenceQuiescent).toBe(true)
-    expect(report.degraded).toBe(true)
+    expect(coordinator.state()).toBe('ABORTED')
+    expect(aborts).toHaveLength(1)
+    expect(exits).toHaveLength(0)
   })
 
   it('dirty root FAILED no capture final: retry final converge e o shutdown termina limpo', async () => {
@@ -468,13 +759,9 @@ describe('AwaitedShutdownCoordinator — seal/quiesce e one-shot', () => {
     const coordinator = new AwaitedShutdownCoordinator(productionPlan(persistence, recording))
     expect(coordinator.state()).toBe('RUNNING')
     expect(coordinator.isReadyToExit()).toBe(false)
-
-    const shutdown = coordinator.begin()
-    expect(coordinator.state()).toBe('SHUTTING_DOWN')
-    expect(coordinator.isReadyToExit()).toBe(false)
-
-    await shutdown
+    const report = await coordinator.begin()
     expect(coordinator.state()).toBe('READY_TO_EXIT')
     expect(coordinator.isReadyToExit()).toBe(true)
+    expect(report.phase).toBe('READY_TO_EXIT')
   })
 })

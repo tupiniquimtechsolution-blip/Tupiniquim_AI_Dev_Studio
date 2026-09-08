@@ -1168,6 +1168,7 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     expect(shutdownLines.at(-1) ?? '').toContain('"outcome":"SUCCESS"')
     expect(shutdownLines.at(-1) ?? '').toContain('databaseClosed=yes')
     expect(shutdownLines.at(-1) ?? '').toContain('sealed=yes')
+    expect(shutdownLines.at(-1) ?? '').toContain('runtimeQuiescent=yes')
     expect(shutdownLines.at(-1) ?? '').toContain('persistenceQuiescent=yes')
     expect(shutdownLines.at(-1) ?? '').not.toContain(privateMarker)
 

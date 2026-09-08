@@ -133,7 +133,23 @@ const controlledCodexArgs = ((): string[] | undefined => {
     return undefined
   }
 })()
+/**
+ * Wave 16 — Incremento 4/4 (SEGUNDA correção da auditoria, Bloqueio 1): o gate
+ * é declarado ANTES dos adapters porque `publishAgentEvent` notifica o estado
+ * de provider nele (RUNTIME QUIESCENCE aguardável — busy/starting → livre).
+ * O closure `agentBusy` referencia `agents` LAZILY (avaliado somente em
+ * chamadas de runtime, sempre após a inicialização do módulo).
+ */
+const runtimeGate = new PrivilegedRuntimeGate(() => Object.values(agents).some((agent) => {
+  const state = agent.status().state
+  return state === 'STARTING' || state === 'BUSY'
+}))
 const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
+  // RUNTIME QUIESCENCE (SEGUNDA correção, Bloqueio 1): todo evento de agente
+  // pode ter mudado o estado busy/starting → livre. A notificação resolve
+  // waiters de quiescência de forma determinística (sem polling) quando o
+  // runtime ficou livre — o shutdown aguarda isso ANTES do capture final.
+  runtimeGate.notifyAgentStateChanged()
   const foreignThread = !tupiniquimSession.acceptsProviderEvent(provider, event.threadId)
   if (tupiniquimSession.current() !== null && !foreignThread) {
     const model = tupiniquimSession.modelFor(provider)
@@ -235,17 +251,14 @@ const ollamaAgent = new OllamaAdapter({
 })
 const agents: Record<AIProviderKind, AIProvider> = { 'codex-app-server': codexAgent, ollama: ollamaAgent }
 const activeAgent = (): AIProvider => agents[selectedAgentProvider]
-const runtimeGate = new PrivilegedRuntimeGate(() => Object.values(agents).some((agent) => {
-  const state = agent.status().state
-  return state === 'STARTING' || state === 'BUSY'
-}))
 const redactContextMetadata = (value: string): string => value
   .replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gu, '[REDACTED]')
   .replace(/(authorization|api[_-]?key|token)\s*[:=]\s*\S+/giu, '$1=[REDACTED]')
   .slice(0, 300)
 /**
- * Wave 16 — Incremento 4/4 (correção da auditoria — Bloqueios 1/2):
- * shutdown one-shot aguardável com SEAL/QUIESCE real.
+ * Wave 16 — Incremento 4/4 (SEGUNDA correção da auditoria — Bloqueios 1/2/3):
+ * shutdown one-shot aguardável com RUNTIME QUIESCENCE real, providers e
+ * database CRÍTICOS.
  *
  * Substitui o `before-quit` fire-and-forget (`void close()`): a primeira
  * solicitação normal de encerramento NÃO sai imediatamente — ela inicia a
@@ -253,27 +266,37 @@ const redactContextMetadata = (value: string): string => value
  * READY_TO_EXIT | ABORTED com guarda de reentrada) e a saída final só
  * acontece depois de, na ordem:
  *
- *   1. SEAL — runtime gate travado (send/switch/provider select recusados)
- *      + intake do coordinator selado: NENHUMA fonte (publishAgentEvent,
- *      onWorkspaceWriteToolCall, send, workspace switch) consegue enfileirar
- *      trabalho durável novo;
- *   2. capture final do estado estável atual (flushFinal);
- *   3. drain com PROVA de quiescência (quiescent: true);
- *   4. retry final único de roots dirty (falha = durabilidade NÃO declarada);
- *   5. drain final;
- *   6. providers (timeout AUXILIAR — o seal isola a persistência);
- *   7. selo FINAL do intake (nem flushFinal pode mais postar);
- *   8. close do SQLite SOMENTE com quiescência provada (sem timeout próprio).
+ *   1. SEAL de NOVAS operações — runtime gate travado (send/switch/provider
+ *      select recusados) + intake do coordinator selado: NENHUMA fonte
+ *      (publishAgentEvent, onWorkspaceWriteToolCall, send, workspace switch)
+ *      consegue enfileirar trabalho durável novo;
+ *   2. RUNTIME QUIESCENCE — aguarda as operações JÁ iniciadas convergirem
+ *      (workspace switch em andamento não ativa B depois do capture; send em
+ *      andamento não continua usando adapters/database; turno de provider em
+ *      streaming termina antes do close dos providers);
+ *   3. capture final do estado estável atual (flushFinal);
+ *   4. drain com PROVA de quiescência (quiescent: true);
+ *   5. retry final único de roots dirty (falha = durabilidade NÃO declarada);
+ *   6. drain final;
+ *   7. CLOSE PROVIDERS — CRÍTICO e aguardado integralmente: Codex e Ollama
+ *      gravam AIThread/AITurn/AIEvent DIRETO no SQLite (history repository,
+ *      FORA do snapshot coordinator); sem providers encerrados o database
+ *      NÃO fecha. Falha → ABORTED;
+ *   8. selo FINAL do intake (nem flushFinal pode mais postar);
+ *   9. CLOSE DATABASE — CRÍTICO: falha → ABORTED com app.exit(1) (nunca
+ *      exit 0 com banco não confirmado).
  *
- * O database NUNCA fecha com persistência não quiescente: hang real da seção
- * crítica transita para ABORTED (database não fechado, nada declarado seguro,
- * saída forçada via app.exit(1) — semântica honesta de crash). O relatório
- * sanitizado vai para o AuditLog em ambos os caminhos.
+ * O database NUNCA fecha com runtime não quiescente, persistência não
+ * quiescente ou providers vivos: qualquer falha crítica (ou hang coberto
+ * pelo deadline crítico) transita para ABORTED — database não fechado, nada
+ * declarado seguro, saída forçada via app.exit(1) (semântica honesta de
+ * crash). O relatório sanitizado vai para o AuditLog em ambos os caminhos.
  */
 const formatShutdownAuditTarget = (report: AwaitedShutdownReport): string => redactContextMetadata([
   `app.shutdown ${report.aborted ? 'ABORTED' : 'sequenciado'}`,
   `abortReason=${report.abortReason}`,
   `sealed=${report.sealed ? 'yes' : 'no'}`,
+  `runtimeQuiescent=${report.runtimeQuiescent ? 'yes' : 'no'}`,
   `persistenceQuiescent=${report.persistenceQuiescent ? 'yes' : 'no'}`,
   `stableFlush=${report.stableStateFlush}`,
   `dirtyRetried=${String(report.dirtyRootsRetried)}`,
@@ -289,6 +312,12 @@ const shutdownCoordinator = new AwaitedShutdownCoordinator({
     runtimeGate.sealForShutdown()
     tupiniquimPersistence.seal()
   },
+  // RUNTIME QUIESCENCE (SEGUNDA correção, Bloqueio 1): aguardável
+  // determinístico do MESMO gate que as operações user-driven usam —
+  // resolve quando workspace switch/send/provider select JÁ iniciados e
+  // turnos de provider em streaming convergirem (waiter set resolvido pelo
+  // último end*()/notifyAgentStateChanged; sem polling).
+  awaitRuntimeQuiescent: () => runtimeGate.awaitQuiescent(),
   flushStableState: async () => {
     const workspaceRoot = tupiniquimSession.current()?.workspaceRoot ?? null
     if (workspaceRoot === null) return { status: 'NO_ACTIVE_WORKSPACE' } as const
@@ -297,6 +326,10 @@ const shutdownCoordinator = new AwaitedShutdownCoordinator({
   drainQueue: async () => await tupiniquimPersistence.drain(),
   dirtyWorkspaceRoots: () => [...tupiniquimPersistence.dirtyWorkspaces().keys()],
   retryDirtyWorkspace: async (workspaceRoot) => await tupiniquimPersistence.flushFinal(workspaceRoot),
+  // CRÍTICO (SEGUNDA correção, Bloqueio 2): providers gravam history DIRETO
+  // no SQLite (putAIThread/putAITurn/appendAIEvent) — fora do snapshot
+  // coordinator. O sequenciador aguarda integralmente; falha/hang → ABORTED
+  // (database NÃO fecha).
   closeProviders: async () => {
     await codexAgent.close()
     await ollamaAgent.close()
