@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { maxDurableTupiniquimTurns, redactTupiniquimDurableText, tupiniquimDurableSnapshotSchema, validateTupiniquimSessionSnapshotIntegrity, type AIProviderKind, type AIEvent, type AIThread, type AITurn, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan, type PromptTemplate, type TupiniquimDurableSnapshot, type TupiniquimSession, type UIProfile, type VisualAsset } from '@tupiniquim/contracts'
+import { maxDurableTupiniquimTurns, redactTupiniquimDurableText, tupiniquimDurableSnapshotSchema, validateTupiniquimSessionSnapshotIntegrity, type AIProviderKind, type AIEvent, type AIThread, type AITurn, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan, type PromptTemplate, type TupiniquimDurableSnapshot, type TupiniquimSession, type TupiniquimSessionSnapshotRead, type UIProfile, type VisualAsset } from '@tupiniquim/contracts'
 
 type DatabaseOperation =
   | { type: 'initialize' }
@@ -380,10 +380,24 @@ export class LocalDatabase {
    * snapshot inexistente ou inconsistente retorna null — nunca estado parcial.
    */
   public async getTupiniquimSessionSnapshot(workspaceRoot: string): Promise<TupiniquimDurableSnapshot | null> {
+    const read = await this.readTupiniquimSessionSnapshot(workspaceRoot)
+    return read.status === 'VALID' ? read.snapshot : null
+  }
+
+  /**
+   * Wave 16 — Incremento 2/4: mesma leitura fail-closed, com resultado
+   * discriminado para o diagnóstico de recovery. Distingue workspace SEM
+   * snapshot (ABSENT, comportamento normal) de snapshot REJEITADO na leitura
+   * (INVALID: schema, ordem/posições, payload corrompido, violação relacional
+   * ou seen órfão). Somente leitura: nenhuma escrita, nenhum write-through.
+   * O comportamento de getTupiniquimSessionSnapshot permanece idêntico.
+   */
+  public async readTupiniquimSessionSnapshot(workspaceRoot: string): Promise<TupiniquimSessionSnapshotRead> {
     await this.ready
     const stored = await this.requestRaw({ type: 'getTupiniquimSessionSnapshot', workspaceRoot }) as StoredTupiniquimSessionSnapshot | null
-    if (stored === null) return null
-    return assembleTupiniquimSessionSnapshot(stored, workspaceRoot)
+    if (stored === null) return { status: 'ABSENT' }
+    const snapshot = assembleTupiniquimSessionSnapshot(stored, workspaceRoot)
+    return snapshot === null ? { status: 'INVALID' } : { status: 'VALID', snapshot }
   }
 
   public async close(): Promise<void> {

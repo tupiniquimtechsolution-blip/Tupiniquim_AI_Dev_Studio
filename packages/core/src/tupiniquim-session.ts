@@ -1,14 +1,24 @@
 import { randomUUID } from 'node:crypto'
 import {
+  aiProviderKinds,
   maxTupiniquimSessionContextChars,
   redactTupiniquimDurableText,
   tupiniquimConversationSchema,
+  tupiniquimDurableSnapshotSchema,
+  tupiniquimSessionRecoveryReasons,
+  validateTupiniquimSessionSnapshotIntegrity,
+  validateTupiniquimSessionSnapshotProvenance,
   type AIProviderKind,
   type AIStatus,
+  type AIThread,
   type TupiniquimConversation,
+  type TupiniquimDurableSnapshot,
   type TupiniquimProposalAuthority,
   type TupiniquimProviderBinding,
   type TupiniquimSession,
+  type TupiniquimSessionProvenanceViolation,
+  type TupiniquimSessionRecoveryCounts,
+  type TupiniquimSessionRecoveryReason,
   type TupiniquimTurn,
   type TupiniquimTurnRole
 } from '@tupiniquim/contracts'
@@ -99,6 +109,56 @@ interface WorkspaceSessionState {
   finalizedTurns: Set<string>
 }
 
+/**
+ * Wave 16 — Incremento 2/4: resultado do hydrate da Tupiniquim Session a
+ * partir do snapshot durável v5.
+ *
+ * `HYDRATED`  → session/turns/bindings/seen reconstruídos atomicamente em
+ *               memória, com TODO o lifecycle efêmero iniciado vazio.
+ * `REJECTED`  → provenance/consistência inválida: NADA foi mutado (nenhum
+ *               binding parcial, nenhum turn parcial, nenhum seen parcial).
+ * `LIVE_SESSION_PRESERVED` → já existe sessão viva para o workspace neste
+ *               processo; o snapshot do SQLite NUNCA a sobrescreve.
+ */
+export type TupiniquimSessionHydrateResult =
+  | { status: 'HYDRATED'; session: TupiniquimSession; restored: TupiniquimSessionRecoveryCounts }
+  | { status: 'LIVE_SESSION_PRESERVED'; session: TupiniquimSession }
+  | {
+    status: 'REJECTED'
+    reasons: readonly TupiniquimSessionRecoveryReason[]
+    integrityViolations: readonly string[]
+    provenanceViolations: readonly TupiniquimSessionProvenanceViolation[]
+  }
+
+/** Observabilidade read-only do lifecycle efêmero (nunca durável, nunca hidratado). */
+export interface TupiniquimEphemeralLifecycle {
+  authority: TupiniquimProposalAuthority | null
+  proposalIds: number
+  inProgress: number
+  pending: number
+  settledSuccess: number
+  settledFailure: number
+  finalizedTurns: number
+}
+
+const rejectedHydrate = (
+  reasons: readonly TupiniquimSessionRecoveryReason[],
+  integrityViolations: readonly string[],
+  provenanceViolations: readonly TupiniquimSessionProvenanceViolation[]
+): TupiniquimSessionHydrateResult => ({ status: 'REJECTED', reasons, integrityViolations, provenanceViolations })
+
+/** Reason codes estáveis e deduplicados, em ordem canônica, para diagnóstico sanitizado. */
+const recoveryReasonsFrom = (
+  provenanceViolations: readonly TupiniquimSessionProvenanceViolation[],
+  integrityViolations: readonly string[]
+): readonly TupiniquimSessionRecoveryReason[] => {
+  const reasons = new Set<TupiniquimSessionRecoveryReason>(provenanceViolations.map((violation) => violation.reason))
+  // Violação relacional do Incremento 1 (ou seen/schema inválido) não tem código
+  // próprio: é snapshot internamente inconsistente.
+  if (integrityViolations.length > 0) reasons.add('SNAPSHOT_INVALID')
+  return tupiniquimSessionRecoveryReasons.filter((reason) => reasons.has(reason))
+}
+
 export class TupiniquimSessionService {
   private readonly sessionsByWorkspace = new Map<string, WorkspaceSessionState>()
   private activeWorkspaceRoot: string | null = null
@@ -139,6 +199,91 @@ export class TupiniquimSessionService {
 
   public current(): TupiniquimSession | null {
     return this.activeOrNull()?.session ?? null
+  }
+
+  /**
+   * Existência de sessão VIVA em memória para o workspace neste processo.
+   *
+   * É o controle explícito que impede o snapshot do SQLite de sobrescrever uma
+   * sessão viva: A aberto → conversa nova em memória → vai para B → volta para
+   * A deve retornar ao estado vivo de A, nunca rehidratar o snapshot antigo.
+   */
+  public hasWorkspace(workspaceRoot: string): boolean {
+    return this.sessionsByWorkspace.has(workspaceRoot)
+  }
+
+  /**
+   * Hidrata a Tupiniquim Session do workspace a partir do snapshot durável v5,
+   * reconstruindo ATOMICAMENTE em memória: session + turns (ordem original) +
+   * bindings + seenByProvider.
+   *
+   * Fail-closed integral: a validação completa acontece ANTES de qualquer
+   * mutação. Se qualquer elo da provenance falhar (schema, consistência
+   * relacional do Incremento 1, workspaceRoot divergente, AIThread ausente,
+   * provider/workspace/model divergentes, turn sem binding compatível, seen
+   * inválido), o resultado é `REJECTED` e NENHUM estado é instalado — nem
+   * binding parcial, nem turn parcial, nem seen parcial.
+   *
+   * Lifecycle efêmero NÃO é hidratado e inicia sempre vazio: authority,
+   * proposalIds, inProgress, pendingByTurn, settledSuccess, settledFailure e
+   * finalizedTurns. Nenhuma proposal pré-restart reaparece.
+   *
+   * Sessão viva do mesmo processo NUNCA é sobrescrita (`LIVE_SESSION_PRESERVED`).
+   *
+   * `threads` são as AIThreads persistidas já resolvidas pelo chamador
+   * (`database.getAIThread(binding.threadId)` para cada binding). Este método
+   * não faz I/O: permanece síncrono, atômico e testável isoladamente.
+   *
+   * O hydrate instala o estado do workspace mas NÃO o ativa; a ativação continua
+   * sendo `switchWorkspace`, que preserva a revogação de authority do workspace
+   * anterior.
+   */
+  public hydrateWorkspace(
+    snapshot: TupiniquimDurableSnapshot,
+    threads: readonly AIThread[],
+    expectedWorkspaceRoot: string
+  ): TupiniquimSessionHydrateResult {
+    const parsed = tupiniquimDurableSnapshotSchema.safeParse(snapshot)
+    if (!parsed.success) return rejectedHydrate(['SNAPSHOT_INVALID'], ['Snapshot fora do contrato durável strict.'], [])
+    const durable = parsed.data
+    const integrityViolations = validateTupiniquimSessionSnapshotIntegrity(durable, expectedWorkspaceRoot)
+    const provenanceViolations = validateTupiniquimSessionSnapshotProvenance(durable, threads, expectedWorkspaceRoot)
+    if (integrityViolations.length > 0 || provenanceViolations.length > 0) {
+      return rejectedHydrate(recoveryReasonsFrom(provenanceViolations, integrityViolations), integrityViolations, provenanceViolations)
+    }
+
+    const workspaceRoot = durable.session.workspaceRoot
+    const live = this.sessionsByWorkspace.get(workspaceRoot)
+    if (live !== undefined) return { status: 'LIVE_SESSION_PRESERVED', session: live.session }
+
+    const bindings = new Map<AIProviderKind, TupiniquimProviderBinding>()
+    for (const binding of durable.providerBindings) bindings.set(binding.provider, { ...binding })
+    const seenByProvider = new Map<AIProviderKind, Set<string>>()
+    for (const provider of aiProviderKinds) {
+      const turnIds = durable.seenByProvider[provider]
+      if (turnIds !== undefined && turnIds.length > 0) seenByProvider.set(provider, new Set(turnIds))
+    }
+    const restored: TupiniquimSessionRecoveryCounts = {
+      turns: durable.turns.length,
+      bindings: bindings.size,
+      seenProviders: seenByProvider.size
+    }
+    // Construção completa ANTES da única mutação visível (set atômico no mapa).
+    const state: WorkspaceSessionState = {
+      session: { ...durable.session },
+      turns: durable.turns.map((turn) => ({ ...turn })),
+      bindings,
+      authority: null,
+      proposalIds: new Set(),
+      inProgress: new Map(),
+      seenByProvider,
+      pendingByTurn: new Map(),
+      settledSuccess: new Set(),
+      settledFailure: new Set(),
+      finalizedTurns: new Set()
+    }
+    this.sessionsByWorkspace.set(workspaceRoot, state)
+    return { status: 'HYDRATED', session: state.session, restored }
   }
 
   public snapshot(): TupiniquimConversation | null {
@@ -209,6 +354,27 @@ export class TupiniquimSessionService {
       pending: state.pendingByTurn.size,
       settledSuccess: state.settledSuccess.size,
       settledFailure: state.settledFailure.size
+    }
+  }
+
+  /**
+   * Fotografia read-only de TODO o lifecycle efêmero do workspace ativo.
+   * Existe para tornar auditável a garantia do hydrate: depois de um restart,
+   * authority/proposalIds/inProgress/pending/settled/finalized estão vazios.
+   */
+  public ephemeralLifecycle(): TupiniquimEphemeralLifecycle {
+    const state = this.activeOrNull()
+    if (state === null) {
+      return { authority: null, proposalIds: 0, inProgress: 0, pending: 0, settledSuccess: 0, settledFailure: 0, finalizedTurns: 0 }
+    }
+    return {
+      authority: this.proposalAuthorityFrom(state),
+      proposalIds: state.proposalIds.size,
+      inProgress: state.inProgress.size,
+      pending: state.pendingByTurn.size,
+      settledSuccess: state.settledSuccess.size,
+      settledFailure: state.settledFailure.size,
+      finalizedTurns: state.finalizedTurns.size
     }
   }
 

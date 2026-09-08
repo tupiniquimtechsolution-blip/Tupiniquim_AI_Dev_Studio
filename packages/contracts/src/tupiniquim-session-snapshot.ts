@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { aiProviderKinds, tupiniquimProviderBindingSchema, tupiniquimSessionSchema, tupiniquimTurnSchema } from './ai'
+import { aiProviderKinds, aiThreadSchema, tupiniquimProviderBindingSchema, tupiniquimSessionSchema, tupiniquimTurnSchema, type AIProviderKind, type AIThread, type TupiniquimProviderBinding } from './ai'
 
 /**
  * Wave 16 — durable Tupiniquim Session snapshot contract.
@@ -54,14 +54,38 @@ export const tupiniquimDurableSnapshotSchema = z.object({
 export type TupiniquimDurableSnapshot = z.infer<typeof tupiniquimDurableSnapshotSchema>
 
 /**
+ * Wave 16 — Incremento 2/4: resultado discriminado da leitura durável.
+ *
+ * Distingue os dois "null" que a boundary do Incremento 1 colapsava:
+ * - `ABSENT`  → workspace sem snapshot v5 (comportamento NORMAL, não erro);
+ * - `INVALID` → snapshot existe no SQLite mas foi rejeitado na leitura
+ *               (schema inválido, posições/ordem inconsistentes, payload
+ *               corrompido, violação relacional ou seen órfão);
+ * - `VALID`   → snapshot íntegro no nível durável, ainda sujeito à validação de
+ *               provenance contra a AIThread persistida antes do hydrate.
+ *
+ * Essa distinção existe apenas para o diagnóstico sanitizado de recovery: em
+ * ABSENT e INVALID o resultado operacional é o mesmo (sessão nova limpa, zero
+ * estado parcial).
+ */
+export type TupiniquimSessionSnapshotRead =
+  | { status: 'ABSENT' }
+  | { status: 'INVALID' }
+  | { status: 'VALID'; snapshot: TupiniquimDurableSnapshot }
+
+/**
  * Valida a consistência relacional de um snapshot durável já conformante ao
  * schema. Retorna a lista de violações (vazia = íntegro). Usado pelo
  * getTupiniquimSessionSnapshot (fail-closed na leitura), pelo
  * putTupiniquimSessionSnapshot (validação pré-commit, zero escrita) e pelos
  * testes.
  *
- * Validação contra AIThread completa (binding → thread existente, provider da
- * thread, workspaceRoot da thread, modelo) fica para o Incremento 2.
+ * Esta é a validação RELACIONAL (Incremento 1): o snapshot é internamente
+ * consistente. A validação de PROVENANCE contra a AIThread persistida
+ * (binding → thread existente, provider da thread, workspaceRoot da thread e
+ * modelo) é complementar e vive em
+ * validateTupiniquimSessionSnapshotProvenance (Incremento 2). O hydrate da
+ * sessão exige as DUAS: nenhuma delas sozinha estabelece provenance.
  */
 export const validateTupiniquimSessionSnapshotIntegrity = (
   snapshot: TupiniquimDurableSnapshot,
@@ -127,3 +151,192 @@ export const isTupiniquimSessionSnapshotIntegrityValid = (
   snapshot: TupiniquimDurableSnapshot,
   expectedWorkspaceRoot?: string
 ): boolean => validateTupiniquimSessionSnapshotIntegrity(snapshot, expectedWorkspaceRoot).length === 0
+
+/**
+ * Wave 16 — Incremento 2/4: provenance de recovery (hydrate) da Tupiniquim
+ * Session contra a AIThread persistida.
+ *
+ * Invariante central: `Tupiniquim Session != Provider Thread`. Um snapshot só
+ * pode ser hidratado se TODA a cadeia de provenance for válida:
+ *
+ *   turn → binding → AIThread → provider / workspaceRoot / model
+ *
+ * Se qualquer elo falhar, o snapshot é integralmente rejeitado (fail-closed):
+ * nenhum binding parcial, nenhum turn parcial, nenhum seen parcial.
+ *
+ * Regra determinística de MODEL PROVENANCE (sem correção silenciosa e sem
+ * copiar model de um lado para o outro):
+ * - ambos null → válido;
+ * - ambos string → devem ser exatamente iguais;
+ * - um null e o outro string → inválido.
+ */
+
+/** Códigos estáveis de rejeição de recovery (sem metadado de workspace, sem texto de conversa). */
+export const tupiniquimSessionRecoveryReasons = [
+  'SNAPSHOT_INVALID',
+  'THREAD_MISSING',
+  'PROVIDER_MISMATCH',
+  'WORKSPACE_MISMATCH',
+  'MODEL_MISMATCH'
+] as const
+export type TupiniquimSessionRecoveryReason = (typeof tupiniquimSessionRecoveryReasons)[number]
+
+export interface TupiniquimSessionProvenanceViolation {
+  reason: TupiniquimSessionRecoveryReason
+  provider: AIProviderKind | null
+  threadId: string | null
+  turnId: string | null
+  /** Detalhe sanitizado: somente identificadores; nunca caminho de workspace, texto de conversa, secret, token ou payload de proposal. */
+  detail: string
+}
+
+/** Contagens não sensíveis usadas no diagnóstico sanitizado de recovery. */
+export interface TupiniquimSessionRecoveryCounts {
+  turns: number
+  bindings: number
+  seenProviders: number
+}
+
+export const emptyTupiniquimSessionRecoveryCounts: TupiniquimSessionRecoveryCounts = {
+  turns: 0,
+  bindings: 0,
+  seenProviders: 0
+}
+
+/**
+ * Compatibilidade determinística de modelo entre binding da sessão Tupiniquim
+ * e AIThread persistida do provider. Nunca corrige, nunca completa: divergência
+ * (inclusive null × string) é rejeição.
+ */
+export const isTupiniquimModelProvenanceCompatible = (
+  bindingModel: string | null,
+  threadModel: string | null
+): boolean => bindingModel === null ? threadModel === null : threadModel === bindingModel
+
+const provenanceViolation = (
+  reason: TupiniquimSessionRecoveryReason,
+  detail: string,
+  scope: { provider?: AIProviderKind | null; threadId?: string | null; turnId?: string | null } = {}
+): TupiniquimSessionProvenanceViolation => ({
+  reason,
+  provider: scope.provider ?? null,
+  threadId: scope.threadId ?? null,
+  turnId: scope.turnId ?? null,
+  detail
+})
+
+/**
+ * Valida a provenance de um snapshot durável contra as AIThreads persistidas
+ * já resolvidas pelo chamador (`database.getAIThread(binding.threadId)` para
+ * cada binding, ANTES do hydrate). Pura e síncrona: não faz I/O, portanto é
+ * testável isoladamente e reutilizável por core/adapters.
+ *
+ * Cada registro recebido é revalidado pelo aiThreadSchema (defesa contra linha
+ * crua do SQLite): registro ausente OU ilegível é tratado como thread ausente.
+ *
+ * Ordem determinística das verificações por binding:
+ * 1. thread existente/legível e com o id solicitado → THREAD_MISSING;
+ * 2. AIThread.provider == binding.provider → PROVIDER_MISMATCH;
+ * 3. AIThread.workspaceRoot == snapshot.session.workspaceRoot → WORKSPACE_MISMATCH
+ *    (cross-workspace: mesma thread, mesmo provider e mesmo model de outro
+ *    workspace continuam sendo rejeição);
+ * 4. model compatível pela regra determinística → MODEL_MISMATCH.
+ *
+ * Em seguida, TURN PROVENANCE: todo turn com provider e threadId não nulos
+ * precisa apontar para o binding daquele provider (SNAPSHOT_INVALID). Como o
+ * binding já foi validado contra a AIThread, isso fecha a cadeia
+ * turn → binding → AIThread → provider/workspace/model.
+ */
+export const validateTupiniquimSessionSnapshotProvenance = (
+  snapshot: TupiniquimDurableSnapshot,
+  threads: readonly AIThread[],
+  expectedWorkspaceRoot?: string
+): readonly TupiniquimSessionProvenanceViolation[] => {
+  const violations: TupiniquimSessionProvenanceViolation[] = []
+
+  if (expectedWorkspaceRoot !== undefined && snapshot.session.workspaceRoot !== expectedWorkspaceRoot) {
+    violations.push(provenanceViolation(
+      'SNAPSHOT_INVALID',
+      'workspaceRoot da sessão do snapshot diverge da raiz solicitada (metadados de workspace redigidos).'
+    ))
+  }
+
+  const threadById = new Map<string, AIThread>()
+  for (const candidate of threads) {
+    const parsed = aiThreadSchema.safeParse(candidate)
+    if (parsed.success) threadById.set(parsed.data.id, parsed.data)
+  }
+
+  const bindingByProvider = new Map<AIProviderKind, TupiniquimProviderBinding>()
+  for (const binding of snapshot.providerBindings) {
+    bindingByProvider.set(binding.provider, binding)
+    const scope = { provider: binding.provider, threadId: binding.threadId }
+    const thread = threadById.get(binding.threadId)
+    if (thread === undefined) {
+      violations.push(provenanceViolation('THREAD_MISSING', 'AIThread persistida do binding não existe ou é ilegível.', scope))
+      continue
+    }
+    if (thread.id !== binding.threadId) {
+      violations.push(provenanceViolation('THREAD_MISSING', 'AIThread resolvida não corresponde ao id do binding.', scope))
+      continue
+    }
+    if (thread.provider !== binding.provider) {
+      violations.push(provenanceViolation('PROVIDER_MISMATCH', 'AIThread persistida pertence a outro provider.', scope))
+      continue
+    }
+    if (thread.workspaceRoot !== snapshot.session.workspaceRoot) {
+      violations.push(provenanceViolation('WORKSPACE_MISMATCH', 'AIThread persistida pertence a outro workspaceRoot (metadados de workspace redigidos).', scope))
+      continue
+    }
+    if (!isTupiniquimModelProvenanceCompatible(binding.model, thread.model)) {
+      violations.push(provenanceViolation('MODEL_MISMATCH', 'model do binding e model da AIThread persistida divergem (null × string ou strings diferentes).', scope))
+    }
+  }
+
+  for (const turn of snapshot.turns) {
+    if (turn.provider === null || turn.threadId === null) continue
+    const binding = bindingByProvider.get(turn.provider)
+    if (binding === undefined || binding.threadId !== turn.threadId) {
+      violations.push(provenanceViolation(
+        'SNAPSHOT_INVALID',
+        'Turn referencia provider/thread sem binding compatível já validado contra AIThread.',
+        { provider: turn.provider, threadId: turn.threadId, turnId: turn.id }
+      ))
+    }
+  }
+
+  return violations
+}
+
+export const isTupiniquimSessionSnapshotProvenanceValid = (
+  snapshot: TupiniquimDurableSnapshot,
+  threads: readonly AIThread[],
+  expectedWorkspaceRoot?: string
+): boolean => validateTupiniquimSessionSnapshotProvenance(snapshot, threads, expectedWorkspaceRoot).length === 0
+
+/**
+ * Diagnóstico sanitizado de recovery: uma única linha estável, sem caminho de
+ * workspace, sem texto de conversa, sem secret/token e sem payload de proposal.
+ * Única informação do snapshot são contagens e reason codes.
+ */
+export const formatTupiniquimSessionRecoveryDiagnostic = (input: {
+  outcome: string
+  reasons: readonly TupiniquimSessionRecoveryReason[]
+  snapshot: TupiniquimSessionRecoveryCounts | null
+  restored: TupiniquimSessionRecoveryCounts
+}): string => {
+  const reasons = input.reasons.length === 0
+    ? 'NONE'
+    : tupiniquimSessionRecoveryReasons.filter((reason) => input.reasons.includes(reason)).join(',')
+  const snapshotCounts = input.snapshot === null
+    ? 'n/d'
+    : `turns=${String(input.snapshot.turns)},bindings=${String(input.snapshot.bindings)},seenProviders=${String(input.snapshot.seenProviders)}`
+  return [
+    'tupiniquim session recovery',
+    `outcome=${input.outcome}`,
+    `reasons=${reasons}`,
+    `snapshot(${snapshotCounts})`,
+    `restored(turns=${String(input.restored.turns)},bindings=${String(input.restored.bindings)},seenProviders=${String(input.restored.seenProviders)})`,
+    'workspace=[REDACTED]'
+  ].join(' · ')
+}

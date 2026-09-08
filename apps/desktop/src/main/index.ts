@@ -54,7 +54,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionService, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, shouldCompleteTurnFromError, type ToolIntent } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, VisualIntelligenceService, WorkspaceWriteProposalService, prepareProviderSendInput, shouldCompleteTurnFromError, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
@@ -87,6 +87,13 @@ const terminal = new TerminalAdapter(
 )
 let selectedAgentProvider: AIProviderKind = 'codex-app-server'
 const tupiniquimSession = new TupiniquimSessionService()
+/**
+ * Wave 16 — Incremento 2/4: recovery fail-closed da Tupiniquim Session a partir
+ * do snapshot durável v5, com validação de bindings contra a AIThread persistida.
+ * Somente leitura: nenhum write-through, nenhum shutdown aguardável e nenhum
+ * hydrate de conversation Ollama (Incremento 3).
+ */
+const tupiniquimRecovery = new TupiniquimSessionRecovery(tupiniquimSession, database, database)
 const controlledCodexArgs = ((): string[] | undefined => {
   const raw = process.env.TUPINIQUIM_CODEX_SERVER_ARGS
   if (raw === undefined || raw === '') return undefined
@@ -393,9 +400,33 @@ const registerIpc = (): void => {
   })
   register(ipcChannels.workspaceConfigure, configureWorkspaceInputSchema, 'workspace.configure', async ({ root }) => {
     runtimeGate.beginWorkspaceSwitch()
+    const recoveryRequestId = randomUUID()
+    const recoveryStarted = Date.now()
     try {
       const configured = await workspace.configure(root)
-      for (const id of tupiniquimSession.switchWorkspace(configured)) writeProposals.invalidate(id)
+      /**
+       * Recovery da Tupiniquim Session (fail-closed integral):
+       * - sessão viva em memória → switch/activate SEM hydrate (nunca
+       *   sobrescrita pelo snapshot antigo do SQLite);
+       * - snapshot ausente → sessão nova limpa (comportamento normal, não erro);
+       * - snapshot presente e íntegro → hydrate atômico de session/turns/
+       *   bindings/seen, com lifecycle efêmero vazio (zero proposal authority);
+       * - snapshot inválido → NENHUM hydrate parcial, sessão nova limpa e
+       *   diagnóstico sanitizado no AuditLog (reason code estável, workspace
+       *   redigido, sem texto de conversa/secret/token/payload de proposal).
+       */
+      const recovery = await tupiniquimRecovery.restore(configured)
+      for (const id of recovery.expiredProposalIds) writeProposals.invalidate(id)
+      const rejected = recovery.outcome === 'REJECTED'
+      await audit.write({
+        requestId: recoveryRequestId,
+        at: new Date().toISOString(),
+        capability: 'workspace.session.recovery',
+        target: recovery.diagnostic,
+        outcome: rejected ? 'ERROR' : 'SUCCESS',
+        durationMs: Date.now() - recoveryStarted,
+        ...(rejected ? { errorCode: `SESSION_RECOVERY_${recovery.reasons[0] ?? 'SNAPSHOT_INVALID'}` } : {})
+      })
       return configured
     } finally {
       runtimeGate.endWorkspaceSwitch()
@@ -470,6 +501,15 @@ const registerIpc = (): void => {
           }
         }
       }
+      /**
+       * Binding restaurado pelo hydrate da Wave 16 (Incremento 2) é provenance
+       * válida: para o Codex o provider retoma a thread (thread/resume). Para o
+       * Ollama a conversation continua in-memory no adapter, então um send
+       * pós-restart sobre a thread restaurada é RECUSADO explicitamente pelo
+       * próprio adapter ("Thread Ollama persistida não pode ser retomada sem o
+       * histórico em memória desta sessão."). Limitação conhecida e não
+       * escondida: Ollama conversation hydrate é escopo do Incremento 3.
+       */
       const boundThread = tupiniquimSession.resolveChatThread(provider, input.threadId)
       const routedInput = input.proposalContext !== undefined
         ? { message: input.message, mode: input.mode, proposalContext: input.proposalContext }
