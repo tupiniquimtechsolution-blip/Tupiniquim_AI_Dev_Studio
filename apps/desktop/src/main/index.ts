@@ -54,7 +54,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, TupiniquimSessionSnapshotCoordinator, VisualIntelligenceService, WorkspaceWriteProposalService, isTransientTurnStatus, prepareProviderSendInput, shouldCompleteTurnFromError, type ToolIntent } from '@tupiniquim/core'
+import { PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, TupiniquimSessionSnapshotCoordinator, VisualIntelligenceService, WorkspaceWriteProposalService, isTransientTurnStatus, prepareProviderSendInput, shouldCompleteTurnFromError, switchTupiniquimWorkspaceWithDurableFlush, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataRoot = 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data'
@@ -438,21 +438,29 @@ const registerIpc = (): void => {
     const recoveryRequestId = randomUUID()
     const recoveryStarted = Date.now()
     try {
-      const configured = await workspace.configure(root)
       /**
-       * Wave 16 — Incremento 3/4: write-through do snapshot que sai. O flush do
-       * root anterior acontece ANTES da transição (o estado por workspace
-       * continua vivo em memória, mas o commit explícito aqui preserva a
-       * durabilidade da saída). Se o flush falhar, a troca NÃO é declarada como
-       * durabilidade concluída: o root permanece dirty com garantia explícita
-       * (o último snapshot commitado permanece íntegro; a próxima mutação
-       * estável daquele workspace reintenta o commit) e a falha é reportada no
-       * AuditLog sanitizado pelo gancho do coordinator.
+       * Wave 16 — Correção da auditoria do Incremento 3/4: sequência canônica
+       * da troca de workspace com write-through durável
+       * (switchTupiniquimWorkspaceWithDurableFlush, compartilhada com os
+       * testes de concorrência):
+       * - o flush do snapshot do root que sai acontece ANTES do
+       *   workspace.configure — durante um flush lento o adapter continua no
+       *   root antigo, coerente com a sessão ativa (nenhuma janela
+       *   Workspace B + Session A para workspace.read/list/search/context);
+       * - o root novo só é canonicalizado depois, e a sessão é ativada pelo
+       *   recovery;
+       * - sessão nova limpa (NO_SNAPSHOT/REJECTED) é persistida imediatamente
+       *   (session.id estável através de close/reopen; snapshot inválido
+       *   antigo substituído). Falha de flush não finge durabilidade: root
+       *   dirty com garantia explícita + AuditLog sanitizado via onFlushError.
        */
-      const previousRoot = tupiniquimSession.current()?.workspaceRoot ?? null
-      if (previousRoot !== null && previousRoot !== configured) {
-        await tupiniquimPersistence.flush(previousRoot)
-      }
+      const { configured, recovery } = await switchTupiniquimWorkspaceWithDurableFlush({
+        sessions: tupiniquimSession,
+        coordinator: tupiniquimPersistence,
+        recovery: tupiniquimRecovery,
+        configure: (target) => workspace.configure(target),
+        root
+      })
       /**
        * Recovery da Tupiniquim Session (fail-closed integral):
        * - sessão viva em memória → switch/activate SEM hydrate (nunca
@@ -464,7 +472,6 @@ const registerIpc = (): void => {
        *   diagnóstico sanitizado no AuditLog (reason code estável, workspace
        *   redigido, sem texto de conversa/secret/token/payload de proposal).
        */
-      const recovery = await tupiniquimRecovery.restore(configured)
       for (const id of recovery.expiredProposalIds) writeProposals.invalidate(id)
       const rejected = recovery.outcome === 'REJECTED'
       await audit.write({

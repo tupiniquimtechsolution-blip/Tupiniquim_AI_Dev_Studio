@@ -1,4 +1,5 @@
 import type { AIThread, AgentTurnReference, AIProviderKind, TupiniquimDurableSnapshot } from '@tupiniquim/contracts'
+import type { TupiniquimSessionRecovery, TupiniquimSessionRecoveryResult } from './tupiniquim-session-recovery'
 import type { TupiniquimSessionService } from './tupiniquim-session'
 
 /**
@@ -109,11 +110,16 @@ export class TupiniquimSessionSnapshotCoordinator {
     return run
   }
 
-  /** Write-through fire-and-forget para mutações disparadas por eventos síncronos. */
+  /**
+   * Write-through fire-and-forget para mutações disparadas por eventos síncronos.
+   *
+   * NÃO existe coalescing: cada schedule() gera um flush individual enfileirado
+   * na FIFO (um commit por ponto de mutação estável, capturado por valor no
+   * agendamento). Coalescing de flushes pendentes é escopo futuro explícito.
+   */
   public schedule(workspaceRoot: string): void {
     void this.flush(workspaceRoot)
   }
-
   /**
    * Write-through do send: registra o pending context (ACK-only-after-success),
    * resolve o MODEL EFETIVO do request (referência do adapter > AIThread
@@ -183,4 +189,47 @@ export class TupiniquimSessionSnapshotCoordinator {
       return failed
     }
   }
+}
+
+/**
+ * Wave 16 — Correção da auditoria do Incremento 3/4 (TOCTOU do workspace
+ * switch): sequência canônica da troca de workspace com write-through durável,
+ * compartilhada entre o processo main e os testes de concorrência.
+ *
+ * Ordem obrigatória — NUNCA existe janela "WorkspaceAdapter no root novo +
+ * sessão Tupiniquim ativa no root antigo":
+ *
+ * 1. O flush do snapshot do root que sai acontece ANTES de trocar o
+ *    WorkspaceAdapter: durante um flush lento o adapter continua apontando
+ *    para o root antigo, coerente com a sessão ativa — IPCs de
+ *    workspace.read/list/search/context executados nesse intervalo observam
+ *    exatamente o root antigo, nunca o novo adiantado.
+ * 2. Só depois o root novo é canonicalizado (`configure`) e a sessão é
+ *    ativada/hidratada pelo recovery (`restore(configured)`).
+ * 3. Sessão NOVA limpa (outcome NO_SNAPSHOT ou REJECTED) é persistida
+ *    imediatamente: o session.id estabiliza através de close/reopen, e para
+ *    REJECTED o snapshot inválido antigo é substituído pela sessão nova
+ *    limpa no mesmo commit. Se o flush falhar, a durabilidade NÃO é
+ *    declarada: o root fica dirty com garantia explícita (o último snapshot
+ *    commitado permanece íntegro e a próxima mutação estável reintenta) e a
+ *    falha é reportada pelo gancho onFlushError do coordinator.
+ */
+export const switchTupiniquimWorkspaceWithDurableFlush = async (input: {
+  sessions: TupiniquimSessionService
+  coordinator: TupiniquimSessionSnapshotCoordinator
+  recovery: TupiniquimSessionRecovery
+  /** Troca o WorkspaceAdapter para o novo root; devolve o root canonicalizado. */
+  configure: (root: string) => Promise<string>
+  root: string
+}): Promise<{ configured: string; recovery: TupiniquimSessionRecoveryResult }> => {
+  const previousRoot = input.sessions.current()?.workspaceRoot ?? null
+  if (previousRoot !== null) {
+    await input.coordinator.flush(previousRoot)
+  }
+  const configured = await input.configure(input.root)
+  const recovery = await input.recovery.restore(configured)
+  if (recovery.outcome === 'NO_SNAPSHOT' || recovery.outcome === 'REJECTED') {
+    await input.coordinator.flush(configured)
+  }
+  return { configured, recovery }
 }

@@ -176,12 +176,57 @@ const writeTupiniquimSnapshotRows = (snapshot, run) => {
 }
 
 /**
+ * Wave 16 — Correção da auditoria do Incremento 3/4: validação COMPLETA da
+ * AIThread persistida contra a semântica do aiThreadSchema do contracts —
+ * id string 1..200 igual ao id da linha, provider em aiProviderKinds,
+ * workspaceRoot string 3..4096, model string 1..300 ou null, createdAt e
+ * updatedAt datetime ISO-8601 com sufixo Z, segundos fracionários opcionais
+ * e calendário REAL (rejeita 2024-02-31, mês 13, hora 24; aceita 2024-02-29
+ * bissexto). Chaves extras são aceitas (z.object não-strict as ignora).
+ *
+ * A validação vive DENTRO da transação, antes de qualquer UPDATE de
+ * ai_threads e antes do write do snapshot — nunca host-side seguida de
+ * worker write (sem TOCTOU): JSON válido mas fora do contrato aborta a
+ * transação inteira com ROLLBACK e ZERO escrita.
+ */
+const isoDatetimeContractOk = (value) => {
+  if (typeof value !== 'string') return false
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/.exec(value)
+  if (match === null) return false
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (month < 1 || month > 12) return false
+  if (day < 1) return false
+  if (month === 2) {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+    if (day > (leap ? 29 : 28)) return false
+  } else if (day > (month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31)) {
+    return false
+  }
+  return Number(match[4]) < 24 && Number(match[5]) < 60 && Number(match[6]) < 60
+}
+
+const aiThreadContractViolation = (payload, threadId) => {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) return 'payload não é objeto'
+  if (typeof payload.id !== 'string' || payload.id.length < 1 || payload.id.length > 200) return 'id inválido'
+  if (payload.id !== threadId) return 'id diverge da linha'
+  if (payload.provider !== 'ollama' && payload.provider !== 'codex-app-server') return 'provider fora do contrato'
+  if (typeof payload.workspaceRoot !== 'string' || payload.workspaceRoot.length < 3 || payload.workspaceRoot.length > 4096) return 'workspaceRoot fora do contrato'
+  if (payload.model !== null && (typeof payload.model !== 'string' || payload.model.length < 1 || payload.model.length > 300)) return 'model fora do contrato'
+  if (!isoDatetimeContractOk(payload.createdAt)) return 'createdAt fora do contrato'
+  if (!isoDatetimeContractOk(payload.updatedAt)) return 'updatedAt fora do contrato'
+  return null
+}
+
+/**
  * Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): atualização de
  * ai_threads.model para o model corrente de cada binding do snapshot,
  * DENTRO da transação do chamador. Fail-loud em provenance divergente:
- * thread ausente, ilegível, de outro provider ou de outro workspace aborta a
- * transação inteira (ROLLBACK) — nunca commitamos snapshot novo com
- * AIThread.model antigo, nem o contrário.
+ * thread ausente, ilegível, fora do contrato completo do aiThreadSchema,
+ * de outro provider ou de outro workspace aborta a transação inteira
+ * (ROLLBACK) — nunca commitamos snapshot novo com AIThread.model antigo,
+ * nem o contrário.
  */
 const syncTupiniquimThreadModels = (snapshot, run) => {
   for (const binding of snapshot.providerBindings) {
@@ -194,6 +239,10 @@ const syncTupiniquimThreadModels = (snapshot, run) => {
       payload = JSON.parse(row.payload)
     } catch {
       throw new Error('AIThread do binding está ilegível para a atualização atômica de model: ' + binding.threadId)
+    }
+    const violation = aiThreadContractViolation(payload, binding.threadId)
+    if (violation !== null) {
+      throw new Error('AIThread do binding viola o contrato completo do aiThreadSchema (' + violation + '): ' + binding.threadId)
     }
     if (payload.provider !== binding.provider) {
       throw new Error('AIThread do binding pertence a outro provider na atualização atômica de model: ' + binding.threadId)

@@ -143,6 +143,64 @@ describe('putTupiniquimSessionSnapshotWithThreadModel — operação SQLite úni
     expect(await database.getAIThread('thread-outro-ws')).toMatchObject({ model: 'modelo-a' })
   })
 
+  it('aborta com ROLLBACK quando a AIThread do binding é JSON parseável mas fora do contrato completo (auditoria inc3/4)', async () => {
+    const setup = openDatabase()
+    const root = path.join(fixture, 'workspace-e')
+    const threadId = 'thread-ollama-corrupto'
+    await putThread(setup, { id: threadId, workspaceRoot: root, model: 'modelo-a' })
+    // Estado anterior consistente S1.
+    const s1 = makeSnapshot(root, { threadId, model: 'modelo-a', turnCount: 2 })
+    await setup.putTupiniquimSessionSnapshotWithThreadModel(s1)
+    await setup.close()
+    databases.splice(databases.indexOf(setup), 1)
+
+    const database = openDatabase()
+    const variants: Array<{ name: string; payload: Record<string, unknown> }> = [
+      { name: 'createdAt com calendário impossível', payload: { id: threadId, provider: 'ollama', workspaceRoot: root, model: 'modelo-a', createdAt: '2024-02-31T00:00:00Z', updatedAt: now } },
+      { name: 'campo obrigatório ausente', payload: { id: threadId, provider: 'ollama', workspaceRoot: root, createdAt: now, updatedAt: now } },
+      { name: 'datetime fora do formato ISO-8601 Z', payload: { id: threadId, provider: 'ollama', workspaceRoot: root, model: 'modelo-a', createdAt: now, updatedAt: 'ontem às dez' } },
+      { name: 'model com tipo errado', payload: { id: threadId, provider: 'ollama', workspaceRoot: root, model: 42, createdAt: now, updatedAt: now } }
+    ]
+    for (const variant of variants) {
+      const corruptPayload = JSON.stringify(variant.payload)
+      const connection = raw()
+      try {
+        connection.prepare('UPDATE ai_threads SET payload = ? WHERE id = ?').run(corruptPayload, threadId)
+      } finally {
+        connection.close()
+      }
+
+      const s2 = makeSnapshot(root, { threadId, model: 'modelo-b', turnCount: 4 })
+      await expect(database.putTupiniquimSessionSnapshotWithThreadModel(s2)).rejects.toThrow('contrato completo do aiThreadSchema')
+      // ROLLBACK: o payload da AIThread corrupta permanece BYTE A BYTE
+      // intacto (não é reescrito nem "consertado"), o snapshot S1 continua
+      // íntegro e nenhuma linha parcial de S2 existe.
+      const verify = raw()
+      try {
+        const thread = verify.prepare('SELECT payload FROM ai_threads WHERE id = ?').get(threadId) as { payload: string }
+        expect(thread.payload).toBe(corruptPayload)
+        const sessions = verify.prepare('SELECT COUNT(*) AS total FROM tupiniquim_sessions').get() as { total: number }
+        expect(sessions.total).toBe(1)
+        const turns = verify.prepare('SELECT COUNT(*) AS total FROM tupiniquim_turns').get() as { total: number }
+        expect(turns.total).toBe(2)
+      } finally {
+        verify.close()
+      }
+      const stored = await database.getTupiniquimSessionSnapshot(root)
+      expect(stored?.session.id).toBe(s1.session.id)
+      expect(stored?.turns.map((turn) => turn.model)).toEqual(['modelo-a', 'modelo-a'])
+      expect(stored?.providerBindings).toEqual([{ provider: 'ollama', threadId, model: 'modelo-a' }])
+
+      // Restaura o payload válido para a próxima variante.
+      const repair = raw()
+      try {
+        repair.prepare('UPDATE ai_threads SET payload = ? WHERE id = ?').run(JSON.stringify({ id: threadId, provider: 'ollama', workspaceRoot: root, model: 'modelo-a', createdAt: now, updatedAt: now }), threadId)
+      } finally {
+        repair.close()
+      }
+    }
+  })
+
   it('fault injection no meio da transação faz ROLLBACK real de ai_threads.model E do snapshot', async () => {
     const setup = openDatabase()
     const root = path.join(fixture, 'workspace-d')
