@@ -54,7 +54,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { AwaitedShutdownCoordinator, PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, TupiniquimSessionSnapshotCoordinator, VisualIntelligenceService, WorkspaceWriteProposalService, agentRuntimeSealedMessage, isTransientTurnStatus, prepareProviderSendInput, resolveDataRoot, shouldCompleteTurnFromError, switchTupiniquimWorkspaceWithDurableFlush, type AwaitedShutdownReport, type ToolIntent } from '@tupiniquim/core'
+import { AwaitedShutdownCoordinator, PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, TupiniquimSessionSnapshotCoordinator, VisualIntelligenceService, WorkspaceWriteProposalService, agentRuntimeSealedMessage, isTransientTurnStatus, prepareProviderSendInput, resolveDataRoot, shouldCompleteTurnFromError, switchTupiniquimWorkspaceWithDurableFlush, withRuntimeOperation, type AwaitedShutdownReport, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 /**
@@ -452,7 +452,13 @@ const register = <I, O>(
         await audit.write({ requestId, at: new Date().toISOString(), capability, outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'APPROVAL_REQUIRED' })
         return err('APPROVAL_REQUIRED', decision.reason, true)
       }
-      const value = outputSchema.parse(await handler(input))
+      // BARREIRA GLOBAL DE IPC (TERCEIRA correção da auditoria): TODO handler
+      // registrado por este wrapper executa sob lease do runtime gate. Com o
+      // gate selado (shutdown em andamento) o lease é RECUSADO antes de
+      // qualquer lógica de negócio (handler body = 0 chamadas; nada toca
+      // database/planning/workspace/preferences/visual). Em voo, o contador
+      // global segura a quiescência do shutdown até a liberação.
+      const value = outputSchema.parse(await withRuntimeOperation(runtimeGate, () => handler(input)))
       await audit.write({ requestId, at: new Date().toISOString(), capability, outcome: 'SUCCESS', durationMs: Date.now() - started })
       return ok(value)
     } catch (cause) {
@@ -473,28 +479,31 @@ const registerApprovedWorkspaceWrite = (): void => {
       return err('UNTRUSTED_SENDER', 'Origem IPC não autorizada.')
     }
     try {
-      const input = executionWorkspaceWriteInputSchema.parse(raw)
-      if (isPrivateEnvironmentPath(input.relativePath)) throw new Error('Arquivos .env não podem ser materializados pelo executor.')
-      const effect = await planning.claimEffect(input.executionId, input.stepId, input.effectId)
-      claimed = { executionId: input.executionId, effectId: input.effectId }
-      if (effect.capability !== 'workspace.write' || (effect.operation !== 'CREATE' && effect.operation !== 'REPLACE')) throw new Error('Manifesto não autoriza escrita de workspace.')
-      if (effect.source?.kind === 'AGENT_PROPOSAL') throw new Error('Efeito originado por agente exige consumo pelo canal de proposta com proveniência.')
-      if (effect.target !== input.relativePath) throw new Error('Alvo solicitado diverge do manifesto aprovado.')
-      if (effect.payloadHash !== contentHash(input.content)) throw new Error('Hash do conteúdo diverge do manifesto aprovado.')
-      let expectedTargetHash: string | null = null
-      if (effect.operation === 'REPLACE') {
-        if (typeof effect.expectedTargetHash !== 'string') throw new Error('REPLACE exige baseline aprovado do arquivo existente.')
-        expectedTargetHash = effect.expectedTargetHash
-      }
-      if (input.expectedHash !== undefined && input.expectedHash !== expectedTargetHash) throw new Error('Baseline solicitado diverge do manifesto aprovado.')
-      const decision = policy.evaluate({ capability: effect.capability, target: effect.target, risk: effect.risk, destructive: true, requiresNetwork: false })
-      if (!decision.allowed) throw new Error(decision.reason)
-      const document = await workspace.applyWriteEffect(input.relativePath, input.content, effect.operation, expectedTargetHash)
-      await planning.completeEffect(input.executionId, input.effectId)
-      claimed = undefined
-      await planning.recordEvidence(input.executionId, 'TOOL', 'Arquivo materializado', `workspace.write · ${redactContextMetadata(effect.target)} · hash ${effect.payloadHash.slice(0, 12)}…`, 'SUCCESS')
-      await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.write', target: redactContextMetadata(effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
-      return ok({ effectId: effect.id, relativePath: document.relativePath, hash: document.hash, modifiedAt: document.modifiedAt })
+      // BARREIRA GLOBAL (TERCEIRA correção da auditoria): handler DIRETO ipcMain.handle usa o MESMO lease do wrapper register — não existe bypass. Pós-seal: recusado ANTES de tocar planning/workspace/database; em voo: aguardado pela quiescência.
+      return await withRuntimeOperation(runtimeGate, async (): Promise<Result<AppliedWorkspaceEffect>> => {
+        const input = executionWorkspaceWriteInputSchema.parse(raw)
+        if (isPrivateEnvironmentPath(input.relativePath)) throw new Error('Arquivos .env não podem ser materializados pelo executor.')
+        const effect = await planning.claimEffect(input.executionId, input.stepId, input.effectId)
+        claimed = { executionId: input.executionId, effectId: input.effectId }
+        if (effect.capability !== 'workspace.write' || (effect.operation !== 'CREATE' && effect.operation !== 'REPLACE')) throw new Error('Manifesto não autoriza escrita de workspace.')
+        if (effect.source?.kind === 'AGENT_PROPOSAL') throw new Error('Efeito originado por agente exige consumo pelo canal de proposta com proveniência.')
+        if (effect.target !== input.relativePath) throw new Error('Alvo solicitado diverge do manifesto aprovado.')
+        if (effect.payloadHash !== contentHash(input.content)) throw new Error('Hash do conteúdo diverge do manifesto aprovado.')
+        let expectedTargetHash: string | null = null
+        if (effect.operation === 'REPLACE') {
+          if (typeof effect.expectedTargetHash !== 'string') throw new Error('REPLACE exige baseline aprovado do arquivo existente.')
+          expectedTargetHash = effect.expectedTargetHash
+        }
+        if (input.expectedHash !== undefined && input.expectedHash !== expectedTargetHash) throw new Error('Baseline solicitado diverge do manifesto aprovado.')
+        const decision = policy.evaluate({ capability: effect.capability, target: effect.target, risk: effect.risk, destructive: true, requiresNetwork: false })
+        if (!decision.allowed) throw new Error(decision.reason)
+        const document = await workspace.applyWriteEffect(input.relativePath, input.content, effect.operation, expectedTargetHash)
+        await planning.completeEffect(input.executionId, input.effectId)
+        claimed = undefined
+        await planning.recordEvidence(input.executionId, 'TOOL', 'Arquivo materializado', `workspace.write · ${redactContextMetadata(effect.target)} · hash ${effect.payloadHash.slice(0, 12)}…`, 'SUCCESS')
+        await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.write', target: redactContextMetadata(effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
+        return ok({ effectId: effect.id, relativePath: document.relativePath, hash: document.hash, modifiedAt: document.modifiedAt })
+          })
     } catch (cause) {
       if (claimed !== undefined) planning.abandonEffect(claimed.executionId, claimed.effectId)
       const error = toAppError(cause, 'EXECUTION_EFFECT_ERROR')
@@ -514,20 +523,23 @@ const registerApprovedProposedWorkspaceWrite = (): void => {
       return err('UNTRUSTED_SENDER', 'Origem IPC não autorizada.')
     }
     try {
-      const { proposal, content } = await writeProposals.consume(executionWorkspaceWriteProposalIdInputSchema.parse(raw).proposalId)
-      const effect = await planning.claimEffect(proposal.executionId, proposal.stepId, proposal.effect.id)
-      claimed = { executionId: proposal.executionId, effectId: effect.id }
-      if (effect.capability !== 'workspace.write' || (effect.operation !== 'CREATE' && effect.operation !== 'REPLACE') || effect.capability !== proposal.effect.capability || effect.operation !== proposal.effect.operation || effect.target !== proposal.effect.target || effect.payloadHash !== proposal.effect.payloadHash || effect.risk !== proposal.effect.risk || effect.payloadHash !== contentHash(content)) throw new Error('Proposta não corresponde ao manifesto aprovado.')
-      if (effect.source?.kind !== 'AGENT_PROPOSAL' || effect.source.proposalId !== proposal.id || effect.expectedTargetHash !== proposal.effect.expectedTargetHash) throw new Error('Origem ou baseline da proposta diverge do manifesto aprovado.')
-      const decision = policy.evaluate({ capability: effect.capability, target: effect.target, risk: effect.risk, destructive: true, requiresNetwork: false })
-      if (!decision.allowed || isPrivateEnvironmentPath(effect.target)) throw new Error('Política não permite materializar esta proposta.')
-      const document = await workspace.applyWriteEffect(effect.target, content, effect.operation, effect.expectedTargetHash ?? null)
-      await planning.completeEffect(proposal.executionId, effect.id)
-      claimed = undefined
-      writeProposals.invalidate(proposal.id)
-      await planning.recordEvidence(proposal.executionId, 'TOOL', 'Proposta materializada', `workspace.write · ${redactContextMetadata(effect.target)} · hash ${effect.payloadHash.slice(0, 12)}…`, 'SUCCESS')
-      await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.apply-proposal', target: redactContextMetadata(effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
-      return ok({ effectId: effect.id, relativePath: document.relativePath, hash: document.hash, modifiedAt: document.modifiedAt })
+      // BARREIRA GLOBAL (TERCEIRA correção da auditoria): handler DIRETO ipcMain.handle usa o MESMO lease do wrapper register — não existe bypass. Pós-seal: recusado ANTES de tocar writeProposals/planning/workspace/database; em voo: aguardado pela quiescência.
+      return await withRuntimeOperation(runtimeGate, async (): Promise<Result<AppliedWorkspaceEffect>> => {
+        const { proposal, content } = await writeProposals.consume(executionWorkspaceWriteProposalIdInputSchema.parse(raw).proposalId)
+        const effect = await planning.claimEffect(proposal.executionId, proposal.stepId, proposal.effect.id)
+        claimed = { executionId: proposal.executionId, effectId: effect.id }
+        if (effect.capability !== 'workspace.write' || (effect.operation !== 'CREATE' && effect.operation !== 'REPLACE') || effect.capability !== proposal.effect.capability || effect.operation !== proposal.effect.operation || effect.target !== proposal.effect.target || effect.payloadHash !== proposal.effect.payloadHash || effect.risk !== proposal.effect.risk || effect.payloadHash !== contentHash(content)) throw new Error('Proposta não corresponde ao manifesto aprovado.')
+        if (effect.source?.kind !== 'AGENT_PROPOSAL' || effect.source.proposalId !== proposal.id || effect.expectedTargetHash !== proposal.effect.expectedTargetHash) throw new Error('Origem ou baseline da proposta diverge do manifesto aprovado.')
+        const decision = policy.evaluate({ capability: effect.capability, target: effect.target, risk: effect.risk, destructive: true, requiresNetwork: false })
+        if (!decision.allowed || isPrivateEnvironmentPath(effect.target)) throw new Error('Política não permite materializar esta proposta.')
+        const document = await workspace.applyWriteEffect(effect.target, content, effect.operation, effect.expectedTargetHash ?? null)
+        await planning.completeEffect(proposal.executionId, effect.id)
+        claimed = undefined
+        writeProposals.invalidate(proposal.id)
+        await planning.recordEvidence(proposal.executionId, 'TOOL', 'Proposta materializada', `workspace.write · ${redactContextMetadata(effect.target)} · hash ${effect.payloadHash.slice(0, 12)}…`, 'SUCCESS')
+        await audit.write({ requestId, at: new Date().toISOString(), capability: 'execution.workspace.apply-proposal', target: redactContextMetadata(effect.target), outcome: 'SUCCESS', durationMs: Date.now() - started })
+        return ok({ effectId: effect.id, relativePath: document.relativePath, hash: document.hash, modifiedAt: document.modifiedAt })
+          })
     } catch (cause) {
       if (claimed !== undefined) planning.abandonEffect(claimed.executionId, claimed.effectId)
       const error = toAppError(cause, 'EXECUTION_PROPOSAL_ERROR')

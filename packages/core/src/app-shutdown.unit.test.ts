@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { AwaitedShutdownCoordinator, type AwaitedShutdownPlan, type AwaitedShutdownReport } from './app-shutdown'
-import { PrivilegedRuntimeGate, TupiniquimSessionService, agentRuntimeSealedMessage } from './tupiniquim-session'
+import { PrivilegedRuntimeGate, TupiniquimSessionService, agentRuntimeSealedMessage, withRuntimeOperation } from './tupiniquim-session'
 import { TupiniquimSessionSnapshotCoordinator, type TupiniquimSnapshotDrainResult, type TupiniquimSessionSnapshotStore } from './tupiniquim-session-persistence'
 import type { TupiniquimDurableSnapshot } from '@tupiniquim/contracts'
 
@@ -17,6 +17,11 @@ import type { TupiniquimDurableSnapshot } from '@tupiniquim/contracts'
  *   switch, send, provider select, provider busy) convergem ANTES do capture
  *   final — o MESMO gate que o main usa; novas operações são recusadas
  *   imediatamente; hang de quiescência → deadline crítico → ABORTED;
+ * - BARREIRA GLOBAL DE IPC/DB (TERCEIRA correção): TODO handler renderer
+ *   (wrapper register + handlers ipcMain.handle diretos) executa sob lease
+ *   `withRuntimeOperation` do MESMO gate — pós-seal novos IPCs são recusados
+ *   ANTES da lógica de negócio; em voo, o contador global segura a
+ *   quiescência (nenhum flushFinal/database.close com IPC executando);
  * - ordem real: seal → runtime quiescence → flushFinal → drain → retry →
  *   drain → providers (CRÍTICO) → sealFinal → database (CRÍTICO);
  * - PROVIDERS são CRÍTICOS (Bloqueio 2): providers gravam history DIRETO no
@@ -671,6 +676,177 @@ describe('AwaitedShutdownCoordinator — runtime quiescence, seal/quiesce e one-
     expect(coordinator.state()).toBe('ABORTED')
     expect(aborts).toHaveLength(1)
     expect(exits).toHaveLength(0)
+  })
+
+  it('BLOQUEANTE 1 (barreira global): IPC DB-backed JÁ EM VOO segura a quiescência — flushFinal/database.close somente depois', async () => {
+    const runtime = createProductionRuntime()
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+    const sessions = sessionsOf(persistence)
+    sessions.appendTurn({ role: 'user', text: 'pergunta estável', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
+
+    // 1-2) Operação DB-backed inicia (lease do MESMO mecanismo do wrapper
+    //      register): contador in-flight = 1; fica artificialmente bloqueada.
+    const block = deferred()
+    const operation = withRuntimeOperation(runtime.gate, async () => {
+      await block.gate
+      // Simula o work DB-backed do handler (ex.: planning.claimEffect).
+      sessions.appendTurn({ role: 'user', text: 'dentro do IPC', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-2' })
+    })
+    expect(runtime.gate.operationsInFlightCount()).toBe(1)
+
+    // 4-5) Shutdown começa; seal aplicado.
+    const coordinator = new AwaitedShutdownCoordinator(productionPlan(persistence, recording, runtime))
+    const finished = coordinator.begin()
+    await sleep(15)
+
+    // 6) Novos handlers são recusados (fail-closed antes da lógica).
+    expect(() => runtime.gate.beginOperation()).toThrow(agentRuntimeSealedMessage)
+    // 7-9) Quiescência NÃO resolve: flushFinal NÃO ocorre; database NÃO fecha.
+    expect(coordinator.state()).toBe('SHUTTING_DOWN')
+    expect(runtime.steps).not.toContain('step:flushStableState')
+    expect(recording.log).not.toContain('database:close')
+
+    // 10-13) Libera a operação: termina; contador → 0; quiescência resolve;
+    //       o shutdown continua.
+    block.release()
+    await operation
+    expect(runtime.gate.operationsInFlightCount()).toBe(0)
+    const report = await finished
+    expect(report.phase).toBe('READY_TO_EXIT')
+    expect(report.runtimeQuiescent).toBe(true)
+    expect(report.persistenceQuiescent).toBe(true)
+    expect(report.databaseClosed).toBe(true)
+    // O capture final viu o turn gravado DENTRO do IPC aguardado.
+    expect(recording.log).toEqual(['commit:1:turns=2', 'database:close'])
+  })
+
+  it('BLOQUEANTE 2 (barreira global): NOVO IPC pós-seal é recusado ANTES do handler — zero execuções, zero vazamento, shutdown normal', async () => {
+    const runtime = createProductionRuntime()
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+
+    // Operação em voo (mantém o shutdown em SHUTTING_DOWN para o teste).
+    const block = deferred()
+    const operation = withRuntimeOperation(runtime.gate, async () => { await block.gate })
+    const coordinator = new AwaitedShutdownCoordinator(productionPlan(persistence, recording, runtime))
+    const finished = coordinator.begin()
+    await sleep(15)
+    expect(coordinator.state()).toBe('SHUTTING_DOWN')
+
+    // Pós-seal: novo handler DB-backed é recusado ANTES de executar.
+    let bodyCalls = 0
+    await expect(withRuntimeOperation(runtime.gate, async () => {
+      bodyCalls += 1
+      await persistence.flushFinal(workspaceA)
+    })).rejects.toThrow(agentRuntimeSealedMessage)
+    expect(bodyCalls).toBe(0)
+    // Nenhum write adicional: somente o capture final acontecerá depois.
+    expect(recording.commits).toBe(0)
+    // O contador NÃO vaza pela recusa (throw ANTES de incrementar).
+    expect(runtime.gate.operationsInFlightCount()).toBe(1)
+
+    // O shutdown continua normalmente após a operação original terminar.
+    block.release()
+    await operation
+    const report = await finished
+    expect(report.phase).toBe('READY_TO_EXIT')
+    expect(report.runtimeQuiescent).toBe(true)
+    expect(report.databaseClosed).toBe(true)
+    expect(recording.log).toEqual(['commit:1:turns=0', 'database:close'])
+  })
+
+  it('BLOQUEANTE 3 (barreira global): handler DIRETO usa o MESMO mecanismo — concorrentes aguardadas, pós-seal recusado, sem bypass', async () => {
+    const runtime = createProductionRuntime()
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+
+    // DUAS operações diretas concorrentes (o mecanismo exato que
+    // registerApprovedWorkspaceWrite/registerApprovedProposedWorkspaceWrite
+    // usam — withRuntimeOperation; não existe caminho fora da barreira).
+    const blockA = deferred()
+    const blockB = deferred()
+    const operationA = withRuntimeOperation(runtime.gate, async () => { await blockA.gate })
+    const operationB = withRuntimeOperation(runtime.gate, async () => { await blockB.gate })
+    expect(runtime.gate.operationsInFlightCount()).toBe(2)
+
+    const coordinator = new AwaitedShutdownCoordinator(productionPlan(persistence, recording, runtime))
+    const finished = coordinator.begin()
+    await sleep(15)
+
+    // Nova operação direta pós-seal: recusada (sem bypass por ipcMain.handle).
+    await expect(withRuntimeOperation(runtime.gate, () => Promise.resolve())).rejects.toThrow(agentRuntimeSealedMessage)
+
+    // A primeira liberação (2 → 1) NÃO resolve a quiescência: ainda há
+    // operação em voo; nenhum flushFinal.
+    blockA.release()
+    await operationA
+    await sleep(15)
+    expect(runtime.gate.operationsInFlightCount()).toBe(1)
+    expect(coordinator.state()).toBe('SHUTTING_DOWN')
+    expect(runtime.steps).not.toContain('step:flushStableState')
+
+    // A ÚLTIMA liberação (1 → 0) resolve a quiescência e o shutdown segue.
+    blockB.release()
+    await operationB
+    const report = await finished
+    expect(report.phase).toBe('READY_TO_EXIT')
+    expect(report.runtimeQuiescent).toBe(true)
+    expect(report.databaseClosed).toBe(true)
+  })
+
+  it('BLOQUEANTE 4 (barreira global): ordem final comprovada — IPC < quiescência < flush final < providers < database; zero write-after-close', async () => {
+    const runtime = createProductionRuntime()
+    const recording = createRecordingStore()
+    const persistence = createProductionCoordinator(recording)
+    const sessions = sessionsOf(persistence)
+    sessions.appendTurn({ role: 'user', text: 'pergunta estável', provider: 'ollama', model: 'modelo-a', threadId: 'thread-ollama', turnId: 'turn-1' })
+
+    const order: string[] = []
+    const block = deferred()
+    // Operação IPC em voo que grava estado DB-backed e só então termina.
+    const operation = withRuntimeOperation(runtime.gate, async () => {
+      await block.gate
+      order.push('ipc:finished')
+    })
+
+    const plan: AwaitedShutdownPlan = {
+      ...productionPlan(persistence, recording, runtime),
+      awaitRuntimeQuiescent: async () => {
+        await runtime.gate.awaitQuiescent()
+        order.push('runtime:quiescent')
+      },
+      flushStableState: async () => {
+        const outcome = await persistence.flushFinal(workspaceA)
+        order.push('flush:final')
+        return outcome
+      },
+      closeProviders: async () => {
+        await sleep(5)
+        order.push('providers:closed')
+      },
+      closeDatabase: async () => {
+        await recording.closeDatabase()
+        order.push('database:close')
+      }
+    }
+    const coordinator = new AwaitedShutdownCoordinator(plan, { criticalDeadlineMs: 60_000 })
+    const finished = coordinator.begin()
+    await sleep(15)
+    expect(order).toEqual([])
+
+    block.release()
+    await operation
+    const report = await finished
+    expect(report.phase).toBe('READY_TO_EXIT')
+    expect(report.databaseClosed).toBe(true)
+
+    // ORDEM GLOBAL EXATA: IPC terminado < quiescência < flush final <
+    // providers fechados < database fechado.
+    expect(order).toEqual(['ipc:finished', 'runtime:quiescent', 'flush:final', 'providers:closed', 'database:close'])
+    // Zero DB write after database close: o commit do capture final precede.
+    expect(recording.log).toEqual(['commit:1:turns=1', 'database:close'])
+    expect(recording.log.at(-1)).toBe('database:close')
   })
 
   it('dirty root FAILED no capture final: retry final converge e o shutdown termina limpo', async () => {

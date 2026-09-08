@@ -63,6 +63,18 @@ export class PrivilegedRuntimeGate {
    * estado com o runtime livre (sem polling).
    */
   private readonly quiescenceWaiters: Array<() => void> = []
+  /**
+   * Wave 16 — Incremento 4/4 (TERCEIRA correção da auditoria — BARREIRA
+   * GLOBAL DE IPC/DB): contador de operações renderer/runtime EM VOO.
+   * Durante `before-quit → preventDefault()` a janela continua viva e o
+   * renderer ainda dispara IPCs; vários handlers usam o mesmo SQLite
+   * (planning/prompt/preferences/visual/writeProposals) ou mutam runtime
+   * (workspace.write, terminal, provider). O wrapper canônico `register(...)`
+   * e os handlers `ipcMain.handle` diretos adquirem um lease via
+   * `beginOperation()`/`withRuntimeOperation` — o shutdown só considera o
+   * runtime quiescente com este contador em ZERO.
+   */
+  private operationsInFlight = 0
 
   public constructor(private readonly agentBusy: () => boolean = () => false) {}
 
@@ -81,12 +93,46 @@ export class PrivilegedRuntimeGate {
   /**
    * Trabalho JÁ iniciado (runtime em voo). Diferente de `locked()` — que
    * também inclui o selo — a quiescência olha APENAS as operações em voo:
-   * transições de workspace/provider/send E o estado busy/starting dos
+   * transições de workspace/provider/send, o estado busy/starting dos
    * providers (execuções de turno capazes de gravar AIThread/AITurn/AIEvent
-   * direto no SQLite pelo history repository, fora do snapshot coordinator).
+   * direto no SQLite pelo history repository, fora do snapshot coordinator)
+   * E a BARREIRA GLOBAL de operações IPC/renderer em voo (contador > 0).
+   *
+   * NOTA: `locked()` NÃO inclui o contador de operações — um handler
+   * registrado (lease ativo) precisa poder chamar `beginSend()`/
+   * `beginWorkspaceSwitch()` sem se auto-bloquear.
    */
   public runtimeInFlight(): boolean {
-    return this.workspaceTransitioning || this.providerTransitioning || this.sendPreparing || this.agentBusy()
+    return this.workspaceTransitioning || this.providerTransitioning || this.sendPreparing || this.agentBusy() || this.operationsInFlight > 0
+  }
+
+  /**
+   * BARREIRA GLOBAL (TERCEIRA correção): adquire o lease de UMA operação
+   * renderer/runtime. Fail-closed: com o gate selado lança
+   * `agentRuntimeSealedMessage` ANTES de incrementar (nenhuma lógica de
+   * negócio executa, nenhum recurso é tocado). Operações já em voo NÃO são
+   * bloqueadas — apenas aguardadas pela quiescência.
+   */
+  public beginOperation(): void {
+    if (this.sealedForShutdown) throw new Error(agentRuntimeSealedMessage)
+    this.operationsInFlight += 1
+  }
+
+  /**
+   * Libera o lease de UMA operação (pareamento com beginOperation/
+   * withRuntimeOperation). O último release com o runtime livre resolve os
+   * waiters de quiescência deterministicamente. Idempotente por clamp
+   * (nunca fica negativo; release sem acquire é bug do chamador, não state
+   * corrompido).
+   */
+  public endOperation(): void {
+    if (this.operationsInFlight > 0) this.operationsInFlight -= 1
+    this.settleQuiescenceWaiters()
+  }
+
+  /** Sonda read-only do contador de operações em voo (auditoria/testes). */
+  public operationsInFlightCount(): number {
+    return this.operationsInFlight
   }
 
   /**
@@ -152,6 +198,37 @@ export class PrivilegedRuntimeGate {
   public endProviderSelect(): void {
     this.providerTransitioning = false
     this.settleQuiescenceWaiters()
+  }
+}
+
+/**
+ * BARREIRA GLOBAL DE OPERAÇÕES (TERCEIRA correção da auditoria — lease
+ * RAII-like canônico). É o ÚNICO mecanismo pelo qual handlers IPC do processo
+ * main executam: o wrapper canônico `register(...)` e os handlers
+ * `ipcMain.handle` diretos (ex.: executionApplyWorkspaceWrite) envolvem o
+ * corpo com esta função — não existe bypass por não usar o wrapper.
+ *
+ * Contrato:
+ * - com o gate selado: lança `agentRuntimeSealedMessage` ANTES de executar a
+ *   operação (fail-closed; handler body = 0 chamadas; nada toca database/
+ *   planning/workspace/preferences);
+ * - com o gate aberto: incrementa o contador global de operações em voo,
+ *   executa e libera no `finally` (exceções inclusive) — o shutdown aguarda o
+ *   contador chegar a ZERO em `awaitQuiescent()` ANTES do capture final.
+ *
+ * O sequenciador de shutdown NÃO usa esta função (onReport/AuditLog são
+ * auxiliares e ocorrem fora do fluxo de IPC): nunca há deadlock de o shutdown
+ * esperar uma operação que ele mesmo abriu.
+ */
+export const withRuntimeOperation = async <T>(
+  gate: PrivilegedRuntimeGate,
+  operation: () => Promise<T> | T
+): Promise<T> => {
+  gate.beginOperation()
+  try {
+    return await operation()
+  } finally {
+    gate.endOperation()
   }
 }
 
