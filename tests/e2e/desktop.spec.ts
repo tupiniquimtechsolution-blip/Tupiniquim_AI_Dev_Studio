@@ -117,6 +117,139 @@ const expectWorkspaceAuthorized = async (
   }
 }
 
+interface ProviderReadinessOptions {
+  /** Budget bounded por espera de estado (default 60s, << budget de teste de 420s). */
+  timeout?: number
+  /** Contexto extra do chamador (stderr do Electron truncado, renderer errors truncados — sem secrets). */
+  diagnostics?: () => string
+}
+
+interface ProviderSelectionOptions extends ProviderReadinessOptions {
+  /**
+   * SOMENTE para a PRIMEIRA seleção de provider logo após abrir o workspace
+   * (nenhum send anterior neste processo): o provider default
+   * (codex-app-server) ainda está DISCONNECTED — o estado terminal observável
+   * só passa a existir DEPOIS da própria troca, que o helper confirma ao
+   * final. Em qualquer cenário pós-send NÃO passe esta flag: a espera
+   * prévia por `.availability == READY` é OBRIGATÓRIA.
+   */
+  initialProviderSelection?: boolean
+}
+
+/**
+ * ATUALIZAÇÃO 5 (Windows F: — PROVIDER/MODEL READINESS E2E): helpers
+ * canônicos de troca de provider/modelo. Correção EXCLUSIVA do harness E2E —
+ * renderer, main, gate, providers, sessão e persistence NÃO mudam.
+ *
+ * Diagnóstico confirmado da corrida: o evento MESSAGE_DELTA escreve texto na
+ * conversa ANTES do turno ser terminal (`sending` no renderer só volta a
+ * `false` em TURN_COMPLETED/ERROR), e o core recusa troca de provider
+ * enquanto qualquer runtime está BUSY/STARTING (PrivilegedRuntimeGate) — o
+ * select do renderer também fica disabled enquanto `sending`/BUSY e
+ * `selectAgentProvider` recusa silenciosamente. Logo, "texto visível na
+ * conversa" NÃO é sinal válido para trocar provider após um send.
+ *
+ * Sinais AUTORITATIVOS (estado real observado, nunca tempo decorrido):
+ * - `.availability == READY` — sinal de turno terminal/provider livre,
+ *   OBRIGATÓRIO ANTES de qualquer troca pós-send;
+ * - select `Provedor de IA` habilitado e com o valor esperado APÓS a troca;
+ * - para Ollama: `Modelo Ollama local` visível, opção do modelo CARREGADA,
+ *   modelo selecionado e `.availability == READY` ao final.
+ *
+ * Contrato: SEM sleeps fixos, SEM polling manual, SEM retries cegos, SEM
+ * alteração do timeout global do Playwright — cada passo é uma espera
+ * bounded (60s default) via matchers `toHave*`/`toBe*` do expect() sobre
+ * estado observado.
+ * Em falha, o erro carrega diagnóstico sanitizado: provider atual,
+ * availability, existência do model selector, valores/opções de modelos e o
+ * contexto extra do chamador (stderr/renderer errors truncados) — sem
+ * secrets nem payload privado.
+ */
+const providerReadinessDetail = async (page: Page, options: ProviderReadinessOptions): Promise<string> => {
+  const availability = await withDiagnosticsBudget(page.locator('.availability').textContent(), 1_000).catch(() => null)
+  const providerSelect = page.getByLabel('Provedor de IA')
+  const providerValue = await withDiagnosticsBudget(providerSelect.inputValue(), 1_000).catch(() => null)
+  const providerEnabled = await withDiagnosticsBudget(providerSelect.isEnabled(), 1_000).catch(() => null)
+  const modelSelect = page.getByLabel('Modelo Ollama local')
+  const modelSelectorCount = await withDiagnosticsBudget(modelSelect.count(), 1_000).catch(() => null)
+  let modelOptions = '<ausente>'
+  if (modelSelectorCount !== null && modelSelectorCount > 0) {
+    const values = await withDiagnosticsBudget(
+      modelSelect.locator('option').evaluateAll((nodes) => nodes.map((node) => (node as HTMLOptionElement).value)),
+      1_000
+    ).catch(() => null)
+    modelOptions = values === null ? '<indisponível>' : JSON.stringify(values)
+  }
+  const extra = options.diagnostics === undefined ? '' : `\n${options.diagnostics().slice(0, 2_000)}`
+  return [
+    'Diagnóstico provider readiness —',
+    `availability=${availability ?? '<indisponível>'}`,
+    `provider=${providerValue ?? '<indisponível>'}`,
+    `providerEnabled=${providerEnabled === null ? '<indisponível>' : String(providerEnabled)}`,
+    `modelSelector=${modelSelectorCount === null ? '<indisponível>' : modelSelectorCount > 0 ? 'presente' : 'ausente'}`,
+    `modelOptions=${modelOptions}${extra}`
+  ].join(' ')
+}
+
+const expectAgentReady = async (page: Page, options: ProviderReadinessOptions = {}): Promise<void> => {
+  const timeout = options.timeout ?? 60_000
+  try {
+    await expect(page.locator('.availability')).toHaveText('READY', { timeout })
+  } catch (cause) {
+    throw new Error(
+      `Agente não ficou READY em ${String(timeout)}ms — turno não terminal ou provider BUSY/STARTING. ${await providerReadinessDetail(page, options)}`,
+      { cause }
+    )
+  }
+}
+
+const selectOllamaAndWaitReady = async (page: Page, model: string, options: ProviderSelectionOptions = {}): Promise<void> => {
+  const timeout = options.timeout ?? 60_000
+  const providerSelect = page.getByLabel('Provedor de IA')
+  const modelSelect = page.getByLabel('Modelo Ollama local')
+  try {
+    if (options.initialProviderSelection !== true) {
+      // Sinal AUTORITATIVO de turno terminal: obrigatório ANTES da troca em
+      // qualquer cenário pós-send. toBeEnabled fecha a janela em que READY já
+      // foi publicado mas `sending` ainda não voltou a false (o select fica
+      // disabled até TURN_COMPLETED ser processado).
+      await expectAgentReady(page, options)
+      await expect(providerSelect).toBeEnabled({ timeout })
+    }
+    await providerSelect.selectOption('ollama', { timeout })
+    await expect(providerSelect).toHaveValue('ollama', { timeout })
+    await expect(modelSelect).toBeVisible({ timeout })
+    await expect(modelSelect.locator(`option[value="${model}"]`)).toHaveCount(1, { timeout })
+    await modelSelect.selectOption(model, { timeout })
+    await expect(modelSelect).toHaveValue(model, { timeout })
+    await expectAgentReady(page, options)
+  } catch (cause) {
+    throw new Error(
+      `Seleção Ollama (modelo ${model}) não convergiu para estado terminal READY. ${await providerReadinessDetail(page, options)}`,
+      { cause }
+    )
+  }
+}
+
+const selectCodexAndWaitReady = async (page: Page, options: ProviderSelectionOptions = {}): Promise<void> => {
+  const timeout = options.timeout ?? 60_000
+  const providerSelect = page.getByLabel('Provedor de IA')
+  try {
+    if (options.initialProviderSelection !== true) {
+      await expectAgentReady(page, options)
+      await expect(providerSelect).toBeEnabled({ timeout })
+    }
+    await providerSelect.selectOption('codex-app-server', { timeout })
+    await expect(providerSelect).toHaveValue('codex-app-server', { timeout })
+    await expectAgentReady(page, options)
+  } catch (cause) {
+    throw new Error(
+      `Seleção Codex App Server não convergiu para estado terminal READY. ${await providerReadinessDetail(page, options)}`,
+      { cause }
+    )
+  }
+}
+
 interface MockOllamaServer {
   url: string
   chatRequests: unknown[]
@@ -245,10 +378,14 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
       diagnostics: () => `rendererErrors=[${rendererErrors.join(' | ')}] · Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
     })
 
-    await page.getByLabel('Provedor de IA').selectOption('ollama')
+    // ATUALIZAÇÃO 5: seleção INICIAL (pós-autorização, sem send anterior) —
+    // o provider default está DISCONNECTED; o estado terminal READY é
+    // produzido e confirmado pela própria troca canônica abaixo.
+    await selectOllamaAndWaitReady(page, ollamaModel, {
+      initialProviderSelection: true,
+      diagnostics: () => `rendererErrors=[${rendererErrors.join(' | ')}] · Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     await expect(page.getByText('Ollama usa somente o loopback local')).toBeVisible()
-    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
-    await expect(page.getByLabel('Modelo Ollama local')).toHaveValue(ollamaModel)
     await expect(page.locator('.availability')).toHaveText('READY')
     const providerStatus = await page.evaluate(async () => window.studio.agent.status())
     expect(providerStatus).toMatchObject({ ok: true, value: { provider: 'ollama', state: 'READY' } })
@@ -557,9 +694,10 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
       expectedWorkspaceName: path.basename(workspaceRoot),
       diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
     })
-    await page.getByLabel('Provedor de IA').selectOption('ollama')
-    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
-    await expect(page.locator('.availability')).toHaveText('READY')
+    await selectOllamaAndWaitReady(page, ollamaModel, {
+      initialProviderSelection: true,
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
 
     // ── UM único plano: A/B compartilham EXATAMENTE executionId + stepId ────
     // O renderer cria um plano a cada envio em modo PLAN; para provar
@@ -879,9 +1017,10 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     const sessionIdA = await page.getByLabel('Sessão Tupiniquim').getAttribute('data-session-id')
     if (sessionIdA === null || sessionIdA === '') throw new Error('Sessão Tupiniquim ausente após abrir o workspace.')
 
-    await page.getByLabel('Provedor de IA').selectOption('ollama')
-    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
-    await expect(page.locator('.availability')).toHaveText('READY')
+    await selectOllamaAndWaitReady(page, ollamaModel, {
+      initialProviderSelection: true,
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     await expect(page.getByLabel('Provedor de IA')).toBeEnabled()
 
     await page.locator('.mode-switch').getByRole('button', { name: 'Chat', exact: true }).click()
@@ -916,8 +1055,12 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     ]))
     expect(beforeSwitch.value.turns.some((turn) => turn.role === 'assistant' && turn.model === ollamaModel)).toBe(true)
 
-    await page.getByLabel('Provedor de IA').selectOption('codex-app-server')
-    await expect(page.locator('.availability')).toHaveText('READY')
+    // ATUALIZAÇÃO 5: troca PÓS-send/proposal — exige `.availability == READY`
+    // (turno terminal REAL) antes do selectOption; card PENDING_REVIEW visível
+    // não prova turno terminal.
+    await selectCodexAndWaitReady(page, {
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     await expect(page.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
     await expect(page.locator('.agent-conversation')).toContainText(continuityMessage)
     await expect(page.locator('.agent-conversation')).toContainText('TUPINIQUIM_SESSION_OK')
@@ -954,9 +1097,11 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     expect(await page.content()).not.toContain(sessionProposalContent)
     expect(await page.locator('.agent-conversation').innerText()).not.toContain(sessionProposalContent)
 
-    await page.getByLabel('Provedor de IA').selectOption('ollama')
-    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
-    await expect(page.locator('.availability')).toHaveText('READY')
+    // ATUALIZAÇÃO 5: troca PÓS-send Codex — `CONTEXTO_TUPINIQUIM_OK` chega via
+    // MESSAGE_DELTA (texto visível != turno terminal); exigir READY real.
+    await selectOllamaAndWaitReady(page, ollamaModel, {
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     await page.getByLabel('Mensagem ao agente').fill('Retome no Ollama.')
     await page.getByRole('button', { name: 'Enviar', exact: true }).click()
     await expect(page.locator('.agent-conversation')).toContainText('Retome no Ollama.', { timeout: 30_000 })
@@ -1189,9 +1334,10 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     expect(systemInfo1.value.dataRoot).toBe(e2eDataRoot)
 
     // CHAT inicial (binding Ollama + conversa pública).
-    await page.getByLabel('Provedor de IA').selectOption('ollama')
-    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
-    await expect(page.locator('.availability')).toHaveText('READY')
+    await selectOllamaAndWaitReady(page, ollamaModel, {
+      initialProviderSelection: true,
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     await page.locator('.mode-switch').getByRole('button', { name: 'Chat', exact: true }).click()
     await page.getByLabel('Mensagem ao agente').fill(continuityMessage)
     await page.getByRole('button', { name: 'Enviar', exact: true }).click()
@@ -1218,8 +1364,10 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     if (proposalIdA === null) throw new Error('Proposal da fase 1 sem ID.')
 
     // Troca de provider mantendo a MESMA Tupiniquim Session.
-    await page.getByLabel('Provedor de IA').selectOption('codex-app-server')
-    await expect(page.locator('.availability')).toHaveText('READY')
+    // ATUALIZAÇÃO 5: PÓS-send/proposal — READY terminal obrigatório ANTES.
+    await selectCodexAndWaitReady(page, {
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     await expect(page.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
     await expect(provenanceRegion(page).filter({ has: page.locator('dd', { hasText: proposalIdA }) }).locator('header span')).toHaveText('EXPIRED')
 
@@ -1230,9 +1378,14 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
 
     // Volta ao Ollama: o contexto não visto (turnos Codex) é entregue via
     // sessionContext e ACKado em SUCCESS — visto/seen fica durável.
-    await page.getByLabel('Provedor de IA').selectOption('ollama')
-    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
-    await expect(page.locator('.availability')).toHaveText('READY')
+    // ATUALIZAÇÃO 5 (CORREÇÃO DA CORRIDA): `CONTEXTO_TUPINIQUIM_OK` aparece na
+    // conversa via MESSAGE_DELTA ANTES do turno ser terminal — trocar provider
+    // nesse instante é recusado (renderer `sending` + gate BUSY) e o model
+    // selector do Ollama nunca aparece. Obrigatório: `.availability == READY`
+    // (turno terminal REAL) + select habilitado ANTES da troca.
+    await selectOllamaAndWaitReady(page, ollamaModel, {
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     await page.getByLabel('Mensagem ao agente').fill(ollamaResumeMessage)
     await page.getByRole('button', { name: 'Enviar', exact: true }).click()
     await expect(page.locator('.agent-conversation')).toContainText('TUPINIQUIM_SESSION_OK', { timeout: 30_000 })
@@ -1339,9 +1492,12 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     await expect(page2.locator('.agent-conversation')).toContainText(codexMessage)
 
     // ── CHAT pós-restart: continuidade legítima com contexto incremental ────
-    await page2.getByLabel('Provedor de IA').selectOption('ollama')
-    await page2.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
-    await expect(page2.locator('.availability')).toHaveText('READY')
+    // ATUALIZAÇÃO 5: seleção INICIAL do processo 2 (nenhum send neste
+    // processo ainda; provider default DISCONNECTED).
+    await selectOllamaAndWaitReady(page2, ollamaModel, {
+      initialProviderSelection: true,
+      diagnostics: () => `Electron stderr (processo 2)=[${processErrors2.join('').slice(0, 1_000)}]`
+    })
     const firstSend = await page2.evaluate(async (message: string) => await window.studio.agent.send({ message, mode: 'CHAT' }), postRestartMessage)
     if (!firstSend.ok) throw new Error(`agent.send pós-restart falhou: ${firstSend.error.message}`)
     expect(firstSend.value.threadId).toBe(ollamaThread.threadId)
@@ -1400,8 +1556,10 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     expect(JSON.stringify(authorityAfterProposal.value)).not.toContain(privateMarker)
 
     // Troca de provider NÃO transfere a authority da nova proposal.
-    await page2.getByLabel('Provedor de IA').selectOption('codex-app-server')
-    await expect(page2.locator('.availability')).toHaveText('READY')
+    // ATUALIZAÇÃO 5: PÓS-send/proposal — READY terminal obrigatório ANTES.
+    await selectCodexAndWaitReady(page2, {
+      diagnostics: () => `Electron stderr (processo 2)=[${processErrors2.join('').slice(0, 1_000)}]`
+    })
     const afterProviderSwitch = await page2.evaluate(async () => await window.studio.agent.session())
     if (!afterProviderSwitch.ok || afterProviderSwitch.value === null) throw new Error('Sessão indisponível após troca de provider.')
     expect(afterProviderSwitch.value.proposalAuthority).toBeNull()
@@ -1416,9 +1574,11 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     expect(hijack).toMatchObject({ ok: false })
 
     // ── A → B → A: B é isolado; A volta com a MESMA session e bindings ──────
-    await page2.getByLabel('Provedor de IA').selectOption('ollama')
-    await page2.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
-    await expect(page2.locator('.availability')).toHaveText('READY')
+    // ATUALIZAÇÃO 5: troca pós-cenário de provider/hijack — READY terminal
+    // obrigatório antes de voltar ao Ollama e trocar de workspace.
+    await selectOllamaAndWaitReady(page2, ollamaModel, {
+      diagnostics: () => `Electron stderr (processo 2)=[${processErrors2.join('').slice(0, 1_000)}]`
+    })
     await page2.locator('.project-switcher').click()
     await expectWorkspaceAuthorized(page2, {
       expectedWorkspaceName: path.basename(workspaceRootB),
