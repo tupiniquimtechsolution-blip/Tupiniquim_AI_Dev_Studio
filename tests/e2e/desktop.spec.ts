@@ -37,6 +37,86 @@ const withIsolatedE2eDataRoot = (env: NodeJS.ProcessEnv, e2eDataRoot: string): {
   return merged
 }
 
+/**
+ * ATUALIZAÇÃO 4 (Windows F: — E2E READINESS): espera CANÔNICA de conclusão
+ * REAL da abertura/troca de workspace.
+ *
+ * Com o dataRoot E2E isolado por teste (correto e preservado), cada processo
+ * Electron inicia com um SQLite FRESCO: a primeira sequência
+ * `workspace.configure → recovery → SQLite` paga o custo real de worker
+ * startup, criação do DB, migrations e I/O no F: — custo que o timeout
+ * implícito (~5s) do `expect` não cobre. Este helper substitui TODAS as
+ * esperas de `.notice` contendo "Workspace autorizado" do arquivo.
+ *
+ * Sinais AUTORITATIVOS (não artificial): o renderer só publica
+ * "Workspace autorizado..." DEPOIS de concluir workspace.configure,
+ * agent.session (recovery), workspace list, git status, workspace context e
+ * agent status — ou seja, a mensagem representa o fim real do fluxo, não um
+ * delay. Quando pedido, confirma também o nome do workspace no
+ * project-switcher e o data-session-id da Sessão Tupiniquim.
+ *
+ * Contrato:
+ * - timeout explícito e bounded (60s default, bem abaixo do budget de teste
+ *   de 420s); SEM sleeps fixos, SEM polling manual;
+ * - sucesso SOMENTE por estado observado — nunca por tempo decorrido;
+ * - em caso de falha, anexa diagnóstico útil (conteúdo atual de .notice e
+ *   project-switcher, system.info se o IPC ainda responder, stderr/renderer
+ *   errors já coletados pelo chamador), sem secrets/payload privado.
+ */
+const withDiagnosticsBudget = async <T>(promise: Promise<T>, budgetMs: number): Promise<T | null> => {
+  let timer: NodeJS.Timeout | undefined
+  const timeout = new Promise<null>((resolve) => { timer = setTimeout(() => resolve(null), budgetMs) })
+  try {
+    return await Promise.race([promise, timeout])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
+const expectWorkspaceAuthorized = async (
+  page: Page,
+  options: {
+    expectedWorkspaceName?: string
+    expectedSessionId?: string
+    requireSession?: boolean
+    timeout?: number
+    diagnostics?: () => string
+  } = {}
+): Promise<void> => {
+  const timeout = options.timeout ?? 60_000
+  const readinessDetail = async (): Promise<string> => {
+    const notice = await withDiagnosticsBudget(page.locator('.notice').textContent(), 1_000).catch(() => null)
+    const switcher = await withDiagnosticsBudget(page.locator('.project-switcher').textContent(), 1_000).catch(() => null)
+    let systemInfo: string
+    try {
+      const raw = await withDiagnosticsBudget(page.evaluate(async () => await window.studio.system.info()), 2_000)
+      if (raw === null) systemInfo = 'timeout'
+      else if (raw.ok) systemInfo = `ok (dataRoot=${raw.value.dataRoot})`
+      else systemInfo = `erro (${raw.error.code})`
+    } catch {
+      systemInfo = 'indisponível (página/IPC)'
+    }
+    const extra = options.diagnostics === undefined ? '' : `\n${options.diagnostics().slice(0, 2_000)}`
+    return `Diagnóstico readiness — notice=${notice ?? '<indisponível>'} · project-switcher=${switcher ?? '<indisponível>'} · system.info=${systemInfo}${extra}`
+  }
+  try {
+    await expect(page.locator('.notice')).toContainText('Workspace autorizado', { timeout })
+  } catch (cause) {
+    throw new Error(
+      `Workspace não ficou AUTORIZADO em ${String(timeout)}ms — configure/recovery não concluiu (readiness). ${await readinessDetail()}`,
+      { cause }
+    )
+  }
+  if (options.expectedWorkspaceName !== undefined) {
+    await expect(page.locator('.project-switcher')).toContainText(options.expectedWorkspaceName, { timeout })
+  }
+  if (options.expectedSessionId !== undefined) {
+    await expect(page.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', options.expectedSessionId, { timeout })
+  } else if (options.requireSession === true) {
+    await expect(page.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', /.+/u, { timeout })
+  }
+}
+
 interface MockOllamaServer {
   url: string
   chatRequests: unknown[]
@@ -160,8 +240,10 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
       })
     }, workspaceRoot)
     await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
-    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
-    await expect(page.locator('.project-switcher')).toContainText(path.basename(workspaceRoot))
+    await expectWorkspaceAuthorized(page, {
+      expectedWorkspaceName: path.basename(workspaceRoot),
+      diagnostics: () => `rendererErrors=[${rendererErrors.join(' | ')}] · Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
 
     await page.getByLabel('Provedor de IA').selectOption('ollama')
     await expect(page.getByText('Ollama usa somente o loopback local')).toBeVisible()
@@ -471,7 +553,10 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
       })
     }, { root: workspaceRoot, nextRoot: workspaceRootB })
     await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
-    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await expectWorkspaceAuthorized(page, {
+      expectedWorkspaceName: path.basename(workspaceRoot),
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     await page.getByLabel('Provedor de IA').selectOption('ollama')
     await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
     await expect(page.locator('.availability')).toHaveText('READY')
@@ -645,8 +730,10 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
     expect(tombstoneAFields.Target).toBe(proposalTargetA)
     const workspaceBName = path.basename(workspaceRootB)
     await page.locator('.project-switcher').click()
-    await expect(page.locator('.project-switcher')).toContainText(workspaceBName)
-    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await expectWorkspaceAuthorized(page, {
+      expectedWorkspaceName: workspaceBName,
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     await expect(provenanceRegion(page)).toHaveCount(0)
     const isolationProvenance = await page.evaluate(() => {
       const regions = Array.from(document.querySelectorAll<HTMLElement>('.proposal-provenance'))
@@ -784,8 +871,11 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
       })
     }, { root: workspaceRoot, nextRoot: workspaceRootB })
     await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
-    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
-    await expect(page.getByLabel('Sessão Tupiniquim')).toBeVisible()
+    await expectWorkspaceAuthorized(page, {
+      expectedWorkspaceName: path.basename(workspaceRoot),
+      requireSession: true,
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     const sessionIdA = await page.getByLabel('Sessão Tupiniquim').getAttribute('data-session-id')
     if (sessionIdA === null || sessionIdA === '') throw new Error('Sessão Tupiniquim ausente após abrir o workspace.')
 
@@ -891,8 +981,11 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     }
 
     await page.locator('.project-switcher').click()
-    await expect(page.locator('.project-switcher')).toContainText(path.basename(workspaceRootB))
-    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await expectWorkspaceAuthorized(page, {
+      expectedWorkspaceName: path.basename(workspaceRootB),
+      requireSession: true,
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     const sessionIdB = await page.getByLabel('Sessão Tupiniquim').getAttribute('data-session-id')
     expect(sessionIdB).toBeTruthy()
     expect(sessionIdB).not.toBe(sessionIdA)
@@ -907,9 +1000,11 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     expect(JSON.stringify(isolated.value)).not.toContain(sessionProposalContent)
 
     await page.locator('.project-switcher').click()
-    await expect(page.locator('.project-switcher')).toContainText(path.basename(workspaceRoot))
-    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
-    await expect(page.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
+    await expectWorkspaceAuthorized(page, {
+      expectedWorkspaceName: path.basename(workspaceRoot),
+      expectedSessionId: sessionIdA,
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     await expect(page.locator('.agent-conversation')).toContainText(continuityMessage)
     const restored = await page.evaluate(async () => await window.studio.agent.session())
     if (!restored.ok || restored.value === null) throw new Error('Sessão A não foi restaurada.')
@@ -1080,7 +1175,11 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
       })
     }, { root: workspaceRoot, nextRoot: workspaceRootB })
     await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
-    await expect(page.locator('.notice')).toContainText('Workspace autorizado')
+    await expectWorkspaceAuthorized(page, {
+      expectedWorkspaceName: path.basename(workspaceRoot),
+      requireSession: true,
+      diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    })
     const sessionIdA = await page.getByLabel('Sessão Tupiniquim').getAttribute('data-session-id')
     if (sessionIdA === null || sessionIdA === '') throw new Error('Sessão Tupiniquim ausente na fase 1.')
     const systemInfo1 = await page.evaluate(async () => await window.studio.system.info())
@@ -1204,8 +1303,11 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
 
     // Abrir o MESMO workspace A: recovery da MESMA session S.
     await page2.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
-    await expect(page2.locator('.notice')).toContainText('Workspace autorizado')
-    await expect(page2.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
+    await expectWorkspaceAuthorized(page2, {
+      expectedWorkspaceName: path.basename(workspaceRoot),
+      expectedSessionId: sessionIdA,
+      diagnostics: () => `Electron stderr (processo 2)=[${processErrors2.join('').slice(0, 1_000)}]`
+    })
 
     const recovered = await page2.evaluate(async () => await window.studio.agent.session())
     if (!recovered.ok || recovered.value === null) throw new Error('Sessão Tupiniquim não recuperada no processo 2.')
@@ -1318,8 +1420,11 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     await page2.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
     await expect(page2.locator('.availability')).toHaveText('READY')
     await page2.locator('.project-switcher').click()
-    await expect(page2.locator('.project-switcher')).toContainText(path.basename(workspaceRootB))
-    await expect(page2.locator('.notice')).toContainText('Workspace autorizado')
+    await expectWorkspaceAuthorized(page2, {
+      expectedWorkspaceName: path.basename(workspaceRootB),
+      requireSession: true,
+      diagnostics: () => `Electron stderr (processo 2)=[${processErrors2.join('').slice(0, 1_000)}]`
+    })
     const sessionIdB = await page2.getByLabel('Sessão Tupiniquim').getAttribute('data-session-id')
     expect(sessionIdB).toBeTruthy()
     expect(sessionIdB).not.toBe(sessionIdA)
@@ -1335,9 +1440,11 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
 
     // Volta a A: recupera a session S com bindings preservados.
     await page2.locator('.project-switcher').click()
-    await expect(page2.locator('.project-switcher')).toContainText(path.basename(workspaceRoot))
-    await expect(page2.locator('.notice')).toContainText('Workspace autorizado')
-    await expect(page2.getByLabel('Sessão Tupiniquim')).toHaveAttribute('data-session-id', sessionIdA)
+    await expectWorkspaceAuthorized(page2, {
+      expectedWorkspaceName: path.basename(workspaceRoot),
+      expectedSessionId: sessionIdA,
+      diagnostics: () => `Electron stderr (processo 2)=[${processErrors2.join('').slice(0, 1_000)}]`
+    })
     const restoredA = await page2.evaluate(async () => await window.studio.agent.session())
     if (!restoredA.ok || restoredA.value === null) throw new Error('Sessão A não restaurada no processo 2.')
     expect(restoredA.value.session.id).toBe(sessionIdA)
