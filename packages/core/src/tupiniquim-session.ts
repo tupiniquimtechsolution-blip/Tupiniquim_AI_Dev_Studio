@@ -26,6 +26,7 @@ import {
 
 export const workspaceSwitchBusyMessage = 'Aguarde o turno do agente terminar antes de trocar de workspace.'
 export const agentRuntimeBusyMessage = 'Aguarde o turno ou a transição de provider em andamento.'
+export const agentRuntimeSealedMessage = 'O aplicativo está encerrando; novas operações não são aceitas.'
 
 export const assertIdleForWorkspaceSwitch = (locked: boolean): void => {
   if (locked) throw new Error(workspaceSwitchBusyMessage)
@@ -44,38 +45,190 @@ export class PrivilegedRuntimeGate {
   private workspaceTransitioning = false
   private providerTransitioning = false
   private sendPreparing = false
+  /**
+   * Wave 16 — Incremento 4/4 (correção da auditoria, Bloqueio 1): selo do
+   * shutdown. Depois de selado, NENHUMA operação user-driven/privilegiada
+   * começa (send, workspace switch, provider select) — o gate fica
+   * permanentemente locked com mensagem explícita de encerramento.
+   */
+  private sealedForShutdown = false
+  /**
+   * Wave 16 — Incremento 4/4 (SEGUNDA correção da auditoria — Bloqueio 1):
+   * waiters de RUNTIME QUIESCENCE. O selo bloqueia operações NOVAS, mas
+   * operações JÁ iniciadas (workspace switch, provider select, send em
+   * preparação/execução, turno de provider em streaming) continuam vivas e
+   * podem tocar adapters/history/SQLite. O shutdown só pode capturar o
+   * estado final DEPOIS de todas elas convergirem — estes waiters são
+   * resolvidos deterministicamente pelo último `end*()`/notificação de
+   * estado com o runtime livre (sem polling).
+   */
+  private readonly quiescenceWaiters: Array<() => void> = []
+  /**
+   * Wave 16 — Incremento 4/4 (TERCEIRA correção da auditoria — BARREIRA
+   * GLOBAL DE IPC/DB): contador de operações renderer/runtime EM VOO.
+   * Durante `before-quit → preventDefault()` a janela continua viva e o
+   * renderer ainda dispara IPCs; vários handlers usam o mesmo SQLite
+   * (planning/prompt/preferences/visual/writeProposals) ou mutam runtime
+   * (workspace.write, terminal, provider). O wrapper canônico `register(...)`
+   * e os handlers `ipcMain.handle` diretos adquirem um lease via
+   * `beginOperation()`/`withRuntimeOperation` — o shutdown só considera o
+   * runtime quiescente com este contador em ZERO.
+   */
+  private operationsInFlight = 0
 
   public constructor(private readonly agentBusy: () => boolean = () => false) {}
 
+  public sealForShutdown(): void {
+    this.sealedForShutdown = true
+  }
+
+  public isSealedForShutdown(): boolean {
+    return this.sealedForShutdown
+  }
+
   public locked(): boolean {
-    return this.workspaceTransitioning || this.providerTransitioning || this.sendPreparing || this.agentBusy()
+    return this.sealedForShutdown || this.workspaceTransitioning || this.providerTransitioning || this.sendPreparing || this.agentBusy()
+  }
+
+  /**
+   * Trabalho JÁ iniciado (runtime em voo). Diferente de `locked()` — que
+   * também inclui o selo — a quiescência olha APENAS as operações em voo:
+   * transições de workspace/provider/send, o estado busy/starting dos
+   * providers (execuções de turno capazes de gravar AIThread/AITurn/AIEvent
+   * direto no SQLite pelo history repository, fora do snapshot coordinator)
+   * E a BARREIRA GLOBAL de operações IPC/renderer em voo (contador > 0).
+   *
+   * NOTA: `locked()` NÃO inclui o contador de operações — um handler
+   * registrado (lease ativo) precisa poder chamar `beginSend()`/
+   * `beginWorkspaceSwitch()` sem se auto-bloquear.
+   */
+  public runtimeInFlight(): boolean {
+    return this.workspaceTransitioning || this.providerTransitioning || this.sendPreparing || this.agentBusy() || this.operationsInFlight > 0
+  }
+
+  /**
+   * BARREIRA GLOBAL (TERCEIRA correção): adquire o lease de UMA operação
+   * renderer/runtime. Fail-closed: com o gate selado lança
+   * `agentRuntimeSealedMessage` ANTES de incrementar (nenhuma lógica de
+   * negócio executa, nenhum recurso é tocado). Operações já em voo NÃO são
+   * bloqueadas — apenas aguardadas pela quiescência.
+   */
+  public beginOperation(): void {
+    if (this.sealedForShutdown) throw new Error(agentRuntimeSealedMessage)
+    this.operationsInFlight += 1
+  }
+
+  /**
+   * Libera o lease de UMA operação (pareamento com beginOperation/
+   * withRuntimeOperation). O último release com o runtime livre resolve os
+   * waiters de quiescência deterministicamente. Idempotente por clamp
+   * (nunca fica negativo; release sem acquire é bug do chamador, não state
+   * corrompido).
+   */
+  public endOperation(): void {
+    if (this.operationsInFlight > 0) this.operationsInFlight -= 1
+    this.settleQuiescenceWaiters()
+  }
+
+  /** Sonda read-only do contador de operações em voo (auditoria/testes). */
+  public operationsInFlightCount(): number {
+    return this.operationsInFlight
+  }
+
+  /**
+   * RUNTIME QUIESCENCE aguardável (SEGUNDA correção, Bloqueio 1):
+   * resolve quando TODAS as operações já iniciadas convergiram —
+   * `workspaceTransitioning === false && providerTransitioning === false &&
+   * sendPreparing === false` e nenhum provider busy/starting. Mecanismo
+   * awaitable determinístico (waiter set + resolução no último `end*()`/
+   * `notifyAgentStateChanged()`), NUNCA polling. Se o runtime já está
+   * quiescente, resolve imediatamente.
+   */
+  public awaitQuiescent(): Promise<void> {
+    if (!this.runtimeInFlight()) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      this.quiescenceWaiters.push(resolve)
+    })
+  }
+
+  /**
+   * Notificação de mudança do estado de provider (ex.: BUSY/STARTING →
+   * READY/ERROR ao fim de um turno). O processo main chama em cada evento de
+   * agente; se o runtime ficou livre, TODOS os waiters de quiescência são
+   * resolvidos neste instante determinístico.
+   */
+  public notifyAgentStateChanged(): void {
+    this.settleQuiescenceWaiters()
+  }
+
+  private settleQuiescenceWaiters(): void {
+    if (this.runtimeInFlight()) return
+    const waiters = this.quiescenceWaiters.splice(0)
+    for (const resolve of waiters) resolve()
   }
 
   public beginWorkspaceSwitch(): void {
+    if (this.sealedForShutdown) throw new Error(agentRuntimeSealedMessage)
     assertIdleForWorkspaceSwitch(this.locked())
     this.workspaceTransitioning = true
   }
 
   public endWorkspaceSwitch(): void {
     this.workspaceTransitioning = false
+    this.settleQuiescenceWaiters()
   }
 
   public beginSend(): void {
+    if (this.sealedForShutdown) throw new Error(agentRuntimeSealedMessage)
     if (this.locked()) throw new Error(agentRuntimeBusyMessage)
     this.sendPreparing = true
   }
 
   public endSend(): void {
     this.sendPreparing = false
+    this.settleQuiescenceWaiters()
   }
 
   public beginProviderSelect(): void {
+    if (this.sealedForShutdown) throw new Error(agentRuntimeSealedMessage)
     if (this.locked()) throw new Error(agentRuntimeBusyMessage)
     this.providerTransitioning = true
   }
 
   public endProviderSelect(): void {
     this.providerTransitioning = false
+    this.settleQuiescenceWaiters()
+  }
+}
+
+/**
+ * BARREIRA GLOBAL DE OPERAÇÕES (TERCEIRA correção da auditoria — lease
+ * RAII-like canônico). É o ÚNICO mecanismo pelo qual handlers IPC do processo
+ * main executam: o wrapper canônico `register(...)` e os handlers
+ * `ipcMain.handle` diretos (ex.: executionApplyWorkspaceWrite) envolvem o
+ * corpo com esta função — não existe bypass por não usar o wrapper.
+ *
+ * Contrato:
+ * - com o gate selado: lança `agentRuntimeSealedMessage` ANTES de executar a
+ *   operação (fail-closed; handler body = 0 chamadas; nada toca database/
+ *   planning/workspace/preferences);
+ * - com o gate aberto: incrementa o contador global de operações em voo,
+ *   executa e libera no `finally` (exceções inclusive) — o shutdown aguarda o
+ *   contador chegar a ZERO em `awaitQuiescent()` ANTES do capture final.
+ *
+ * O sequenciador de shutdown NÃO usa esta função (onReport/AuditLog são
+ * auxiliares e ocorrem fora do fluxo de IPC): nunca há deadlock de o shutdown
+ * esperar uma operação que ele mesmo abriu.
+ */
+export const withRuntimeOperation = async <T>(
+  gate: PrivilegedRuntimeGate,
+  operation: () => Promise<T> | T
+): Promise<T> => {
+  gate.beginOperation()
+  try {
+    return await operation()
+  } finally {
+    gate.endOperation()
   }
 }
 
@@ -122,6 +275,32 @@ interface WorkspaceSessionState {
  * correspondente ainda poderia estar dentro da janela retida.
  */
 const maxUnsuccessfulTupiniquimTurns = 1_024
+
+/**
+ * Wave 16 — Incremento 4/4: lifecycle efêmero BOUNDED por workspace.
+ *
+ * `finalizedTurns`, `settledSuccess` e `settledFailure` crescem um id por turn
+ * terminal; sem limite, um processo longevo acumula memória indefinidamente.
+ * O teto 256 fica acima da janela durável (200 turns) e a eviction é
+ * oldest-first determinística (ordem de inserção do Set): ao adicionar a
+ * 257ª entrada, a mais antiga sai; as 256 mais recentes ficam.
+ *
+ * Consequência explícita e aceita: um evento de completion duplicado que
+ * chegue para um turn MUITO antigo já evictado é reprocessado como se fosse
+ * novo — o efeito é somente re-adicionar o id nos sets efêmeros (nenhum turn
+ * duplicado é appendado: o append é keyed por inProgress). Estes sets são
+ * efêmeros por contrato: NUNCA entram no snapshot e NUNCA são hidratados.
+ */
+export const maxTupiniquimLifecycleTurns = 256
+
+/** Adição bounded com eviction oldest-first determinística (ordem de inserção). */
+const addBoundedTurnKey = (set: Set<string>, key: string): void => {
+  set.add(key)
+  if (set.size > maxTupiniquimLifecycleTurns) {
+    const oldest = set.values().next().value
+    if (oldest !== undefined) set.delete(oldest)
+  }
+}
 
 /**
  * Wave 16 — Incremento 2/4: resultado do hydrate da Tupiniquim Session a
@@ -487,6 +666,23 @@ export class TupiniquimSessionService {
     return this.activeOrNull()?.bindings.get(provider)?.model ?? null
   }
 
+  /**
+   * Wave 16 — Incremento 4/4: sonda read-only de auditoria do lifecycle
+   * efêmero por lifecycle key (provider, threadId, turnId). Existe para
+   * tornar verificáveis os limites bounded (256) e a eviction oldest-first —
+   * os sets NUNCA são expostos por referência e NUNCA são persistidos.
+   */
+  public turnLifecycleMembership(provider: AIProviderKind, threadId: string, turnId: string): { finalized: boolean; settledSuccess: boolean; settledFailure: boolean } {
+    const state = this.activeOrNull()
+    if (state === null) return { finalized: false, settledSuccess: false, settledFailure: false }
+    const key = turnLifecycleKey(provider, threadId, turnId)
+    return {
+      finalized: state.finalizedTurns.has(key),
+      settledSuccess: state.settledSuccess.has(key),
+      settledFailure: state.settledFailure.has(key)
+    }
+  }
+
   public threadFor(provider: AIProviderKind): string | undefined {
     return this.activeOrNull()?.bindings.get(provider)?.threadId
   }
@@ -653,19 +849,19 @@ export class TupiniquimSessionService {
     if (pending !== undefined) {
       state.pendingByTurn.delete(key)
       if (success && pending.turnIds.length !== 0) this.markTurnsSeen(state, pending.provider, pending.turnIds)
-      state.finalizedTurns.add(key)
+      addBoundedTurnKey(state.finalizedTurns, key)
       return
     }
     if (success) {
-      state.settledSuccess.add(key)
+      addBoundedTurnKey(state.settledSuccess, key)
       state.settledFailure.delete(key)
-      state.finalizedTurns.add(key)
+      addBoundedTurnKey(state.finalizedTurns, key)
       return
     }
     if (status !== undefined) {
-      state.settledFailure.add(key)
+      addBoundedTurnKey(state.settledFailure, key)
       state.settledSuccess.delete(key)
-      state.finalizedTurns.add(key)
+      addBoundedTurnKey(state.finalizedTurns, key)
     }
   }
 
