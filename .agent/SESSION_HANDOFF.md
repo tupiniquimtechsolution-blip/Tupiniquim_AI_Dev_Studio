@@ -1,23 +1,23 @@
 # SESSION HANDOFF
 
 Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-Wave 16: implementação + gates + documentação + merge **CONCLUÍDOS**
-Branch canônica: `wave-16/restart-recovery-tupiniquim-session`
-PR #23: MERGEADO
-Merge commit: `d23a43e5543b455c59e193929122f332267fdf18`
-Issue #18: CLOSED / COMPLETED
-HEAD técnico validado no Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`
-`checkpoint/wave-16`: PENDENTE DE CRIAÇÃO
-Dogfood/QA final da Master Wave 1: PENDENTE
-Master Wave 2: NÃO INICIADA
+Wave 16: **FECHADA**
+`checkpoint/wave-16`: **CRIADO E CONFIRMADO**
+Checkpoint commit: `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`
+Wave 17: **DOGFOOD/QA FINAL EM ANDAMENTO**
+Branch: `wave-17/master-wave-1-dogfood-qa`
+Issue: #24 — `[MASTER WAVE 1] wave-17 — dogfood/QA final e gate de fechamento`
+Master Wave 2: **NÃO INICIADA**
 
 ## Contexto
 
-O GitHub é a fonte de verdade. A Wave 16 implementou restart/recovery local da Tupiniquim Session, passou os gates reais na máquina Windows `F:`, foi auditada externamente, teve o PR #23 mergeado na branch canônica e a Issue #18 fechada como completed.
+O GitHub é a fonte de verdade. A Wave 16 implementou restart/recovery local da Tupiniquim Session, passou os gates reais Windows F:, foi auditada, mergeada na branch canônica, teve a Issue #18 fechada e recebeu a tag anotada `checkpoint/wave-16`.
 
-O checkpoint formal ainda depende da criação da tag `checkpoint/wave-16`. A Master Wave 1 só poderá ser considerada concluída depois do gate final de dogfood/QA.
+A Master Wave 1 ainda NÃO está concluída. O gate final obrigatório é a Wave 17 de dogfood/QA integrado.
 
-## Evidência real — Windows F:
+## Baseline herdado da Wave 16
+
+HEAD técnico Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`.
 
 | Gate | Resultado |
 |---|---|
@@ -31,58 +31,54 @@ O checkpoint formal ainda depende da criação da tag `checkpoint/wave-16`. A Ma
 | `pnpm build` | PASS |
 | `pnpm-f.ps1 test:e2e` | 4/4 PASS · 0 failed · 0 skipped · 39.8s |
 
-### Electron E2E
-
-1. Electron seguro + workspace real — PASS — 9.7s
-2. proposal substituída EXPIRED; aplicação da antiga recusada — PASS — 5.7s
-3. Tupiniquim Session sobrevive à troca de provider fake e isola workspace — PASS — 7.5s
-4. shutdown real + restart recupera a mesma Tupiniquim Session — PASS — 13.0s
-
-## Invariantes canônicas da Wave 16
+## Invariantes canônicas preservadas
 
 - `Agent != Model != Provider != Tool != Skill != Source Repository`.
 - `Tupiniquim Session != Provider Thread`.
-- provider/model switch não troca memória, regras, workspace ou autoridade do projeto.
 - nenhuma provider thread cruza providers.
 - nenhuma sessão/contexto cruza workspace.
-- snapshot SQLite v5 é atômico por workspace.
-- recovery/hydrate é integral e fail-closed.
-- retenção durável = últimos 200 turns públicos por workspace; `seenByProvider` é podado no mesmo snapshot.
-- provider bindings e provenance provider/model/thread/turn são revalidados.
-- seen-by-provider/ACK durável evita retransmissão de contexto já concluído.
-- proposals privadas e payload privado nunca entram no snapshot.
-- proposal authority morre no restart.
-- workspaceContext e sessionContext são efêmeros por request.
-- write-through de mutações estáveis é serializado/FIFO.
-- assistant parcial e failed/cancelled não viram snapshot terminal durável.
-- ACK ocorre somente em sucesso terminal.
-- shutdown é aguardável, one-shot e bounded.
-- runtime quiescence precede flush final e fechamento de recursos.
-- barreira global de IPC sela novas operações e aguarda as já iniciadas.
-- providers críticos fecham antes do database.
-- database close é crítico; falha resulta em ABORTED/exit 1.
-- dataRoot E2E é isolado do operacional; processo 1 e processo 2 usam o mesmo root do cenário de restart.
-- marcador privado permanece ausente de DOM, conversation, snapshot, AI history, Flight Recorder, AuditLog, logs e SQLite/WAL nos cenários cobertos.
+- provider/model switch não troca memória, regras, workspace ou authority.
+- snapshot SQLite v5 atômico por workspace.
+- recovery/hydrate integral e fail-closed.
+- retenção durável = últimos 200 turns públicos por workspace.
+- seen-by-provider/ACK durável evita retransmissão indevida.
+- proposals privadas/payload privado não persistem e não sobrevivem restart.
+- workspaceContext/sessionContext são efêmeros por request.
+- write-through estável é serializado/FIFO.
+- ACK apenas após sucesso terminal.
+- shutdown aguardável + runtime quiescence + barreira global IPC.
+- providers fecham antes do database; database close é crítico.
+- provider/model continuam escolha explícita do usuário.
+- Terminal mutável e Git mutável continuam indisponíveis.
 
-## Histórico relevante do gate final
+## Wave 17 — missão
 
-1. Workspace readiness com SQLite fresco foi corrigido somente no harness em `7c9c01d`.
-2. Provider/model readiness foi corrigido somente no harness em `eba4dcc`.
-3. Execução autoritativa final no Windows F: 4/4 PASS.
-4. PR #23 mergeado no commit `d23a43e5543b455c59e193929122f332267fdf18`.
-5. Issue #18 fechada como completed.
+Executar dogfood/QA real usando o produto como produto e validar:
+
+1. startup/workspace real;
+2. sessão/conversa;
+3. multi-provider explícito;
+4. restart/recovery;
+5. A → B → A;
+6. proposal/EXPIRED;
+7. privacidade/persistência;
+8. UX/estado;
+9. `validate` + Electron E2E no Windows F:.
+
+Cada achado deve ser classificado antes de correção. Não corrigir silenciosamente.
 
 ## Ponto de retomada
 
-1. Criar e confirmar a tag anotada `checkpoint/wave-16` no HEAD atual da branch canônica.
-2. Abrir/iniciar o gate final de dogfood/QA da Master Wave 1.
-3. Bugs reais encontrados pelo dogfood devem virar issues próprias; não ampliar escopo silenciosamente.
-4. Somente após dogfood/QA GREEN avaliar encerramento da Master Wave 1 e preparação da Master Wave 2.
+1. sincronizar a branch `wave-17/master-wave-1-dogfood-qa` no Windows F:;
+2. confirmar working tree limpa e SHAs local/remoto;
+3. executar `pnpm-f.ps1 validate`;
+4. executar `pnpm-f.ps1 test:e2e`;
+5. se GREEN, executar dogfood manual da Issue #24;
+6. registrar achados e evidências;
+7. correções somente se necessárias e delimitadas;
+8. documentação final + auditoria externa;
+9. somente então avaliar fechamento da Master Wave 1.
 
-## Fora de escopo agora
+## Fora de escopo
 
-Novos providers; Agent Registry runtime; Skill Registry; RAG/Knowledge; Terminal mutável; Git mutável; voz; multimodal; autonomous loop; persistência de segredos; novas features antes do dogfood final.
-
-## External blockers não relacionados ao fechamento da Wave 16
-
-- OPENAI_API_NO_CREDITS afeta apenas inferência live paga; não invalida os gates controlados.
+Master Wave 2+, novos providers, Research/Knowledge/RAG, Agent Registry runtime, Skill Registry, Terminal/Git mutáveis, voz, multimodal e autonomous loop.
