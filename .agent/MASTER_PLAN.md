@@ -11,8 +11,8 @@ O ambiente desta máquina usa `F:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0012 su
 | Wave Mestre | Escopo | Estado |
 |---:|---|---|
 | 0 | Fundação confiável: isolamento local, AIProvider, persistência, IPC/PolicyEngine, E2E e redaction | CONCLUÍDA; checkpoint/wave-04 |
-| 1 | Dev AI local autônomo: runtime local, agente, workspace, memória, contexto e browser QA | EM ANDAMENTO; wave-13 propostas; wave-14 protocolo provider-neutral + provenance; wave-15 conversation continuity concluída; wave-16 restart/recovery concluída em implementação/gates/merge e Issue #18 fechada. Checkpoint `checkpoint/wave-16` pendente de criação; depois executar dogfood/QA final da Master Wave 1 antes de qualquer fechamento |
-| 2 | Research, Knowledge, Technology/Tool/MCP/Skill Registries | PENDENTE |
+| 1 | Dev AI local autônomo: runtime local, agente, workspace, memória, contexto e browser QA | EM ANDAMENTO; wave-13 propostas; wave-14 protocolo provider-neutral + provenance; wave-15 conversation continuity concluída; wave-16 restart/recovery fechada em `checkpoint/wave-16`; wave-17 dogfood/QA final ATIVA pela Issue #24. A Master Wave 1 só fecha se a Wave 17 ficar GREEN sem bloqueios críticos/altos |
+| 2 | Research, Knowledge, Technology/Tool/MCP/Skill Registries | PENDENTE; bloqueada até fechamento da Master Wave 1 |
 | 3 | Dev Studio completo, hardening e dogfood controlado | PENDENTE |
 | 4 | Tupiniquim AI Studio: Agent Registry e Agents → Projects/Threads | PENDENTE |
 | 5 | Multimodal, automação e voz, conforme hardware | PENDENTE |
@@ -65,6 +65,16 @@ O ambiente desta máquina usa `F:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0012 su
 3. Threads, turns e eventos normalizados persistem e retomam.
 4. Toda IPC privilegiada aplica política, valida input e output, e audita o resultado sanitizado.
 5. `lint`, `typecheck`, unit, integration, security, build e Electron E2E passam. Inferência sem créditos é relatada como bloqueio externo, não como aprovação falsa.
+
+## Gate final da Master Wave 1 — Wave 17
+
+A Wave 17 é um gate de dogfood/QA, não uma feature wave.
+
+Ela deve exercitar o produto integrado no Windows F: e validar startup, sessão, conversa, multi-provider, restart/recovery, isolamento A→B→A, proposal/EXPIRED, privacidade, persistência, UX/estado e regressão automatizada.
+
+Achados devem ser classificados antes de correção. Bugs reais só podem gerar mudanças mínimas e auditáveis; nenhuma feature da Master Wave 2 pode ser antecipada.
+
+A Master Wave 1 só pode ser marcada CONCLUÍDA depois da Issue #24 GREEN, sem bloqueios críticos/altos, com gates reais e documentação final auditados.
 
 ## Protocolo de execução
 
