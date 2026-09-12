@@ -1,5 +1,68 @@
 # Changelog do Agente
 
+## 2026-09-12 — Wave 16 Inc4 — conclusão técnica e gate final Windows F: (docs-only)
+
+Alteração documental de fechamento pré-merge. Nenhum `.ts`, `.tsx`, `.js`, package,
+config, workflow ou teste é alterado por esta entrada.
+
+HEAD técnico validado (não alterado aqui):
+`eba4dcc0f428c68ba086a7251375ef9f13b4c94f`.
+
+### Estado da Wave 16
+
+- Master Wave 1 continua **EM ANDAMENTO**.
+- Wave 16 Inc1–4: implementação e auditoria técnica concluídas.
+- PR #23: OPEN / NÃO MERGEADO.
+- Issue #18: OPEN.
+- `checkpoint/wave-16`: NÃO CRIADO.
+- Dogfood/QA final da Master Wave 1: PENDENTE.
+- Master Wave 2: NÃO INICIADA.
+
+### Entrega técnica consolidada
+
+- persistência SQLite v5 com snapshot atômico por workspace;
+- recovery integral/fail-closed da Tupiniquim Session;
+- identidade de sessão, turns públicos, provider bindings e seen-by-provider duráveis;
+- retenção dos últimos 200 turns públicos com poda coerente de seen;
+- model/provider/thread/turn provenance revalidada;
+- write-through serializado/FIFO das mutações estáveis;
+- hydrate Ollama somente para thread legitimamente vinculada à sessão;
+- workspaceContext e sessionContext efêmeros por request;
+- proposal authority/payload privado não persistem nem sobrevivem restart;
+- shutdown aguardável one-shot e bounded;
+- runtime quiescence antes do fechamento;
+- barreira global de IPC OPEN → SEALED com operações in-flight aguardadas;
+- providers críticos fechados antes do database;
+- database close crítico; falha leva a ABORTED/exit 1;
+- Electron E2E com processo real 1 → shutdown → processo real 2 no mesmo dataRoot E2E isolado;
+- A → B → A isolado após restart;
+- private markers ausentes dos storages públicos/duráveis cobertos.
+
+### Correções finais do harness E2E
+
+1. **Workspace readiness** (`7c9c01d`): dataRoot E2E isolado/fresco podia exceder o timeout implícito de ~5s. Foi criado wait bounded baseado em estado real. Nenhuma mudança de produção.
+2. **Provider/model readiness** (`eba4dcc`): `MESSAGE_DELTA` tornava o texto visível antes de `TURN_COMPLETED`; a tentativa precoce Codex → Ollama era bloqueada pelo runtime/UI. Foram criados waits bounded para `READY`, provider habilitado e modelo carregado. Nenhuma mudança de produção.
+
+### Gates Windows F: autoritativos
+
+- `pnpm-f.ps1 validate`: PASS integral.
+- F:\CODEX-only: PASS.
+- lint: PASS.
+- typecheck: PASS.
+- unit: 194/194 PASS.
+- integration: 99 passed / 2 skipped.
+- `tests/integration/tupiniquim-shutdown-restart.test.ts`: 4/4 PASS.
+- security: 34/34 PASS.
+- build: PASS.
+- `pnpm-f.ps1 test:e2e`: **4/4 PASS, 0 failed, 0 skipped, 39.8s**.
+
+### Estado formal após esta documentação
+
+`IMPLEMENTATION_AND_REAL_MACHINE_GATES_COMPLETE`.
+
+Ainda pendente: auditoria externa da documentação → merge controlado PR #23 →
+fechar Issue #18 → tag `checkpoint/wave-16` → dogfood/QA final da Master Wave 1.
+
 ## 2026-09-06 — Wave 15 — fechamento documental do checkpoint (docs-only)
 
 Alteração exclusivamente de documentação em `.agent/`. Nenhum `.ts`, `.tsx`, `.js`,
