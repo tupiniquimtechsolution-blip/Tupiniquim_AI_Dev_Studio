@@ -5,25 +5,28 @@ Atualizado em: 2026-09-12
 ## Estado atual
 
 - Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-- Wave 16 — restart/recovery da memória e sessão Tupiniquim: **IMPLEMENTAÇÃO E GATES CONCLUÍDOS; MERGE FORMAL CONCLUÍDO**
-- Branch canônica: `wave-16/restart-recovery-tupiniquim-session`
+- Wave 16 — restart/recovery da memória e sessão Tupiniquim: **FECHADA**
 - PR #23: **MERGEADO**
-- Merge commit: `d23a43e5543b455c59e193929122f332267fdf18`
+- Merge commit da Inc4: `d23a43e5543b455c59e193929122f332267fdf18`
 - Issue #18: **CLOSED / COMPLETED**
-- HEAD técnico validado no Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`
+- `checkpoint/wave-16`: **CRIADO E CONFIRMADO**
+- checkpoint target: `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`
+- Wave 17 — dogfood/QA final da Master Wave 1: **EM ANDAMENTO**
+- Issue atual: #24 — `[MASTER WAVE 1] wave-17 — dogfood/QA final e gate de fechamento`
+- Branch atual: `wave-17/master-wave-1-dogfood-qa`
 - Repositório operacional: `F:\CODEX\Tupiniquim-AI-Dev-Studio`
 - Dados operacionais: `F:\CODEX\Tupiniquim-AI-Dev-Studio.data`
-- `checkpoint/wave-16`: **PENDENTE DE CRIAÇÃO**
-- Dogfood/QA final da Master Wave 1: **PENDENTE**
 - Master Wave 2: **NÃO INICIADA**
 
 ## Situação da Wave 16
 
-Os incrementos 1–4 estão implementados, auditados e mergeados na branch canônica da Wave 16. A Issue #18 foi fechada como completed após o merge. O único item restante para formalizar o checkpoint é criar a tag `checkpoint/wave-16` no HEAD pós-merge/documentação.
+A Wave 16 está formalmente encerrada no checkpoint `checkpoint/wave-16`, confirmado no remoto e apontando para `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`.
 
-A Wave 16 **não encerra a Master Wave 1**. Após o checkpoint ainda é obrigatório executar o gate final de dogfood/QA da Master Wave 1. Master Wave 2 não deve ser iniciada antes desse gate.
+A conclusão da Wave 16 **não encerra a Master Wave 1**. O gate final obrigatório agora é a Wave 17 de dogfood/QA integrado.
 
-## Gates Windows F: — evidência autoritativa (HEAD técnico `eba4dcc`)
+## Baseline autoritativo herdado da Wave 16
+
+HEAD técnico Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`.
 
 | Gate | Resultado |
 |---|---|
@@ -38,51 +41,34 @@ A Wave 16 **não encerra a Master Wave 1**. Após o checkpoint ainda é obrigat�
 | `pnpm build` | PASS |
 | `pnpm-f.ps1 test:e2e` | 4/4 PASS · 0 failed · 0 skipped · 39.8s |
 
-## Electron E2E real (Windows F:)
+## Wave 17 — objetivo
 
-1. inicia o Electron seguro e carrega um workspace real — PASS — 9.7s
-2. proposta substituída fica EXPIRED e aplicação da antiga é recusada — PASS — 5.7s
-3. sessão Tupiniquim sobrevive à troca de provider fake e isola workspace — PASS — 7.5s
-4. shutdown aguardável encerra o processo REAL e o restart recupera a mesma Tupiniquim Session — PASS — 13.0s
+Executar dogfood/QA real sobre a base do checkpoint Wave 16, usando o produto como produto e procurando regressões ou inconsistências que a suíte automatizada possa não capturar.
 
-## Invariantes Wave 16 comprovados
+Cobertura obrigatória:
 
-- `Tupiniquim Session != Provider Thread`
-- troca de provider/modelo não troca memória, regras, workspace ou autoridade do projeto
-- nenhuma provider thread é reutilizada cross-provider
-- nenhuma sessão cruza workspace
-- snapshot SQLite v5 atômico por workspace
-- recovery/hydrate integral e fail-closed
-- retenção durável de até 200 turns públicos com poda coerente de `seenByProvider`
-- provider bindings e seen-by-provider recuperados com provenance
-- proposal privada/payload privado não persistem
-- proposal authority não sobrevive restart
-- workspace context e session context são efêmeros por request
-- write-through serializado/FIFO para mutações estáveis
-- shutdown aguardável e one-shot
-- runtime quiescence antes do flush/close
-- barreira global de IPC com selo OPEN → SEALED
-- providers são fechados antes do database
-- database close é crítico; falha aborta o shutdown normal
-- dataRoot E2E é isolado do dataRoot operacional
-- marcadores privados ausentes de DOM, conversation, snapshot, AI history, Flight Recorder, AuditLog, logs e SQLite/WAL nos cenários cobertos
+- startup e workspace real;
+- Tupiniquim Session e continuidade;
+- multi-provider explícito;
+- restart real;
+- isolamento A → B → A;
+- proposal/approval/EXPIRED;
+- privacidade e persistência;
+- UX/estado BUSY/READY/provider/model;
+- `validate` Windows F:;
+- Electron E2E.
 
-## Histórico do gate final
+Achados devem ser classificados como `PRODUCTION BUG`, `E2E/HARNESS BUG`, `UX BUG`, `DOCUMENTATION GAP`, `ENVIRONMENT` ou `OUT OF SCOPE`.
 
-Os gates Windows F: expuseram dois problemas de sincronização no harness E2E, ambos corrigidos sem mudança de produção:
+## Regras de fechamento
 
-1. **workspace readiness** — corrigido no commit `7c9c01d` com espera bounded por estado real.
-2. **provider/model readiness** — corrigido no commit `eba4dcc` com espera por `READY` + controles habilitados.
-
-O resultado final autoritativo é 4/4 E2E PASS no Windows F:.
-
-## Preservado
-
-PolicyEngine; ApprovalStore/PlanApprovalService; AuditLog; payload privado somente em memória; renderer sem autoridade privilegiada; Terminal mutável indisponível; Git mutável indisponível; seleção de provider/modelo continua explícita e controlada pelo usuário.
+- nenhuma nova feature durante Wave 17;
+- correções apenas se houver evidência concreta e em escopo;
+- nenhum bloqueio crítico/alto pode permanecer aberto;
+- documentação final só depois da evidência real;
+- auditoria externa obrigatória antes de fechar a Master Wave 1;
+- Master Wave 2 permanece bloqueada até esse fechamento.
 
 ## Próximo passo
 
-1. Criar tag `checkpoint/wave-16` no HEAD atual da branch canônica.
-2. Confirmar a tag.
-3. Abrir/iniciar o gate final de dogfood/QA da Master Wave 1.
-4. Não iniciar Master Wave 2 antes do fechamento desse gate.
+Executar a Wave 17 conforme Issue #24 na máquina Windows F:, começando por sincronizar a branch `wave-17/master-wave-1-dogfood-qa`, registrar HEAD/working tree e reexecutar `validate` + `test:e2e` antes do dogfood manual integrado.
