@@ -5,29 +5,25 @@ Atualizado em: 2026-09-12
 ## Estado atual
 
 - Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-- Unidade atual: **wave-16 — restart/recovery da memória e sessão Tupiniquim**
-- Estado: **IMPLEMENTATION_AND_REAL_MACHINE_GATES_COMPLETE**
-- Branch canônica: `arena/wave-16-inc4-shutdown-restart`
-- PR atual: #23 — **OPEN / NÃO MERGEADO**
-- Issue referenciada: #18 — **OPEN**
-- HEAD técnico aprovado e validado no Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`
+- Wave 16 — restart/recovery da memória e sessão Tupiniquim: **IMPLEMENTAÇÃO E GATES CONCLUÍDOS; MERGE FORMAL CONCLUÍDO**
+- Branch canônica: `wave-16/restart-recovery-tupiniquim-session`
+- PR #23: **MERGEADO**
+- Merge commit: `d23a43e5543b455c59e193929122f332267fdf18`
+- Issue #18: **CLOSED / COMPLETED**
+- HEAD técnico validado no Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`
 - Repositório operacional: `F:\CODEX\Tupiniquim-AI-Dev-Studio`
 - Dados operacionais: `F:\CODEX\Tupiniquim-AI-Dev-Studio.data`
-- `checkpoint/wave-16`: **NÃO CRIADO**
+- `checkpoint/wave-16`: **PENDENTE DE CRIAÇÃO**
 - Dogfood/QA final da Master Wave 1: **PENDENTE**
 - Master Wave 2: **NÃO INICIADA**
 
 ## Situação da Wave 16
 
-Os incrementos 1–4 estão implementados. A auditoria de código e os gates reais da
-máquina Windows F: estão concluídos. A Wave 16 ainda **não está formalmente fechada**:
-restam auditoria externa desta documentação, merge controlado do PR #23, fechamento
-da Issue #18 e criação da tag `checkpoint/wave-16`.
+Os incrementos 1–4 estão implementados, auditados e mergeados na branch canônica da Wave 16. A Issue #18 foi fechada como completed após o merge. O único item restante para formalizar o checkpoint é criar a tag `checkpoint/wave-16` no HEAD pós-merge/documentação.
 
-A conclusão da Wave 16 **não encerra a Master Wave 1**. Após o checkpoint ainda é
-obrigatório executar o gate final de dogfood/QA da Master Wave 1.
+A Wave 16 **não encerra a Master Wave 1**. Após o checkpoint ainda é obrigatório executar o gate final de dogfood/QA da Master Wave 1. Master Wave 2 não deve ser iniciada antes desse gate.
 
-## Gates Windows F: — evidência autoritativa (HEAD `eba4dcc`)
+## Gates Windows F: — evidência autoritativa (HEAD técnico `eba4dcc`)
 
 | Gate | Resultado |
 |---|---|
@@ -73,27 +69,20 @@ obrigatório executar o gate final de dogfood/QA da Master Wave 1.
 
 ## Histórico do gate final
 
-Os gates Windows F: expuseram dois problemas de sincronização no harness E2E, ambos
-corrigidos sem mudança de produção:
+Os gates Windows F: expuseram dois problemas de sincronização no harness E2E, ambos corrigidos sem mudança de produção:
 
-1. **workspace readiness** — dataRoot isolado/fresco podia exceder o timeout implícito de ~5s; corrigido no commit `7c9c01d` com espera bounded por estado real.
-2. **provider/model readiness** — texto de `MESSAGE_DELTA` aparecia antes de `TURN_COMPLETED`, permitindo tentativa precoce de troca Codex → Ollama; corrigido no commit `eba4dcc` com espera por `READY` + controles habilitados.
+1. **workspace readiness** — corrigido no commit `7c9c01d` com espera bounded por estado real.
+2. **provider/model readiness** — corrigido no commit `eba4dcc` com espera por `READY` + controles habilitados.
 
 O resultado final autoritativo é 4/4 E2E PASS no Windows F:.
 
 ## Preservado
 
-PolicyEngine; ApprovalStore/PlanApprovalService; AuditLog; payload privado somente em
-memória; renderer sem autoridade privilegiada; Terminal mutável indisponível; Git
-mutável indisponível; seleção de provider/modelo continua explícita e controlada pelo
-usuário.
+PolicyEngine; ApprovalStore/PlanApprovalService; AuditLog; payload privado somente em memória; renderer sem autoridade privilegiada; Terminal mutável indisponível; Git mutável indisponível; seleção de provider/modelo continua explícita e controlada pelo usuário.
 
 ## Próximo passo
 
-1. Auditoria externa do diff documental `.agent/*`.
-2. Se aprovada: merge controlado do PR #23 na branch canônica da Wave 16.
-3. Confirmar o estado pós-merge.
-4. Fechar Issue #18.
-5. Criar tag `checkpoint/wave-16`.
-6. Somente depois iniciar o dogfood/QA final da Master Wave 1.
-7. Não iniciar Master Wave 2 nesta etapa.
+1. Criar tag `checkpoint/wave-16` no HEAD atual da branch canônica.
+2. Confirmar a tag.
+3. Abrir/iniciar o gate final de dogfood/QA da Master Wave 1.
+4. Não iniciar Master Wave 2 antes do fechamento desse gate.
