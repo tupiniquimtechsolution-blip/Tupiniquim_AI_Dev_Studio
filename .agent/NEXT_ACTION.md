@@ -2,42 +2,60 @@
 
 Master Wave: **1 (EM ANDAMENTO)**.
 
-Wave 16: implementação, auditoria técnica, gates reais Windows F:, documentação, merge do PR #23 e fechamento da Issue #18 **CONCLUÍDOS**.
+Wave 16: **FECHADA** com `checkpoint/wave-16` confirmado no commit `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`.
+
+Wave 17: **DOGFOOD/QA FINAL ATIVO** — Issue #24.
 
 ## Agora
 
-1. Criar a tag anotada `checkpoint/wave-16` no HEAD atual da branch canônica `wave-16/restart-recovery-tupiniquim-session`.
-2. Confirmar que a tag aponta para o HEAD correto.
-3. Não alterar runtime/código antes do checkpoint.
-4. Não iniciar Master Wave 2.
+Na máquina Windows F:, sincronizar a branch:
 
-## Depois do checkpoint
+`wave-17/master-wave-1-dogfood-qa`
 
-1. Abrir/iniciar o gate final de dogfood/QA da Master Wave 1.
-2. Exercitar o produto como usuário real no Windows F:, incluindo abertura de workspace, providers, sessão, restart/recovery, proposals, logs, shutdown e fluxos principais já aprovados.
-3. Registrar bugs reais encontrados pelo dogfood como issues separadas, sem ampliar escopo silenciosamente.
-4. Reexecutar gates relevantes após qualquer correção.
-5. Somente após dogfood/QA GREEN avaliar o fechamento da Master Wave 1 e a preparação da Master Wave 2.
+Registrar antes de qualquer execução:
 
-## Regras mantidas
+```powershell
+git status --short
+git branch --show-current
+git rev-parse HEAD
+git rev-parse origin/wave-17/master-wave-1-dogfood-qa
+```
 
-- `Tupiniquim Session != Provider Thread`.
-- Nenhuma thread cross-provider.
-- Nenhuma sessão cross-workspace.
-- Proposal authority e payload privado não sobrevivem restart.
-- Provider/model continuam escolha explícita do usuário.
-- Terminal mutável: **indisponível**.
-- Git mutável: **indisponível**.
-- Não ampliar escopo durante o fechamento.
+Depois executar os gates automatizados no mesmo HEAD:
 
-## Estado de referência da Wave 16
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\pnpm-f.ps1" validate
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\pnpm-f.ps1" test:e2e
+```
 
-- Branch canônica: `wave-16/restart-recovery-tupiniquim-session`
-- PR #23: MERGEADO
-- Merge commit: `d23a43e5543b455c59e193929122f332267fdf18`
-- Issue #18: CLOSED / COMPLETED
-- HEAD técnico Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`
-- `pnpm-f.ps1 validate`: PASS integral
-- `pnpm-f.ps1 test:e2e`: 4/4 PASS · 0 failed · 0 skipped · 39.8s
-- `checkpoint/wave-16`: PENDENTE DE CRIAÇÃO
-- Dogfood/QA final: PENDENTE
+Se ambos estiverem GREEN, executar o dogfood manual integrado definido na Issue #24:
+
+1. startup/workspace real;
+2. conversa/sessão;
+3. multi-provider explícito;
+4. restart/recovery;
+5. workspace A → B → A;
+6. proposal/EXPIRED;
+7. privacidade/persistência;
+8. UX/estado.
+
+## Regra de achados
+
+Não corrigir silenciosamente durante a coleta.
+
+Classificar cada achado como:
+
+- PRODUCTION BUG
+- E2E/HARNESS BUG
+- UX BUG
+- DOCUMENTATION GAP
+- ENVIRONMENT
+- OUT OF SCOPE
+
+Para bloqueios reais, registrar reprodução e somente depois criar correção mínima com testes e nova auditoria.
+
+## Condição de fechamento
+
+A Master Wave 1 só pode ser encerrada depois que a Issue #24 estiver GREEN, sem bloqueios críticos/altos abertos, com gates Windows F: aprovados e documentação final auditada.
+
+Master Wave 2 permanece **NÃO INICIADA** até esse fechamento.
