@@ -2,24 +2,22 @@
 
 Master Wave: **1 (EM ANDAMENTO)**.
 
-Wave 16: implementação + auditoria técnica + gates reais Windows F: **CONCLUÍDOS**.
-Estado formal: `IMPLEMENTATION_AND_REAL_MACHINE_GATES_COMPLETE`.
+Wave 16: implementação, auditoria técnica, gates reais Windows F:, documentação, merge do PR #23 e fechamento da Issue #18 **CONCLUÍDOS**.
 
 ## Agora
 
-1. Auditar externamente o diff documental `.agent/*` desta etapa.
-2. NÃO alterar código/runtime/testes sem nova evidência.
-3. NÃO mergear antes da aprovação documental externa.
-4. NÃO iniciar Master Wave 2.
+1. Criar a tag anotada `checkpoint/wave-16` no HEAD atual da branch canônica `wave-16/restart-recovery-tupiniquim-session`.
+2. Confirmar que a tag aponta para o HEAD correto.
+3. Não alterar runtime/código antes do checkpoint.
+4. Não iniciar Master Wave 2.
 
-## Depois da auditoria documental
+## Depois do checkpoint
 
-1. Merge controlado do PR #23 na branch canônica `wave-16/restart-recovery-tupiniquim-session`.
-2. Confirmar o SHA e o estado pós-merge.
-3. Fechar Issue #18.
-4. Criar tag anotada `checkpoint/wave-16`.
-5. Executar o gate final de dogfood/QA da Master Wave 1.
-6. Somente após esse dogfood avaliar o fechamento da Master Wave 1 e a preparação da Master Wave 2.
+1. Abrir/iniciar o gate final de dogfood/QA da Master Wave 1.
+2. Exercitar o produto como usuário real no Windows F:, incluindo abertura de workspace, providers, sessão, restart/recovery, proposals, logs, shutdown e fluxos principais já aprovados.
+3. Registrar bugs reais encontrados pelo dogfood como issues separadas, sem ampliar escopo silenciosamente.
+4. Reexecutar gates relevantes após qualquer correção.
+5. Somente após dogfood/QA GREEN avaliar o fechamento da Master Wave 1 e a preparação da Master Wave 2.
 
 ## Regras mantidas
 
@@ -34,12 +32,12 @@ Estado formal: `IMPLEMENTATION_AND_REAL_MACHINE_GATES_COMPLETE`.
 
 ## Estado de referência da Wave 16
 
-- Branch do PR: `arena/wave-16-inc4-shutdown-restart`
-- Base do PR: `wave-16/restart-recovery-tupiniquim-session`
-- PR: #23 — OPEN / NÃO MERGEADO
-- Issue: #18 — OPEN
+- Branch canônica: `wave-16/restart-recovery-tupiniquim-session`
+- PR #23: MERGEADO
+- Merge commit: `d23a43e5543b455c59e193929122f332267fdf18`
+- Issue #18: CLOSED / COMPLETED
 - HEAD técnico Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`
 - `pnpm-f.ps1 validate`: PASS integral
 - `pnpm-f.ps1 test:e2e`: 4/4 PASS · 0 failed · 0 skipped · 39.8s
-- `checkpoint/wave-16`: NÃO CRIADO
+- `checkpoint/wave-16`: PENDENTE DE CRIAÇÃO
 - Dogfood/QA final: PENDENTE
