@@ -2,35 +2,32 @@
 
 ## Objetivo
 
-Fechamento documental e preparação do merge controlado da **Wave 16 — restart/recovery da memória e sessão Tupiniquim**.
+Formalizar o checkpoint da **Wave 16 — restart/recovery da memória e sessão Tupiniquim** e preparar o gate final de dogfood/QA da Master Wave 1.
 
-A implementação e os gates reais já foram concluídos. Esta etapa é **docs-only**:
-nenhuma nova feature, nenhuma alteração de runtime, nenhum teste alterado e nenhum
-merge.
+A implementação está concluída, o PR #23 foi mergeado e a Issue #18 foi fechada. Não há nova implementação autorizada nesta etapa.
 
 ## Identificação
 
-- Branch canônica: `arena/wave-16-inc4-shutdown-restart`
-- PR: #23 — OPEN / NÃO MERGEADO
-- Issue: #18 — OPEN
+- Branch canônica: `wave-16/restart-recovery-tupiniquim-session`
+- PR #23: MERGEADO
+- Merge commit: `d23a43e5543b455c59e193929122f332267fdf18`
+- Issue #18: CLOSED / COMPLETED
 - HEAD técnico validado no Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`
-- Estado: `IMPLEMENTATION_AND_REAL_MACHINE_GATES_COMPLETE`
+- `checkpoint/wave-16`: PENDENTE DE CRIAÇÃO
 
 ## Estado
 
 - Master Wave 1: **EM ANDAMENTO**.
-- Wave 16 Inc1–4: implementados e auditados tecnicamente.
+- Wave 16 Inc1–4: implementados, auditados, validados e mergeados.
 - Windows F: `validate` GREEN.
 - Windows F: Electron E2E real GREEN 4/4.
-- Documentação final: em fechamento/auditoria.
-- Merge do PR #23: PENDENTE.
-- Issue #18: ABERTA.
-- `checkpoint/wave-16`: NÃO CRIADO.
+- Merge do PR #23: CONCLUÍDO.
+- Issue #18: FECHADA.
+- Checkpoint formal: aguardando somente a tag `checkpoint/wave-16`.
 - Dogfood/QA final da Master Wave 1: PENDENTE.
 - Master Wave 2: NÃO INICIADA.
 
-O código fica congelado no HEAD técnico aprovado. Não realizar correções adicionais
-sem nova evidência executável de regressão.
+Não realizar correções ou novas features sem nova evidência executável. O próximo trabalho funcional só começa após a tag do checkpoint.
 
 ## Evidência real — Windows F:
 
@@ -48,11 +45,6 @@ sem nova evidência executável de regressão.
 
 ## Próxima ação
 
-1. Auditoria externa do conjunto documental `.agent/*`.
-2. Se aprovado, merge controlado do PR #23.
-3. Confirmar estado pós-merge.
-4. Fechar Issue #18.
-5. Criar tag `checkpoint/wave-16`.
-6. Somente então executar o dogfood/QA final da Master Wave 1.
-
-Não iniciar Master Wave 2 e não ampliar escopo nesta alteração.
+1. Criar e confirmar `checkpoint/wave-16` no HEAD atual da branch canônica.
+2. Abrir/iniciar o gate final de dogfood/QA da Master Wave 1.
+3. Não iniciar Master Wave 2 antes do fechamento desse gate.
