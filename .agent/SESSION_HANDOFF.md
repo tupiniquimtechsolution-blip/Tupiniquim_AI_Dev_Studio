@@ -1,24 +1,21 @@
 # SESSION HANDOFF
 
 Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-Wave 16: **IMPLEMENTATION_AND_REAL_MACHINE_GATES_COMPLETE**
-Branch canônica do PR: `arena/wave-16-inc4-shutdown-restart`
-PR: #23 — OPEN / NÃO MERGEADO
-Issue: #18 — OPEN
+Wave 16: implementação + gates + documentação + merge **CONCLUÍDOS**
+Branch canônica: `wave-16/restart-recovery-tupiniquim-session`
+PR #23: MERGEADO
+Merge commit: `d23a43e5543b455c59e193929122f332267fdf18`
+Issue #18: CLOSED / COMPLETED
 HEAD técnico validado no Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`
-`checkpoint/wave-16`: NÃO CRIADO
+`checkpoint/wave-16`: PENDENTE DE CRIAÇÃO
 Dogfood/QA final da Master Wave 1: PENDENTE
 Master Wave 2: NÃO INICIADA
 
 ## Contexto
 
-O GitHub é a fonte de verdade. A Wave 16 implementa restart/recovery local da
-Tupiniquim Session e fechou os gates técnicos na máquina Windows `F:`. O código está
-congelado no HEAD técnico aprovado; esta etapa é exclusivamente documental e serve
-para auditoria externa antes do merge controlado.
+O GitHub é a fonte de verdade. A Wave 16 implementou restart/recovery local da Tupiniquim Session, passou os gates reais na máquina Windows `F:`, foi auditada externamente, teve o PR #23 mergeado na branch canônica e a Issue #18 fechada como completed.
 
-Não declarar a Wave 16 formalmente fechada antes de merge + Issue #18 + tag.
-Não declarar a Master Wave 1 concluída antes do dogfood/QA final.
+O checkpoint formal ainda depende da criação da tag `checkpoint/wave-16`. A Master Wave 1 só poderá ser considerada concluída depois do gate final de dogfood/QA.
 
 ## Evidência real — Windows F:
 
@@ -69,27 +66,22 @@ Não declarar a Master Wave 1 concluída antes do dogfood/QA final.
 
 ## Histórico relevante do gate final
 
-1. Primeira execução do novo restart E2E expôs timeout de workspace readiness com SQLite fresco. Correção exclusivamente no harness: `7c9c01d`.
-2. Execução seguinte chegou a 3/4 PASS e expôs race de provider/model readiness (MESSAGE_DELTA antes de TURN_COMPLETED). Correção exclusivamente no harness: `eba4dcc`.
+1. Workspace readiness com SQLite fresco foi corrigido somente no harness em `7c9c01d`.
+2. Provider/model readiness foi corrigido somente no harness em `eba4dcc`.
 3. Execução autoritativa final no Windows F: 4/4 PASS.
-
-Nenhuma mudança de produção foi necessária para esses dois últimos problemas do harness.
+4. PR #23 mergeado no commit `d23a43e5543b455c59e193929122f332267fdf18`.
+5. Issue #18 fechada como completed.
 
 ## Ponto de retomada
 
-1. Auditar externamente o diff documental `.agent/*`.
-2. Se aprovado, merge controlado do PR #23 na branch `wave-16/restart-recovery-tupiniquim-session`.
-3. Confirmar o SHA pós-merge.
-4. Fechar Issue #18.
-5. Criar tag anotada `checkpoint/wave-16`.
-6. Executar o dogfood/QA final da Master Wave 1.
-7. Somente após o dogfood considerar Master Wave 2.
+1. Criar e confirmar a tag anotada `checkpoint/wave-16` no HEAD atual da branch canônica.
+2. Abrir/iniciar o gate final de dogfood/QA da Master Wave 1.
+3. Bugs reais encontrados pelo dogfood devem virar issues próprias; não ampliar escopo silenciosamente.
+4. Somente após dogfood/QA GREEN avaliar encerramento da Master Wave 1 e preparação da Master Wave 2.
 
 ## Fora de escopo agora
 
-Novos providers; Agent Registry runtime; Skill Registry; RAG/Knowledge; Terminal
-mutável; Git mutável; voz; multimodal; autonomous loop; persistência de segredos;
-novas features durante o fechamento.
+Novos providers; Agent Registry runtime; Skill Registry; RAG/Knowledge; Terminal mutável; Git mutável; voz; multimodal; autonomous loop; persistência de segredos; novas features antes do dogfood final.
 
 ## External blockers não relacionados ao fechamento da Wave 16
 
