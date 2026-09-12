@@ -2,49 +2,57 @@
 
 ## Objetivo
 
-Formalizar o checkpoint da **Wave 16 — restart/recovery da memória e sessão Tupiniquim** e preparar o gate final de dogfood/QA da Master Wave 1.
+Executar a **Wave 17 — dogfood/QA final e gate de fechamento da Master Wave 1**.
 
-A implementação está concluída, o PR #23 foi mergeado e a Issue #18 foi fechada. Não há nova implementação autorizada nesta etapa.
+A Wave 16 está formalmente encerrada e marcada por `checkpoint/wave-16`. Esta etapa NÃO adiciona novas features; ela valida o produto integrado em uso real antes de permitir o fechamento da Master Wave 1.
 
 ## Identificação
 
-- Branch canônica: `wave-16/restart-recovery-tupiniquim-session`
-- PR #23: MERGEADO
-- Merge commit: `d23a43e5543b455c59e193929122f332267fdf18`
-- Issue #18: CLOSED / COMPLETED
-- HEAD técnico validado no Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`
-- `checkpoint/wave-16`: PENDENTE DE CRIAÇÃO
+- Branch: `wave-17/master-wave-1-dogfood-qa`
+- Issue: #24 — `[MASTER WAVE 1] wave-17 — dogfood/QA final e gate de fechamento`
+- Baseline do checkpoint: `checkpoint/wave-16`
+- Commit do checkpoint: `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`
+- Master Wave 1: EM ANDAMENTO
+- Master Wave 2: NÃO INICIADA
 
-## Estado
+## Escopo
 
-- Master Wave 1: **EM ANDAMENTO**.
-- Wave 16 Inc1–4: implementados, auditados, validados e mergeados.
-- Windows F: `validate` GREEN.
-- Windows F: Electron E2E real GREEN 4/4.
-- Merge do PR #23: CONCLUÍDO.
-- Issue #18: FECHADA.
-- Checkpoint formal: aguardando somente a tag `checkpoint/wave-16`.
-- Dogfood/QA final da Master Wave 1: PENDENTE.
-- Master Wave 2: NÃO INICIADA.
+Dogfood/QA real obrigatório:
 
-Não realizar correções ou novas features sem nova evidência executável. O próximo trabalho funcional só começa após a tag do checkpoint.
+1. startup e workspace real;
+2. Tupiniquim Session e conversa integrada;
+3. troca explícita de providers/modelos;
+4. restart real e recovery;
+5. isolamento workspace A → B → A;
+6. proposal/approval/EXPIRED;
+7. persistência, privacidade e ausência de payload privado/secrets;
+8. UX/estado BUSY/READY/provider/model;
+9. regressão automatizada Windows F: `validate` + `test:e2e`.
 
-## Evidência real — Windows F:
+## Regra de execução
 
-| Gate | Resultado |
-|---|---|
-| `pnpm-f.ps1 validate` | PASS integral |
-| F:\CODEX-only | PASS |
-| lint / typecheck | PASS |
-| `pnpm test:unit` | 194/194 PASS |
-| `pnpm test:integration` | 99 passed / 2 skipped |
-| `tests/integration/tupiniquim-shutdown-restart.test.ts` | 4/4 PASS |
-| `pnpm test:security` | 34/34 PASS |
-| `pnpm build` | PASS |
-| `pnpm-f.ps1 test:e2e` | 4/4 PASS · 0 failed · 0 skipped · 39.8s |
+Primeiro coletar evidência. Não corrigir silenciosamente.
 
-## Próxima ação
+Cada achado deve ser classificado como:
 
-1. Criar e confirmar `checkpoint/wave-16` no HEAD atual da branch canônica.
-2. Abrir/iniciar o gate final de dogfood/QA da Master Wave 1.
-3. Não iniciar Master Wave 2 antes do fechamento desse gate.
+- PRODUCTION BUG
+- E2E/HARNESS BUG
+- UX BUG
+- DOCUMENTATION GAP
+- ENVIRONMENT
+- OUT OF SCOPE
+
+Correções só são autorizadas se houver reprodução concreta e devem ser mínimas, delimitadas e seguidas de nova auditoria/gates.
+
+## Critério de conclusão
+
+A Wave 17 só pode ser fechada quando:
+
+- todos os cenários de dogfood forem executados;
+- `validate` Windows F: estiver GREEN;
+- Electron E2E estiver GREEN;
+- nenhum bloqueio crítico/alto permanecer aberto;
+- documentação final estiver atualizada;
+- auditoria externa final aprovar o estado.
+
+Somente depois disso a Master Wave 1 poderá ser declarada concluída. Master Wave 2 continua bloqueada até lá.
