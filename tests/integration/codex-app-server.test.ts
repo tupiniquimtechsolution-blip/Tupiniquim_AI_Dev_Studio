@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { CodexAppServerAdapter, findCodexExecutable, type AIHistoryRepository } from '@tupiniquim/adapters'
@@ -99,5 +99,78 @@ describe('CodexAppServerAdapter', () => {
     const resumedReference = await resumed.send({ message: 'retomar', mode: 'CHAT', threadId: reference.threadId })
     expect(resumedReference.threadId).toBe(reference.threadId)
     await resumed.close()
+  }, 30_000)
+})
+
+/**
+ * Wave 17 — Issue #25 (fronteira de autenticação do Codex, fail-closed).
+ *
+ * O runtime isolado do Tupiniquim (`CODEX_HOME` dentro de `dataRoot`,
+ * `codex home` vazio, sem herdar o perfil normal do Codex) pode responder
+ * `AUTH_REQUIRED`. Nesse estado o adapter precisa recusar o envio ANTES de
+ * qualquer efeito observável: sem thread nova, sem turno, sem evento público
+ * e sem tráfego `thread/start`/`turn/start` no protocolo JSONL.
+ *
+ * Evidência de isolamento exigida pela Issue: nada de `auth.json`, tokens,
+ * cookies ou API keys é copiado para o home isolado durante a recusa.
+ */
+describe('CodexAppServerAdapter — fronteira de autenticação fail-closed', () => {
+  it('AUTH_REQUIRED recusa o envio sem criar thread/turno e sem copiar credenciais', async () => {
+    await mkdir(dataRoot, { recursive: true })
+    const methodLog = path.join(dataRoot, 'auth-required-methods.jsonl')
+    // Log SEMPRE por execução: um arquivo residual de outra rodada não pode
+    // produzir evidência falsa (nem PASS falso por arquivo antigo).
+    await rm(methodLog, { force: true })
+    const history = new MemoryAIHistory()
+    const authEvents: AIEvent[] = []
+    const controlled = new CodexAppServerAdapter({
+      dataRoot,
+      projectRoot,
+      getWorkspaceRoot: () => projectRoot,
+      onEvent: (event) => authEvents.push(event),
+      codexPath: process.execPath,
+      serverArgs: [
+        path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs'),
+        '--requires-openai-auth',
+        `--method-log=${methodLog}`
+      ],
+      skipApiKeyLogin: true,
+      history
+    })
+    try {
+      const status = await controlled.connect()
+      expect(status).toMatchObject({ provider: 'codex-app-server', state: 'AUTH_REQUIRED', account: 'NONE' })
+
+      // Recusa fail-closed: o envio não produz thread, turno nem turno público.
+      await expect(controlled.send({ message: 'mensagem que não deve virar turno', mode: 'CHAT' }))
+        .rejects.toThrow(/autenticação/u)
+
+      expect(history.threads).toEqual([])
+      expect(history.turns).toEqual([])
+      expect(history.recordedEvents).toEqual([])
+      expect(controlled.terminalTurnIds()).toEqual([])
+      const publicTurnKinds = ['THREAD_STARTED', 'TURN_STARTED', 'MESSAGE_DELTA', 'TURN_COMPLETED', 'ERROR']
+      expect(authEvents.filter((event) => publicTurnKinds.includes(event.kind))).toEqual([])
+
+      // Prova no PROTOCOLO: handshake + account/read aconteceram; nenhum
+      // thread/start ou turn/start foi enviado ao runtime isolado.
+      const methods = (await readFile(methodLog, 'utf8'))
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => (JSON.parse(line) as { method: string }).method)
+      expect(methods).toContain('initialize')
+      expect(methods).toContain('account/read')
+      expect(methods).not.toContain('thread/start')
+      expect(methods).not.toContain('turn/start')
+
+      // Nenhum segredo/token em eventos de diagnóstico e nenhuma credencial
+      // copiada para o home isolado do runtime Codex.
+      expect(JSON.stringify(authEvents)).not.toMatch(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/u)
+      const isolatedHome = await readdir(path.join(dataRoot, 'codex-home'))
+      expect(isolatedHome).not.toContain('auth.json')
+      expect(isolatedHome).not.toContain('credentials.json')
+    } finally {
+      await controlled.close()
+    }
   }, 30_000)
 })

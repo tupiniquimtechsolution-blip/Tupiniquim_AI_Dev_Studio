@@ -2,6 +2,7 @@ import Editor from '@monaco-editor/react'
 import { Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, Eye, FileSearch, GitBranch, History, LayoutDashboard, Palette, PanelBottom, Save, Search, Settings2, ShieldCheck, Sparkles, TerminalSquare } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AIEvent, AIProviderKind, AIStatus, AIThreadHistory, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, ProposalStatus, SystemInfo, UIProfile, WorkspaceContext, WorkspaceWriteProposal } from '@tupiniquim/contracts'
+import { resolveAgentSendCapability } from './agent-send-capability'
 import { FileTree } from './components/FileTree'
 import { TerminalPane } from './components/TerminalPane'
 
@@ -132,9 +133,28 @@ export const App = (): React.JSX.Element => {
     else setNotice(result.error.message)
   }
 
+  /**
+   * Wave 17 — Issue #25: única regra derivada de capacidade de envio do
+   * renderer (fail-closed). É reutilizada pelo botão, pelo Ctrl+Enter — que
+   * chama este mesmo handler — e pela guarda interna de `sendToAgent()`.
+   */
+  const sendCapability = resolveAgentSendCapability(aiStatus, selectedLocalModel)
+
   const sendToAgent = async (): Promise<void> => {
     const message = agentInput.trim()
     if (message === '' || workspaceRoot === null || sending) return
+    /**
+     * Guarda interna fail-closed: o envio NUNCA depende apenas do estado do DOM.
+     * Enquanto o provider não estiver READY (AUTH_REQUIRED, DISCONNECTED,
+     * STARTING, ERROR, STOPPED, NOT_INSTALLED, BUSY ou estado não observado)
+     * nada é mutado aqui: nenhum turno público é adicionado, o textarea não é
+     * limpo, `sending` não vira true, `window.studio.agent.send` não é chamado,
+     * nenhuma thread é criada e a Tupiniquim Session não é alterada.
+     */
+    if (!sendCapability.canSend) {
+      setNotice(sendCapability.reason ?? 'Envio bloqueado: provider indisponível.')
+      return
+    }
     setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'user', text: message, turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
     setAgentInput('')
     setSending(true)
@@ -343,6 +363,15 @@ export const App = (): React.JSX.Element => {
     && proposal.executionId === planned.execution.id
     && planned.plan.steps.some((step) => step.id === proposal.stepId && step.effects.some((effect) => effect.id === proposal.effect.id && effect.source?.proposalId === proposal.id))
   const proposalReady = proposalMatchesManifest && proposalStatus === 'APPROVED'
+  /**
+   * Texto do composer. Quando a regra de capacidade bloqueia o envio, o MOTIVO
+   * aparece de forma explícita no lugar do hint padrão (ex.: Codex
+   * `AUTH_REQUIRED` no runtime isolado). Nenhum retry/login é iniciado pelo
+   * renderer enquanto o bloqueio existir.
+   */
+  const composerStatus = aiStatus?.state === 'BUSY' && sending
+    ? 'Turno em andamento'
+    : sendCapability.reason ?? (aiStatus?.provider === 'ollama' ? selectedLocalModel === '' ? 'Selecione um modelo local' : 'Ollama somente loopback' : aiStatus?.account === 'API_KEY' ? 'API key local' : aiStatus?.account === 'CHATGPT' ? 'Conta Codex' : 'Ctrl + Enter para enviar')
 
   return (
     <main className={`studio ${profile?.density === 'COMFORTABLE' ? 'density-comfortable' : 'density-compact'}`} style={profile === null ? undefined : { '--bg': profile.theme.background, '--surface': profile.theme.surface, '--raised': profile.theme.raised, '--text': profile.theme.text, '--muted': profile.theme.muted, '--accent': profile.theme.accent, '--info': profile.theme.info, '--warning': profile.theme.warning, '--danger': profile.theme.danger, '--explorer-width': `${profile.layout.explorerWidth}px`, '--agent-width': `${profile.layout.agentWidth}px`, '--deck-height': `${profile.layout.deckHeight}px` } as React.CSSProperties}>
@@ -415,7 +444,7 @@ export const App = (): React.JSX.Element => {
               </div>
             ) : conversation.length === 0 && <div className="plan-card"><div><CheckCircle2 size={15} /><strong>Fluxo protegido</strong></div><ol><li><span>1</span>Entender objetivo</li><li><span>2</span>Produzir plano verificável</li><li><span>3</span>Solicitar aprovação material</li><li><span>4</span>Executar e validar</li></ol></div>}
           </section>
-          <div className="composer"><textarea aria-label="Mensagem ao agente" placeholder={workspaceRoot === null ? 'Abra um workspace primeiro…' : 'Descreva o que deseja construir…'} value={agentInput} onChange={(event) => setAgentInput(event.target.value)} onKeyDown={(event) => { if (event.ctrlKey && event.key === 'Enter') { event.preventDefault(); void sendToAgent() } }} /><div><span>{aiStatus?.provider === 'ollama' ? selectedLocalModel === '' ? 'Selecione um modelo local' : 'Ollama somente loopback' : aiStatus?.account === 'API_KEY' ? 'API key local' : aiStatus?.account === 'CHATGPT' ? 'Conta Codex' : 'Ctrl + Enter para enviar'}</span>{aiStatus?.state === 'BUSY' ? <button onClick={() => void interruptAgent()}>Interromper</button> : <button disabled={workspaceRoot === null || agentInput.trim() === '' || sending || (aiStatus?.provider === 'ollama' && (aiStatus.state !== 'READY' || selectedLocalModel === ''))} onClick={() => void sendToAgent()}><Sparkles size={15} />{sending ? 'Conectando…' : 'Enviar'}</button>}</div></div>
+          <div className="composer"><textarea aria-label="Mensagem ao agente" placeholder={workspaceRoot === null ? 'Abra um workspace primeiro…' : 'Descreva o que deseja construir…'} value={agentInput} onChange={(event) => setAgentInput(event.target.value)} onKeyDown={(event) => { if (event.ctrlKey && event.key === 'Enter') { event.preventDefault(); void sendToAgent() } }} /><div><span className={sendCapability.canSend ? 'composer-status' : 'composer-status blocked'}>{composerStatus}</span>{aiStatus?.state === 'BUSY' ? <button onClick={() => void interruptAgent()}>Interromper</button> : <button disabled={workspaceRoot === null || agentInput.trim() === '' || sending || !sendCapability.canSend} onClick={() => void sendToAgent()}><Sparkles size={15} />{sending ? 'Conectando…' : 'Enviar'}</button>}</div></div>
         </aside>
 
         <section className="bottom-deck">

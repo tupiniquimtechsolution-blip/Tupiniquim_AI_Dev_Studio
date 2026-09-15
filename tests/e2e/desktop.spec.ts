@@ -1674,3 +1674,276 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     }
   }
 })
+
+/**
+ * Wave 17 — Issue #25: fronteira de autenticação/disponibilidade do provider
+ * Codex, fail-closed ANTES do envio.
+ *
+ * O runtime isolado do Tupiniquim usa `CODEX_HOME=<dataRoot>/codex-home`, que
+ * não herda as credenciais do perfil normal do Codex. Quando o runtime isolado
+ * responde `AUTH_REQUIRED` (aqui simulado pelo servidor controlado, sem tocar
+ * credenciais reais), a UI NÃO pode habilitar envio, o Ctrl+Enter não pode
+ * enviar, `sendToAgent()` não pode adicionar turno público, limpar o textarea,
+ * marcar `sending`, chamar `window.studio.agent.send`, criar thread nem alterar
+ * a Tupiniquim Session.
+ *
+ * Provas principais:
+ * - botão Enviar desabilitado em DISCONNECTED, em Ollama READY sem modelo e em
+ *   Codex AUTH_REQUIRED;
+ * - mensagem explícita de autenticação no composer (sem loop/retry do renderer);
+ * - `.agent-message.user` ausente e textarea preservado após Ctrl+Enter;
+ * - ZERO entradas `agent.send` no AuditLog privilegiado (prova de que nenhuma
+ *   chamada IPC chegou ao main process) antes do envio permitido, e exatamente
+ *   UMA depois — contra a mesma sonda, para não produzir PASS falso;
+ * - nenhum fallback automático para o Ollama (nenhum request ao mock durante o
+ *   bloqueio) e nenhum credential copiado para o CODEX_HOME isolado;
+ * - Ollama READY + modelo explícito continua funcionando.
+ */
+test('Codex AUTH_REQUIRED é fail-closed: botão e Ctrl+Enter bloqueados sem chamada agent.send', async () => {
+  const projectRoot = process.cwd()
+  const blockedMessage = 'Mensagem que não pode ser enviada sem autenticação do Codex'
+  const assistantMarker = 'TUPINIQUIM_AUTH_BOUNDARY_OK'
+  const codexFixture = path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs')
+
+  const tempEnv = process.env.TEMP
+  test.skip(
+    process.platform !== 'win32' || tempEnv === undefined || path.parse(tempEnv).root.toUpperCase() !== 'F:\\',
+    `E2E da fronteira de autenticação requer Windows real com TEMP em F: e display Electron (plataforma=${process.platform}, TEMP=${tempEnv ?? 'ausente'}). Executar na máquina Windows F: via pnpm test:e2e.`
+  )
+  const temp = tempEnv as string
+
+  // Mock Ollama (loopback): prova que o provider bloqueado NÃO faz fallback
+  // automático e que READY + modelo explícito continua enviando normalmente.
+  const chatRequests: Array<{ model?: string }> = []
+  const server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/api/tags') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+      response.end(JSON.stringify({ models: [{ name: ollamaModel, model: ollamaModel, modified_at: '2026-08-20T12:00:00.000Z', size: 1_024 }] }))
+      return
+    }
+    if (request.method === 'POST' && request.url === '/api/chat') {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.once('end', () => {
+        try {
+          chatRequests.push(JSON.parse(body) as { model?: string })
+          response.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8' })
+          response.end(`${JSON.stringify({ message: { content: assistantMarker }, done: true })}\n`)
+        } catch {
+          response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+          response.end(JSON.stringify({ error: 'invalid request' }))
+        }
+      })
+      return
+    }
+    response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
+    response.end(JSON.stringify({ error: 'not found' }))
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve() })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('O mock Ollama não recebeu uma porta TCP.')
+  const mockUrl = `http://127.0.0.1:${String(address.port)}`
+
+  let application: Awaited<ReturnType<typeof electron.launch>> | null = null
+  let workspaceRoot = ''
+  let e2eDataRoot = ''
+
+  try {
+    e2eDataRoot = await createIsolatedE2eDataRoot(temp)
+    application = await electron.launch({
+      args: ['.'],
+      cwd: projectRoot,
+      timeout: 180_000,
+      env: withIsolatedE2eDataRoot({
+        ...process.env,
+        ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
+        TUPINIQUIM_OLLAMA_BASE_URL: mockUrl,
+        TUPINIQUIM_CODEX_PATH: process.execPath,
+        TUPINIQUIM_CODEX_SERVER_ARGS: JSON.stringify([codexFixture, '--requires-openai-auth'])
+      }, e2eDataRoot)
+    })
+    const processErrors: string[] = []
+    application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
+    workspaceRoot = await mkdtemp(path.join(temp, 'tupiniquim-e2e-auth-boundary-'))
+    await writeFile(path.join(workspaceRoot, 'README.md'), '# E2E Auth Boundary\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot })
+    const page = await application.firstWindow({ timeout: 180_000 }).catch((cause: unknown) => {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(`${detail}\nElectron stderr:\n${processErrors.join('')}`)
+    })
+    const diagnostics = (): string => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
+    await application.evaluate(({ dialog }, root) => {
+      Object.defineProperty(dialog, 'showOpenDialog', {
+        configurable: true,
+        value: () => Promise.resolve({ canceled: false, filePaths: [root] })
+      })
+      Object.defineProperty(dialog, 'showMessageBox', {
+        configurable: true,
+        value: () => Promise.resolve({ response: 0, checkboxChecked: false })
+      })
+    }, workspaceRoot)
+    await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
+    await expectWorkspaceAuthorized(page, {
+      expectedWorkspaceName: path.basename(workspaceRoot),
+      requireSession: true,
+      diagnostics
+    })
+
+    const composerInput = page.getByLabel('Mensagem ao agente')
+    const sendButton = page.getByRole('button', { name: 'Enviar', exact: true })
+    const composerStatus = page.locator('.composer-status')
+    const providerSelect = page.getByLabel('Provedor de IA')
+    const notice = page.locator('.notice')
+    const auditPath = path.join(e2eDataRoot, 'logs', 'audit.jsonl')
+    const countAuditCapability = async (capability: string): Promise<number> => {
+      const content = await readFile(auditPath, 'utf8').catch(() => '')
+      return content.split('\n').filter((line) => line.includes(`"capability":"${capability}"`)).length
+    }
+    /**
+     * A Sessão Tupiniquim é observada por CONTEÚDO público durável
+     * (id + turns + providerThreads). `session.updatedAt` é ignorado de
+     * propósito: uma troca explícita de provider revoga authority e toca o
+     * snapshot legitimamente, enquanto um envio bloqueado não pode alterar
+     * nenhum turno, binding ou a identidade da sessão.
+     */
+    const conversationShape = async (): Promise<{
+      id: string
+      turns: Array<{ id: string; role: string; text: string; provider: string | null }>
+      providerThreads: Array<{ provider: string; threadId: string }>
+    }> => {
+      const conversation = await page.evaluate(async () => await window.studio.agent.session())
+      if (!conversation.ok || conversation.value === null) throw new Error('Sessão Tupiniquim indisponível na fronteira de autenticação.')
+      return {
+        id: conversation.value.session.id,
+        turns: conversation.value.turns.map((turn) => ({ id: turn.id, role: turn.role, text: turn.text, provider: turn.provider })),
+        providerThreads: conversation.value.providerThreads.map((binding) => ({ provider: binding.provider, threadId: binding.threadId }))
+      }
+    }
+
+    // O dataRoot REAL usado pelo app é o isolado (Bloqueio 3), onde fica o
+    // CODEX_HOME isolado do runtime Codex.
+    const systemInfo = await page.evaluate(async () => await window.studio.system.info())
+    if (!systemInfo.ok) throw new Error('system.info indisponível na fronteira de autenticação.')
+    expect(systemInfo.value.dataRoot).toBe(e2eDataRoot)
+
+    // ── 1. Codex DISCONNECTED (estado != READY): envio bloqueado ─────────────
+    await expect(page.locator('.availability')).toHaveText('DISCONNECTED')
+    await composerInput.fill(blockedMessage)
+    await expect(composerStatus).toHaveText('Codex App Server não está READY (DISCONNECTED); o envio permanece bloqueado.')
+    await expect(sendButton).toBeDisabled()
+    await composerInput.press('Control+Enter')
+    await expect(notice).toContainText('não está READY (DISCONNECTED)')
+    await expect(composerInput).toHaveValue(blockedMessage)
+    await expect(page.locator('.agent-message.user')).toHaveCount(0)
+
+    const sessionBaseline = await conversationShape()
+    expect(sessionBaseline.turns).toEqual([])
+    expect(sessionBaseline.providerThreads).toEqual([])
+    expect(await countAuditCapability('agent.send')).toBe(0)
+
+    // ── 2. Ollama READY sem modelo explícito: continua bloqueado ─────────────
+    await providerSelect.selectOption('ollama')
+    await expectAgentReady(page, { diagnostics })
+    await expect(page.getByLabel('Modelo Ollama local')).toHaveValue('')
+    await expect(composerStatus).toHaveText('Selecione explicitamente um modelo local do Ollama antes de enviar.')
+    await expect(sendButton).toBeDisabled()
+    await composerInput.press('Control+Enter')
+    await expect(notice).toContainText('Selecione explicitamente um modelo local do Ollama')
+    await expect(composerInput).toHaveValue(blockedMessage)
+    await expect(page.locator('.agent-message.user')).toHaveCount(0)
+    expect(chatRequests).toHaveLength(0)
+    expect(await countAuditCapability('agent.send')).toBe(0)
+
+    // ── 3. Codex AUTH_REQUIRED: fail-closed antes do envio ───────────────────
+    await providerSelect.selectOption('codex-app-server')
+    await expect(page.locator('.availability')).toHaveText('AUTH_REQUIRED', { timeout: 60_000 })
+    await expect(composerInput).toHaveValue(blockedMessage)
+    await expect(composerStatus).toHaveText('Codex requer autenticação no runtime isolado do Tupiniquim.')
+    await expect(sendButton).toBeDisabled()
+
+    // Ctrl+Enter obedece à mesma regra: nenhum efeito colateral observável.
+    await composerInput.press('Control+Enter')
+    await expect(notice).toContainText('Codex requer autenticação no runtime isolado do Tupiniquim.')
+    await expect(composerInput).toHaveValue(blockedMessage)
+    await expect(page.locator('.agent-message.user')).toHaveCount(0)
+    expect(await conversationShape()).toEqual(sessionBaseline)
+
+    // Sem thread, sem turno ativo e sem fallback para o Ollama.
+    const codexStatus = await page.evaluate(async () => await window.studio.agent.status())
+    expect(codexStatus).toMatchObject({
+      ok: true,
+      value: { provider: 'codex-app-server', state: 'AUTH_REQUIRED', activeThreadId: null, activeTurnId: null }
+    })
+    expect(chatRequests).toHaveLength(0)
+
+    // Nenhuma chamada `agent.send` chegou ao main process (AuditLog privilegiado
+    // é escrito por chamada IPC; a sonda é validada no passo 4 com a mesma leitura).
+    expect(await countAuditCapability('agent.send')).toBe(0)
+
+    // CODEX_HOME continua isolado sob o dataRoot E2E: nada de auth.json/
+    // credentials copiados do perfil normal do Codex.
+    const isolatedCodexHome = await readdir(path.join(e2eDataRoot, 'codex-home'))
+    expect(isolatedCodexHome).not.toContain('auth.json')
+    expect(isolatedCodexHome).not.toContain('credentials.json')
+    expect(await page.content()).not.toMatch(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/u)
+    expect(await readFile(auditPath, 'utf8')).not.toMatch(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/u)
+
+    // ── 4. Ollama READY + modelo explícito: fluxo permitido preservado ───────
+    await providerSelect.selectOption('ollama')
+    await expect(page.locator('.availability')).toHaveText('READY', { timeout: 60_000 })
+    await expect(page.getByLabel('Modelo Ollama local')).toHaveValue('')
+    await expect(page.getByLabel('Modelo Ollama local').locator(`option[value="${ollamaModel}"]`)).toHaveCount(1, { timeout: 60_000 })
+    await page.getByLabel('Modelo Ollama local').selectOption(ollamaModel)
+    await expect(page.getByLabel('Modelo Ollama local')).toHaveValue(ollamaModel)
+    await expectAgentReady(page, { diagnostics })
+    await expect(composerStatus).toHaveText('Ollama somente loopback')
+    await expect(sendButton).toBeEnabled()
+    await expect(composerInput).toHaveValue(blockedMessage)
+    await page.locator('.mode-switch').getByRole('button', { name: 'Chat', exact: true }).click()
+    await sendButton.click()
+    await expect(page.locator('.agent-conversation')).toContainText(blockedMessage)
+    await expect(page.locator('.agent-conversation')).toContainText(assistantMarker, { timeout: 30_000 })
+    await expect(composerInput).toHaveValue('')
+    expect(chatRequests).toHaveLength(1)
+    expect(chatRequests[0]).toMatchObject({ model: ollamaModel })
+    // A MESMA sonda de AuditLog agora acusa a chamada real: o zero anterior não
+    // era um detector quebrado.
+    await expect.poll(async () => await countAuditCapability('agent.send'), { timeout: 30_000 }).toBe(1)
+
+    const sessionAfterAllowedSend = await conversationShape()
+    const allowedUserTurns = sessionAfterAllowedSend.turns.filter((turn) => turn.role === 'user')
+    expect(allowedUserTurns).toHaveLength(1)
+    expect(allowedUserTurns[0]?.text).toBe(blockedMessage)
+
+    // ── 5. Regressão: voltar ao Codex bloqueado não reabre o envio ───────────
+    await expectAgentReady(page, { diagnostics })
+    await expect(providerSelect).toBeEnabled({ timeout: 60_000 })
+    await providerSelect.selectOption('codex-app-server')
+    await expect(page.locator('.availability')).toHaveText('AUTH_REQUIRED', { timeout: 60_000 })
+    await expect(composerStatus).toHaveText('Codex requer autenticação no runtime isolado do Tupiniquim.')
+    await composerInput.fill(blockedMessage)
+    await expect(sendButton).toBeDisabled()
+    await composerInput.press('Control+Enter')
+    await expect(composerInput).toHaveValue(blockedMessage)
+    await expect(page.locator('.agent-message.user')).toHaveCount(1)
+    expect(chatRequests).toHaveLength(1)
+    expect(await countAuditCapability('agent.send')).toBe(1)
+    expect(await conversationShape()).toEqual(sessionAfterAllowedSend)
+  } finally {
+    try {
+      if (application !== null) await application.close()
+    } finally {
+      try {
+        if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
+        if (e2eDataRoot !== '') await rm(e2eDataRoot, { recursive: true, force: true })
+      } finally {
+        await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
+      }
+    }
+  }
+})
