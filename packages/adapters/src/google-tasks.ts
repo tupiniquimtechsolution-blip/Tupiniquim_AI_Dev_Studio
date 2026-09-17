@@ -47,7 +47,7 @@ interface GoogleTokenEndpointResponse {
 const formHeaders = { 'content-type': 'application/x-www-form-urlencoded' } as const
 const jsonHeaders = { 'content-type': 'application/json' } as const
 
-const assertSuccessfulResponse = async (response: Response, label: string): Promise<void> => {
+const assertSuccessfulResponse = (response: Response, label: string): void => {
   if (response.ok) return
   const retryable = response.status === 429 || response.status >= 500
   throw new GoogleTasksHttpError(`${label} retornou HTTP ${String(response.status)}.`, response.status, retryable)
@@ -69,7 +69,7 @@ const decodeTokenEndpointResponse = async (
   previousRefreshToken: string | undefined,
   now: () => number
 ): Promise<GoogleTasksOAuthTokenSet> => {
-  await assertSuccessfulResponse(response, 'Google OAuth')
+  assertSuccessfulResponse(response, 'Google OAuth')
   const raw = await response.json() as GoogleTokenEndpointResponse
   if (typeof raw.access_token !== 'string' || raw.access_token.length < 8) {
     throw new Error('Google OAuth não retornou um access token válido.')
@@ -177,7 +177,7 @@ export class GoogleTasksOAuthClient {
       headers: formHeaders,
       body: new URLSearchParams({ token })
     })
-    await assertSuccessfulResponse(response, 'Revogação Google OAuth')
+    assertSuccessfulResponse(response, 'Revogação Google OAuth')
   }
 }
 
@@ -204,7 +204,7 @@ export class GoogleTasksApiClient {
         ...init.headers
       }
     })
-    await assertSuccessfulResponse(response, 'Google Tasks API')
+    assertSuccessfulResponse(response, 'Google Tasks API')
     return response
   }
 
