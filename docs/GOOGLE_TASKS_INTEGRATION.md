@@ -4,17 +4,17 @@
 
 Adicionar Google Tasks como camada operacional de tarefas do Tupiniquim sem expor senha Google, access token ou refresh token ao renderer, ao Git ou aos agentes.
 
-Esta integração usa a Google Tasks API v1 e OAuth 2.0 para aplicativo de computador com PKCE e callback loopback em `127.0.0.1`.
+A integração usa Google Tasks API v1 e OAuth 2.0 para aplicativo de computador, com PKCE e callback loopback restrito a `127.0.0.1`.
 
 ## Escopo OAuth
 
-Para o fluxo completo de leitura e mutação de tarefas, solicitar somente:
+Para leitura e mutação de tarefas, solicitar somente:
 
 ```text
 https://www.googleapis.com/auth/tasks
 ```
 
-Não solicitar Drive, Gmail, Calendar ou escopos de perfil Google para esta integração.
+A integração não solicita Drive, Gmail, Calendar nem escopos de perfil Google.
 
 ## Configuração do Google Cloud
 
@@ -29,19 +29,20 @@ GOOGLE_TASKS_CLIENT_ID=SEU_CLIENT_ID.apps.googleusercontent.com
 GOOGLE_TASKS_CLIENT_SECRET=SEU_CLIENT_SECRET
 ```
 
-Nunca preencher valores reais em `.env.example` e nunca versionar `.env.local`.
+Nunca preencher valores reais em `.env.example`, nunca versionar `.env.local` e nunca colar essas credenciais em issue, PR ou chat público.
 
-## Fluxo de autorização planejado para o desktop
+## Fluxo implementado no desktop
 
 ```text
-Renderer
+Painel Google Tasks no renderer
    |
-   | ação humana "Conectar Google Tasks"
+   | IPC tipado, sem token
    v
 Electron main process
    |
-   | cria state + PKCE
-   | inicia listener 127.0.0.1:<porta aleatória>
+   | confirmação privilegiada ASSISTED
+   | cria state + PKCE S256
+   | inicia listener 127.0.0.1:<porta efêmera>
    | abre navegador do sistema
    v
 accounts.google.com
@@ -55,37 +56,70 @@ accounts.google.com
    v
 Electron safeStorage
    |
-   | token cifrado no armazenamento local
+   | token cifrado fora do renderer
    v
 Google Tasks API
 ```
 
-O renderer recebe somente status e dados de tarefas; nunca recebe tokens OAuth.
+O renderer recebe somente status de conexão, listas e tarefas. Access token, refresh token e Client Secret permanecem no processo principal.
 
-## API implementada nesta branch
+## Componentes implementados
 
-`GoogleTasksOAuthClient`:
+### `GoogleTasksOAuthClient`
 
 - cria sessão OAuth com `state` e PKCE S256;
 - troca authorization code por access/refresh token;
 - renova access token;
-- revoga token;
-- não incorpora credenciais em mensagens de erro HTTP.
+- preserva refresh token quando o endpoint de refresh não devolve outro;
+- revoga autorização;
+- não incorpora corpo de erro ou credenciais em mensagens HTTP.
 
-`GoogleTasksApiClient`:
+### `GoogleTasksApiClient`
 
 - lista listas de tarefas com paginação;
+- cria lista;
 - lista tarefas com paginação;
 - cria tarefa;
 - atualiza tarefa;
 - conclui tarefa;
-- exclui tarefa.
+- exclui tarefa;
+- usa base URL oficial hard-coded da Google Tasks API.
 
-Os contratos públicos ficam em `packages/contracts/src/google-tasks.ts`.
+### Bridge desktop
 
-## Modelo de organização recomendado
+`apps/desktop/src/main/google-tasks-ipc.ts`:
 
-Criar uma lista Google Tasks por frente de trabalho, sem criar listas automaticamente até haver confirmação humana:
+- mantém OAuth e tokens somente no main process;
+- persiste token via Electron `safeStorage` quando a criptografia do sistema está disponível;
+- mantém token somente em memória quando `safeStorage` não está disponível;
+- renova token automaticamente próximo da expiração;
+- tenta um refresh adicional após HTTP 401;
+- restringe callback a `127.0.0.1` e porta efêmera;
+- aplica `PolicyEngine('ASSISTED')`;
+- exige aprovação de leitura de rede por sessão;
+- exige confirmação privilegiada para cada mutação;
+- audita capacidade/resultado sem registrar token nem payload OAuth.
+
+`apps/desktop/src/preload/bootstrap.ts` expõe somente `window.googleTasks` com operações tipadas. Nenhum método entrega token ao renderer.
+
+### Painel do renderer
+
+O painel flutuante `GoogleTasksDock` foi adicionado de forma modular, sem redesenhar `App.tsx`. Ele permite:
+
+- conectar/desconectar Google Tasks;
+- selecionar e atualizar listas;
+- criar lista de projeto;
+- listar tarefas;
+- criar tarefa;
+- concluir tarefa;
+- excluir tarefa;
+- visualizar estado de conexão e disponibilidade do armazenamento cifrado.
+
+A API também suporta atualização de título/notas/prazo; essa capacidade está disponível no bridge mesmo que o painel inicial ainda não exponha todos os campos de edição.
+
+## Organização sugerida
+
+O painel oferece sugestões de nomes, mas **não cria nenhuma lista automaticamente**:
 
 - Tupiniquim AI Dev Studio
 - CRM Tupiniquim
@@ -96,31 +130,44 @@ Criar uma lista Google Tasks por frente de trabalho, sem criar listas automatica
 - AI-LAB
 - Geral
 
-O nome é configuração do usuário, não regra de domínio hard-coded.
+Esses nomes são conveniência de UI, não regras hard-coded de domínio.
 
-## Regras de segurança
+## Segurança e testes
 
-1. `GOOGLE_TASKS_CLIENT_ID` e `GOOGLE_TASKS_CLIENT_SECRET` pertencem somente a `.env.local`.
-2. Access/refresh tokens não devem ser gravados em logs, AuditLog, SQLite de domínio, Flight Recorder ou mensagens de agente.
-3. O renderer não pode receber access/refresh token.
-4. O callback OAuth deve aceitar apenas loopback `127.0.0.1` em porta efêmera e validar `state` antes da troca do authorization code.
-5. Para persistência, usar `safeStorage` do Electron. Se criptografia segura não estiver disponível, não persistir refresh token em texto claro.
-6. Operações mutáveis (`create`, `update`, `complete`, `delete`) devem passar pela semântica de aprovação humana já usada pelo perfil `ASSISTED`; não reduzir a política global apenas para facilitar a integração.
-7. URLs da API são hard-coded para domínios Google oficiais; não aceitar base URL arbitrária vinda do renderer.
-8. Ao desconectar, revogar o token quando possível e apagar o token local cifrado.
+1. `GOOGLE_TASKS_CLIENT_ID` e `GOOGLE_TASKS_CLIENT_SECRET` são allowlisted somente no carregador privado de `.env.local`.
+2. `.env.local` já é ignorado pelo Git.
+3. Tokens OAuth não atravessam o preload.
+4. Tokens OAuth não são registrados no `AuditLog` do bridge.
+5. O callback OAuth aceita somente loopback `127.0.0.1` e valida `state`.
+6. PKCE usa `S256`.
+7. Endpoints OAuth/Tasks são definidos internamente, sem base URL arbitrária recebida do renderer.
+8. Mutações permanecem sujeitas a confirmação humana no perfil `ASSISTED`.
+9. Ao desconectar, o bridge tenta revogar a autorização e remove o token local mesmo se a revogação remota falhar.
+10. Testes unitários usam HTTP mockado; CI não precisa de credenciais Google reais.
+11. Testes de segurança verificam allowlist de segredos, isolamento do preload, loopback, `safeStorage`, validação de state, PKCE e ausência de tokens nos writes de auditoria.
 
-## Gate para integração no desktop
+## Como usar após configurar o OAuth Client
 
-Antes de ligar os novos adapters aos canais IPC:
+1. Preencher `GOOGLE_TASKS_CLIENT_ID` e, se aplicável, `GOOGLE_TASKS_CLIENT_SECRET` em `.env.local`.
+2. Iniciar o app normalmente.
+3. Abrir o botão **Tasks** no canto inferior direito.
+4. Clicar em **Conectar Google Tasks**.
+5. Confirmar a abertura do Google no diálogo privilegiado.
+6. Autorizar o escopo Google Tasks no navegador.
+7. Voltar ao Tupiniquim; o painel carregará listas e tarefas.
+8. Confirmar individualmente operações mutáveis quando solicitado.
 
-- implementar armazenamento cifrado com Electron `safeStorage`;
-- implementar callback loopback com timeout e validação de `state`;
-- definir canais IPC tipados de `status`, `connect`, `disconnect`, `listTaskLists`, `listTasks`, `create`, `update`, `complete` e `delete`;
-- garantir que mutações recebam confirmação privilegiada no main process ou usem o fluxo `PlanApprovalService`;
-- adicionar testes de segurança provando que tokens não atravessam IPC/auditoria;
-- adicionar UI de conexão e painel de tarefas sem expor credenciais.
+## Gate de entrega
 
-Não fazer bypass do `PolicyEngine` para concluir este gate.
+A integração só deve sair de draft/ser considerada pronta para merge quando o CI remoto concluir com sucesso:
+
+- lint;
+- typecheck;
+- unit tests;
+- security tests;
+- build.
+
+Não reduzir nem contornar o `PolicyEngine` para fazer o gate passar.
 
 ## Referências oficiais
 
