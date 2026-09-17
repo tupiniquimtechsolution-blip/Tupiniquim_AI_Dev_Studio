@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type JSX } from 'react'
 import type { GoogleTask, GoogleTaskList, GoogleTasksConnectionStatus } from '@tupiniquim/contracts'
 import './google-tasks.css'
 
@@ -49,12 +49,6 @@ export const GoogleTasksDock = (): JSX.Element => {
     }
   }
 
-  const refreshStatus = async (): Promise<void> => {
-    const result = await window.googleTasks.status()
-    if (result.ok) setStatus(result.value)
-    else setError(result.error.message)
-  }
-
   const loadTasks = async (taskListId: string): Promise<void> => {
     if (taskListId === '') {
       setTasks([])
@@ -85,13 +79,17 @@ export const GoogleTasksDock = (): JSX.Element => {
   }
 
   useEffect(() => {
-    void refreshStatus()
+    void window.googleTasks.status().then((result) => {
+      if (result.ok) setStatus(result.value)
+      else setError(result.error.message)
+    })
   }, [])
 
-  useEffect(() => {
-    if (!open || !status.authenticated) return
-    void run(loadLists)
-  }, [open, status.authenticated])
+  const toggleOpen = (): void => {
+    const next = !open
+    setOpen(next)
+    if (next && status.authenticated) void run(loadLists)
+  }
 
   const connect = async (): Promise<void> => {
     await run(async () => {
@@ -178,7 +176,7 @@ export const GoogleTasksDock = (): JSX.Element => {
       <button
         className="google-tasks-trigger"
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggleOpen}
         aria-expanded={open}
         aria-controls="google-tasks-panel"
       >
