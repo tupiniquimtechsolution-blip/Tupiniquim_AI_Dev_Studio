@@ -1,0 +1,247 @@
+.google-tasks-dock {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 80;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+.google-tasks-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.94);
+  color: #e2e8f0;
+  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.28);
+  cursor: pointer;
+}
+
+.google-tasks-trigger:hover {
+  border-color: rgba(94, 234, 212, 0.55);
+}
+
+.google-tasks-panel {
+  position: absolute;
+  right: 0;
+  bottom: 52px;
+  display: flex;
+  flex-direction: column;
+  width: min(390px, calc(100vw - 36px));
+  max-height: min(720px, calc(100vh - 92px));
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 16px;
+  background: #0f172a;
+  color: #e2e8f0;
+  box-shadow: 0 24px 70px rgba(2, 6, 23, 0.55);
+}
+
+.google-tasks-header,
+.google-tasks-footer,
+.google-tasks-toolbar,
+.google-tasks-create-list,
+.google-tasks-create-task {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.google-tasks-header {
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.google-tasks-header div {
+  display: grid;
+  gap: 2px;
+}
+
+.google-tasks-header strong {
+  font-size: 14px;
+}
+
+.google-tasks-header small,
+.google-tasks-footer,
+.google-task-content small {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.google-tasks-icon-button,
+.google-task-delete,
+.google-task-check {
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.google-tasks-icon-button,
+.google-task-delete {
+  font-size: 20px;
+}
+
+.google-tasks-connect,
+.google-tasks-toolbar,
+.google-tasks-create-list,
+.google-tasks-create-task,
+.google-tasks-suggestions,
+.google-tasks-notice,
+.google-tasks-error {
+  margin: 12px 14px 0;
+}
+
+.google-tasks-connect p,
+.google-tasks-notice,
+.google-tasks-error {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.google-tasks-notice,
+.google-tasks-error {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+.google-tasks-notice.warning {
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.google-tasks-error {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+  border-color: rgba(248, 113, 113, 0.42);
+  color: #fecaca;
+}
+
+.google-tasks-error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.google-tasks-toolbar select,
+.google-tasks-create-list input,
+.google-tasks-create-task input {
+  min-width: 0;
+  flex: 1;
+  height: 36px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 9px;
+  padding: 0 10px;
+  background: #111827;
+  color: #e2e8f0;
+}
+
+.google-tasks-toolbar button,
+.google-tasks-create-list button,
+.google-tasks-create-task button,
+.google-tasks-connect button,
+.google-tasks-footer button,
+.google-tasks-suggestions button {
+  border: 1px solid rgba(94, 234, 212, 0.28);
+  border-radius: 9px;
+  background: rgba(15, 118, 110, 0.2);
+  color: #ccfbf1;
+  cursor: pointer;
+}
+
+.google-tasks-toolbar button,
+.google-tasks-create-list button,
+.google-tasks-create-task button,
+.google-tasks-connect button,
+.google-tasks-footer button {
+  min-height: 36px;
+  padding: 0 11px;
+}
+
+.google-tasks-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.google-tasks-suggestions button {
+  padding: 5px 8px;
+  font-size: 10px;
+  color: #a7f3d0;
+}
+
+.google-tasks-list {
+  flex: 1;
+  min-height: 80px;
+  overflow: auto;
+  margin-top: 12px;
+  padding: 0 14px 12px;
+}
+
+.google-task-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.google-task-row.is-completed .google-task-content strong {
+  color: #64748b;
+  text-decoration: line-through;
+}
+
+.google-task-check {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 50%;
+  font-size: 16px;
+}
+
+.google-task-content {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.google-task-content strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.google-tasks-empty {
+  margin: 20px 0;
+  color: #64748b;
+  text-align: center;
+  font-size: 12px;
+}
+
+.google-tasks-footer {
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.google-tasks-panel button:disabled,
+.google-tasks-panel input:disabled,
+.google-tasks-panel select:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.google-tasks-panel code {
+  color: #99f6e4;
+}

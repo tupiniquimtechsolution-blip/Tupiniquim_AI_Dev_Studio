@@ -17,7 +17,7 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: path.join(root, 'apps/desktop/src/main/index.ts'),
+        input: path.join(root, 'apps/desktop/src/main/bootstrap.ts'),
         external: ['electron', 'node-pty']
       }
     }
@@ -31,7 +31,7 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: path.join(root, 'apps/desktop/src/preload/index.ts'),
+        input: path.join(root, 'apps/desktop/src/preload/bootstrap.ts'),
         external: ['electron'],
         output: {
           format: 'cjs',
