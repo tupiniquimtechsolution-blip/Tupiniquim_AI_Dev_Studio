@@ -1,6 +1,7 @@
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
@@ -112,7 +113,7 @@ const clearToken = async (): Promise<void> => {
 }
 
 const connectionStatus = async (): Promise<GoogleTasksConnectionStatus> => {
-  let configured = false
+  let configured: boolean
   try {
     await readOAuthEnvironment()
     configured = true
@@ -189,7 +190,7 @@ const approveMutation = async (
   )
 }
 
-const closeServer = async (server: Server): Promise<void> => await new Promise((resolve) => {
+const closeServer = async (server: Server): Promise<void> => await new Promise<void>((resolve) => {
   server.close(() => resolve())
 })
 
@@ -311,7 +312,7 @@ const register = <I, O>(
   handler: (owner: BrowserWindow, input: I) => Promise<O> | O
 ): void => {
   ipcMain.handle(channel, async (event, raw: unknown): Promise<Result<O>> => {
-    const requestId = crypto.randomUUID()
+    const requestId = randomUUID()
     const started = Date.now()
     const owner = trustedWindow(event)
     if (owner === null) {
