@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { Result } from './result'
 
 export const GOOGLE_TASKS_SCOPE = 'https://www.googleapis.com/auth/tasks' as const
 export const GOOGLE_TASKS_READONLY_SCOPE = 'https://www.googleapis.com/auth/tasks.readonly' as const
@@ -31,6 +32,10 @@ export type GoogleTask = z.infer<typeof googleTaskSchema>
 
 export const googleTaskListsInputSchema = z.object({
   maxResults: z.number().int().min(1).max(100).default(100)
+})
+
+export const googleTaskListCreateInputSchema = z.object({
+  title: googleTaskTitleSchema
 })
 
 export const googleTasksListInputSchema = z.object({
@@ -77,4 +82,30 @@ export interface GoogleTasksConnectionStatus {
   authenticated: boolean
   secureStorageAvailable: boolean
   scope: typeof GOOGLE_TASKS_SCOPE
+}
+
+export const googleTasksIpcChannels = {
+  status: 'studio:google-tasks:status',
+  connect: 'studio:google-tasks:connect',
+  disconnect: 'studio:google-tasks:disconnect',
+  taskLists: 'studio:google-tasks:task-lists',
+  createTaskList: 'studio:google-tasks:task-list:create',
+  tasks: 'studio:google-tasks:tasks',
+  createTask: 'studio:google-tasks:task:create',
+  updateTask: 'studio:google-tasks:task:update',
+  completeTask: 'studio:google-tasks:task:complete',
+  deleteTask: 'studio:google-tasks:task:delete'
+} as const
+
+export interface GoogleTasksDesktopApi {
+  status(): Promise<Result<GoogleTasksConnectionStatus>>
+  connect(): Promise<Result<GoogleTasksConnectionStatus>>
+  disconnect(): Promise<Result<GoogleTasksConnectionStatus>>
+  listTaskLists(input: z.input<typeof googleTaskListsInputSchema>): Promise<Result<GoogleTaskList[]>>
+  createTaskList(input: z.input<typeof googleTaskListCreateInputSchema>): Promise<Result<GoogleTaskList>>
+  listTasks(input: z.input<typeof googleTasksListInputSchema>): Promise<Result<GoogleTask[]>>
+  createTask(input: z.input<typeof googleTaskCreateInputSchema>): Promise<Result<GoogleTask>>
+  updateTask(input: z.input<typeof googleTaskUpdateInputSchema>): Promise<Result<GoogleTask>>
+  completeTask(input: z.input<typeof googleTaskCompleteInputSchema>): Promise<Result<GoogleTask>>
+  deleteTask(input: z.input<typeof googleTaskDeleteInputSchema>): Promise<Result<void>>
 }
