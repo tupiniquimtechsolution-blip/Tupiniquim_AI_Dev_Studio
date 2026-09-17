@@ -71,7 +71,7 @@ export const googleTaskDeleteInputSchema = googleTaskCompleteInputSchema
 
 export interface GoogleTasksOAuthTokenSet {
   accessToken: string
-  refreshToken?: string
+  refreshToken?: string | undefined
   expiresAt: string
   tokenType: 'Bearer'
   scope: string[]
