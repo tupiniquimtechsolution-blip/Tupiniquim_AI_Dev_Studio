@@ -12,6 +12,19 @@ const proposalTarget = 'proposta-gerada-pelo-ollama.txt'
 const proposalContent = 'TUPINIQUIM_E2E_PROPOSAL_PRIVATE_CONTENT\n'
 
 /**
+ * Issue #25 (Wave 17) — textos SANITIZADOS exibidos pelo renderer quando o
+ * envio é bloqueado (fail-closed). Espelham EXATAMENTE a regra central do
+ * App.tsx (evaluateSend / sendBlockedReason) — se divergirem, o teste falha
+ * de forma visível (title/message desalinhados).
+ */
+const issue25CodexAuthMessage = 'Codex requer autenticação no runtime isolado do Tupiniquim.'
+const issue25CodexDisconnectedMessage = 'Codex indisponível no momento (estado DISCONNECTED). Envio bloqueado até READY.'
+const issue25OllamaModelMessage = 'Selecione um modelo Ollama local antes de enviar.'
+const issue25OllamaUnavailableMessage = 'Ollama local indisponível no momento (estado NOT_INSTALLED). Envio bloqueado até READY.'
+const issue25UnauthServerMarker = 'UNAUTH_SERVER_REACHED_MARKER'
+const issue25OllamaPlainChatOk = 'OLLAMA_PLAIN_CHAT_OK'
+
+/**
  * Wave 16 — Incremento 4/4 (correção da auditoria externa, Bloqueio 3):
  * dataRoot ISOLADO e exclusivo do E2E. O Electron é lançado com o override
  * test-only `TUPINIQUIM_E2E=1` + `TUPINIQUIM_E2E_DATA_ROOT` apontando para um
@@ -313,6 +326,148 @@ const startMockOllama = async (): Promise<MockOllamaServer> => {
         server.closeAllConnections()
       })
     }
+  }
+}
+
+/**
+ * Issue #25: porta TCP loopback LIVRE (usar depois). Permite apontar o
+ * Ollama para uma URL inicialmente MORTA (estado NOT_INSTALLED real) e só
+ * depois ligar o mock na MESMA porta (transição real para READY) — sem tocar
+ * o runtime Ollama operacional nem a porta 11434.
+ */
+const getFreeLoopbackPort = async (): Promise<number> => {
+  const server = createServer()
+  await new Promise<void>((resolve, reject) => {
+    const onError = (cause: Error): void => reject(cause)
+    server.once('error', onError)
+    server.listen(0, '127.0.0.1', () => { server.off('error', onError); resolve() })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('A porta de loopback não foi alocada.')
+  const port = address.port
+  await new Promise<void>((resolve) => { server.close(() => resolve()) })
+  return port
+}
+
+/**
+ * Issue #25: mock Ollama de CHAT PLANO (sem tool calls). Os testes de
+ * fronteira de envio usam o modo CHAT: o request não carrega `tools` e a
+ * resposta é somente conteúdo. Mesmo contrato HTTP de /api/tags do mock de
+ * proposta; nenhum payload privado é emitido. Com `port` fixa, o teste liga o
+ * mock numa URL previamente morta (G → H transição real NOT_INSTALLED → READY).
+ */
+const startMockOllamaPlainChat = async (port?: number): Promise<MockOllamaServer> => {
+  const chatRequests: unknown[] = []
+  const server = createServer((request, response) => {
+    if (request.method === 'GET' && request.url === '/api/tags') {
+      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+      response.end(JSON.stringify({ models: [{ name: ollamaModel, model: ollamaModel, modified_at: '2026-08-20T12:00:00.000Z', size: 1_024 }] }))
+      return
+    }
+    if (request.method === 'POST' && request.url === '/api/chat') {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.once('end', () => {
+        try {
+          chatRequests.push(JSON.parse(body))
+          response.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8' })
+          response.end(`${JSON.stringify({ message: { content: issue25OllamaPlainChatOk }, done: true })}\n`)
+        } catch {
+          response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' })
+          response.end(JSON.stringify({ error: 'invalid request' }))
+        }
+      })
+      return
+    }
+    response.writeHead(404, { 'content-type': 'application/json; charset=utf-8' })
+    response.end(JSON.stringify({ error: 'not found' }))
+  })
+  await new Promise<void>((resolve, reject) => {
+    const onError = (cause: Error): void => reject(cause)
+    server.once('error', onError)
+    server.listen(port ?? 0, '127.0.0.1', () => { server.off('error', onError); resolve() })
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('O mock Ollama (chat plano) não recebeu uma porta TCP.')
+  return {
+    url: `http://127.0.0.1:${String(address.port)}`,
+    chatRequests,
+    close: async () => {
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve())
+        server.closeAllConnections()
+      })
+    }
+  }
+}
+
+/**
+ * Issue #25: encerra o processo Electron pelo caminho REAL (app.quit →
+ * sequenciador aguardável de shutdown) e aguarda a saída do processo filho com
+ * exit code — evita colisão com o single-instance lock do próximo processo.
+ */
+const closeApplicationAndAwaitExit = async (application: ElectronApplication, budgetMs = 120_000): Promise<number | null> => {
+  await application.evaluate(({ app }) => { app.quit() })
+  const child = application.process()
+  if (child.exitCode !== null) return child.exitCode
+  return await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(-1), budgetMs)
+    child.once('exit', (code) => { clearTimeout(timer); resolve(code) })
+  })
+}
+
+/**
+ * Issue #25 — probe do canal IPC REAL `agent.send` NO PROCESSO MAIN.
+ *
+ * Contabiliza cada dispatch de `studio:agent:send` (canal espelhando
+ * ipcChannels.agentSend) antes do handler da aplicação — a prova de que o
+ * fail-closed impede o envio não depende de espionagem do renderer (onde o
+ * bridge do contextBridge pode ser invariável). A instalação é
+ * AUTO-VALIDADA: o primeiro envio legítimo do teste (Ollama CHAT) DEVE
+ * registrar exatamente 1 chamada; se o probe não capturar, o teste falha em
+ * vez de passar de forma falsa.
+ */
+interface AgentSendProbe {
+  count: number
+  messages: string[]
+}
+
+const installAgentSendProbe = async (application: ElectronApplication): Promise<void> => {
+  await application.evaluate(({ ipcMain }) => {
+    const globalState = globalThis as typeof globalThis & { __tupiniquimE2EAgentSendProbe?: AgentSendProbe }
+    globalState.__tupiniquimE2EAgentSendProbe = { count: 0, messages: [] }
+    ipcMain.on('studio:agent:send', (_event, input: unknown) => {
+      const probe = globalState.__tupiniquimE2EAgentSendProbe
+      if (probe === undefined) return
+      probe.count += 1
+      const value = input as { message?: unknown } | null
+      probe.messages.push(typeof value?.message === 'string' ? value.message.slice(0, 200) : '<ausente>')
+    })
+  })
+}
+
+const readAgentSendProbe = async (application: ElectronApplication): Promise<AgentSendProbe> =>
+  await application.evaluate(() => {
+    const globalState = globalThis as typeof globalThis & { __tupiniquimE2EAgentSendProbe?: AgentSendProbe }
+    const probe = globalState.__tupiniquimE2EAgentSendProbe
+    if (probe === undefined) throw new Error('Probe de agent.send não instalado no processo main.')
+    return { count: probe.count, messages: [...probe.messages] }
+  })
+
+/**
+ * Issue #25 — espera bounded por um estado terminal ESPECÍFICO de
+ * disponibilidade (ex.: AUTH_REQUIRED, NOT_INSTALLED), no padrão dos helpers
+ * canônicos: sucesso somente por estado observado, diagnóstico sanitizado em
+ * falha.
+ */
+const expectAvailability = async (page: Page, state: string, options: ProviderReadinessOptions = {}): Promise<void> => {
+  const timeout = options.timeout ?? 60_000
+  const extra = options.diagnostics === undefined ? '' : `\n${options.diagnostics().slice(0, 2_000)}`
+  try {
+    await expect(page.locator('.availability')).toHaveText(state, { timeout })
+  } catch (cause) {
+    throw new Error(`Disponibilidade do provider não convergiu para ${state} em ${String(timeout)}ms.${extra}`, { cause })
   }
 }
 
@@ -1670,6 +1825,284 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
         if (e2eDataRoot !== '') await rm(e2eDataRoot, { recursive: true, force: true })
       } finally {
         await new Promise<void>((resolve) => { server.close(() => resolve()); server.closeAllConnections() })
+      }
+    }
+  }
+})
+
+test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_REQUIRED/READY e regra Ollama)', async () => {
+  const projectRoot = process.cwd()
+
+  // Gate explícito e VISÍVEL: este cenário roda apenas no ambiente suportado
+  // (Windows real com TEMP em F: e display Electron). Fora do ambiente
+  // suportado o teste é SKIPPED (não PASS falso) com a razão explícita abaixo.
+  // A máquina Windows F: é o gate real (pnpm test:e2e).
+  const tempEnv = process.env.TEMP
+  test.skip(
+    process.platform !== 'win32' || tempEnv === undefined || path.parse(tempEnv).root.toUpperCase() !== 'F:\\',
+    `E2E da Issue #25 (Codex auth boundary fail-closed) requer Windows real com TEMP em F: e display Electron (plataforma=${process.platform}, TEMP=${tempEnv ?? 'ausente'}). Executar na máquina Windows F: via pnpm test:e2e.`
+  )
+  const temp = tempEnv as string
+
+  const codexUnauthFixture = path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server-unauthenticated.mjs')
+  const codexAuthFixture = path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs')
+
+  // URL Ollama inicialmente MORTA: nada escuta nesta porta até o teste ligar o
+  // mock (transição real NOT_INSTALLED → READY no MESMO runtime do processo).
+  const ollamaPort = await getFreeLoopbackPort()
+  const ollamaUrl = `http://127.0.0.1:${String(ollamaPort)}`
+
+  let mockOllama: MockOllamaServer | null = null
+  let application: Awaited<ReturnType<typeof electron.launch>> | null = null
+  let workspaceRoot = ''
+  let workspaceRoot2 = ''
+  let e2eDataRoot1 = ''
+  let e2eDataRoot2 = ''
+
+  try {
+    // ════════════════════ PROCESSO 1 — Codex SEM AUTH (AUTH_REQUIRED) ════════════════════
+    e2eDataRoot1 = await createIsolatedE2eDataRoot(temp)
+    workspaceRoot = await mkdtemp(path.join(temp, 'tupiniquim-e2e-issue25-a-'))
+    await writeFile(path.join(workspaceRoot, 'README.md'), '# E2E Issue 25 A\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot })
+    application = await electron.launch({
+      args: ['.'],
+      cwd: projectRoot,
+      timeout: 180_000,
+      env: withIsolatedE2eDataRoot({
+        ...process.env,
+        ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
+        TUPINIQUIM_OLLAMA_BASE_URL: ollamaUrl,
+        TUPINIQUIM_CODEX_PATH: process.execPath,
+        TUPINIQUIM_CODEX_SERVER_ARGS: JSON.stringify([codexUnauthFixture])
+      }, e2eDataRoot1)
+    })
+    const processErrors: string[] = []
+    application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
+    const page = await application.firstWindow({ timeout: 180_000 }).catch((cause: unknown) => {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(`${detail}\nElectron stderr:\n${processErrors.join('')}`)
+    })
+    const rendererErrors: string[] = []
+    page.on('pageerror', (error) => rendererErrors.push(error.message))
+    page.on('console', (message) => { if (message.type() === 'error') rendererErrors.push(message.text()) })
+    const diagnostics = (): string => `rendererErrors=[${rendererErrors.join(' | ')}] · Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
+    await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
+    // Probe do canal IPC REAL (auto-validado pelo envio legítimo da fase I).
+    await installAgentSendProbe(application)
+    await application.evaluate(({ dialog }, root) => {
+      Object.defineProperty(dialog, 'showOpenDialog', {
+        configurable: true,
+        value: () => Promise.resolve({ canceled: false, filePaths: [root] })
+      })
+      Object.defineProperty(dialog, 'showMessageBox', {
+        configurable: true,
+        value: () => Promise.resolve({ response: 0, checkboxChecked: false })
+      })
+    }, workspaceRoot)
+    await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
+    await expectWorkspaceAuthorized(page, {
+      expectedWorkspaceName: path.basename(workspaceRoot),
+      diagnostics
+    })
+    await page.locator('.mode-switch').getByRole('button', { name: 'Chat', exact: true }).click()
+
+    const providerSelect = page.getByLabel('Provedor de IA')
+    const modelSelect = page.getByLabel('Modelo Ollama local')
+    const sendButton = page.getByRole('button', { name: 'Enviar', exact: true })
+    const textarea = page.getByLabel('Mensagem ao agente')
+
+    // ── Estado inicial: Codex DISCONNECTED → envio já bloqueado (fail-closed) ──
+    await expect(page.locator('.availability')).toHaveText('DISCONNECTED')
+    const initialMessage = 'Ping inicial com provider desconectado.'
+    await textarea.fill(initialMessage)
+    await expect(sendButton).toBeDisabled()
+    await expect(sendButton).toHaveAttribute('title', issue25CodexDisconnectedMessage)
+    await textarea.press('Control+Enter')
+    await expect(page.locator('.agent-conversation')).toContainText(issue25CodexDisconnectedMessage, { timeout: 10_000 })
+    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    await expect(page.locator('.agent-conversation')).not.toContainText(initialMessage)
+    await expect(page.locator('.agent-message.user')).toHaveCount(0)
+
+    // ── (G) Ollama NÃO READY (NOT_INSTALLED, sem runtime no loopback): bloqueado ──
+    await providerSelect.selectOption('ollama', { timeout: 60_000 })
+    await expectAvailability(page, 'NOT_INSTALLED', { diagnostics })
+    await expect(sendButton).toBeDisabled()
+    await expect(sendButton).toHaveAttribute('title', issue25OllamaUnavailableMessage)
+    await textarea.press('Control+Enter')
+    await expect(page.locator('.agent-conversation')).toContainText(issue25OllamaUnavailableMessage, { timeout: 10_000 })
+    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    await expect(page.locator('.agent-conversation')).not.toContainText(initialMessage)
+    expect(await textarea.inputValue()).toBe(initialMessage)
+
+    // ── Troca EXPLÍCITA para Codex: CODEX_HOME isolado SEM auth → AUTH_REQUIRED ──
+    await expect(providerSelect).toBeEnabled({ timeout: 60_000 })
+    await providerSelect.selectOption('codex-app-server', { timeout: 60_000 })
+    await expect(providerSelect).toHaveValue('codex-app-server')
+    await expectAvailability(page, 'AUTH_REQUIRED', { diagnostics })
+
+    // ── (A) botão Enviar desabilitado em AUTH_REQUIRED ─────────────────────────────
+    await expect(sendButton).toBeDisabled()
+    await expect(sendButton).toHaveAttribute('title', issue25CodexAuthMessage)
+
+    // ── (B) Ctrl+Enter NÃO envia; (C) agent.send NÃO é chamado;
+    //     (D) SEM mensagem pública fantasma; (E) SEM thread criada ───────────────
+    const blockedMessage = 'Pedido que não deve chegar ao Codex sem autenticação.'
+    await textarea.fill(blockedMessage)
+    await textarea.press('Control+Enter')
+    await textarea.press('Control+Enter') // segunda tentativa: deduplicação da mensagem de bloqueio
+    await expect(page.locator('.agent-conversation')).toContainText(issue25CodexAuthMessage, { timeout: 10_000 })
+    await expect(page.locator('.agent-message.error', { hasText: issue25CodexAuthMessage })).toHaveCount(1)
+    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    await expect(page.locator('.agent-conversation')).not.toContainText(blockedMessage)
+    await expect(page.locator('.agent-message.user')).toHaveCount(0)
+    expect(await textarea.inputValue()).toBe(blockedMessage) // textarea preservado para reenvio
+    const sessionAfterBlock = await page.evaluate(async () => await window.studio.agent.session())
+    if (!sessionAfterBlock.ok || sessionAfterBlock.value === null) throw new Error(`Sessão indisponível após bloqueio: ${sessionAfterBlock.ok ? 'value nula' : sessionAfterBlock.error.message}`)
+    expect(sessionAfterBlock.value.providerThreads).toEqual([])
+    const codexStatusAfterBlock = await page.evaluate(async () => await window.studio.agent.status())
+    expect(codexStatusAfterBlock).toMatchObject({ ok: true, value: { provider: 'codex-app-server', state: 'AUTH_REQUIRED', activeThreadId: null } })
+    const unauthThreadHistory = await page.evaluate(async () => await window.studio.agent.history({ threadId: 'thread-unauth-controlled' }))
+    expect(unauthThreadHistory).toMatchObject({ ok: true, value: { thread: null, turns: [], events: [] } })
+
+    // ── (H) Ollama READY SEM modelo (mock ligado na porta morta): bloqueado ──
+    mockOllama = await startMockOllamaPlainChat(ollamaPort)
+    await expect(providerSelect).toBeEnabled({ timeout: 60_000 })
+    await providerSelect.selectOption('ollama', { timeout: 60_000 })
+    await expect(modelSelect).toBeVisible({ timeout: 60_000 })
+    await expectAvailability(page, 'READY', { diagnostics })
+    await textarea.fill('Ollama READY sem modelo selecionado.')
+    await expect(sendButton).toBeDisabled()
+    await expect(sendButton).toHaveAttribute('title', issue25OllamaModelMessage)
+    await textarea.press('Control+Enter')
+    await expect(page.locator('.agent-conversation')).toContainText(issue25OllamaModelMessage, { timeout: 10_000 })
+    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    await expect(page.locator('.agent-conversation')).not.toContainText('Ollama READY sem modelo selecionado.')
+    await expect(page.locator('.agent-message.user')).toHaveCount(0)
+
+    // ── (I) Ollama READY + modelo EXPLÍCITO: envio continua permitido ─────────
+    await modelSelect.selectOption(ollamaModel, { timeout: 60_000 })
+    await expectAvailability(page, 'READY', { diagnostics })
+    await expect(sendButton).toBeEnabled()
+    await sendButton.click()
+    await expect(page.locator('.agent-conversation')).toContainText('Ollama READY sem modelo selecionado.')
+    await expect(page.locator('.agent-conversation')).toContainText(issue25OllamaPlainChatOk, { timeout: 30_000 })
+    await expect(page.locator('.agent-message.user')).toHaveCount(1)
+    expect(await readAgentSendProbe(application)).toEqual({ count: 1, messages: ['Ollama READY sem modelo selecionado.'] })
+    expect(mockOllama.chatRequests).toHaveLength(1)
+    const sessionAfterSend = await page.evaluate(async () => await window.studio.agent.session())
+    if (!sessionAfterSend.ok || sessionAfterSend.value === null) throw new Error('Sessão indisponível após envio Ollama.')
+    const ollamaBinding = sessionAfterSend.value.providerThreads.find((binding) => binding.provider === 'ollama')
+    expect(ollamaBinding).toMatchObject({ provider: 'ollama', model: ollamaModel })
+    if (ollamaBinding === undefined || ollamaBinding.threadId === undefined) throw new Error('Binding Ollama incompleto após envio legítimo.')
+
+    // ── (J) nenhum secret/marcador novo em DOM, logs ou eventos ─────────────────
+    const dom = await page.content()
+    expect(dom).not.toContain(issue25UnauthServerMarker)
+    expect(dom).not.toMatch(/sk-(?:proj-)?[A-Za-z0-9_-]{16,}/u)
+    const systemInfo1 = await page.evaluate(async () => await window.studio.system.info())
+    if (!systemInfo1.ok) throw new Error('system.info indisponível no processo 1.')
+    expect(systemInfo1.value.dataRoot).toBe(e2eDataRoot1)
+    const auditLog1 = await readFile(path.join(e2eDataRoot1, 'logs', 'audit.jsonl'), 'utf8')
+    expect(auditLog1).not.toContain(issue25UnauthServerMarker)
+    expect(auditLog1).not.toMatch(/sk-(?:proj-)?[A-Za-z0-9_-]{16,}/u)
+    const ollamaThreadHistory = await page.evaluate(async (threadId: string) => await window.studio.agent.history({ threadId }), ollamaBinding.threadId)
+    if (!ollamaThreadHistory.ok) throw new Error('History da thread Ollama indisponível.')
+    expect(JSON.stringify(ollamaThreadHistory.value)).not.toContain(issue25UnauthServerMarker)
+    expect(JSON.stringify(ollamaThreadHistory.value)).not.toMatch(/sk-(?:proj-)?[A-Za-z0-9_-]{16,}/u)
+
+    await page.screenshot({ path: path.join(projectRoot, 'test-results', 'issue25-codex-auth-required.png'), fullPage: true })
+    const exitCode1 = await closeApplicationAndAwaitExit(application)
+    expect(exitCode1, `Processo 1 não encerrou limpo (stderr: ${processErrors.join('').slice(0, 2_000)}).`).toBe(0)
+    application = null
+
+    // ════════════════════ PROCESSO 2 — Codex AUTENTICADO (READY) ════════════════════
+    e2eDataRoot2 = await createIsolatedE2eDataRoot(temp)
+    workspaceRoot2 = await mkdtemp(path.join(temp, 'tupiniquim-e2e-issue25-b-'))
+    await writeFile(path.join(workspaceRoot2, 'README.md'), '# E2E Issue 25 B\n', 'utf8')
+    await execFileAsync('git', ['init', '--quiet'], { cwd: workspaceRoot2 })
+    application = await electron.launch({
+      args: ['.'],
+      cwd: projectRoot,
+      timeout: 180_000,
+      env: withIsolatedE2eDataRoot({
+        ...process.env,
+        ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
+        TUPINIQUIM_OLLAMA_BASE_URL: ollamaUrl,
+        TUPINIQUIM_CODEX_PATH: process.execPath,
+        TUPINIQUIM_CODEX_SERVER_ARGS: JSON.stringify([codexAuthFixture])
+      }, e2eDataRoot2)
+    })
+    const processErrors2: string[] = []
+    application.process().stderr?.on('data', (chunk: Buffer) => processErrors2.push(chunk.toString('utf8')))
+    const page2 = await application.firstWindow({ timeout: 180_000 }).catch((cause: unknown) => {
+      const detail = cause instanceof Error ? cause.message : String(cause)
+      throw new Error(`${detail}\nElectron stderr (processo 2):\n${processErrors2.join('')}`)
+    })
+    const rendererErrors2: string[] = []
+    page2.on('pageerror', (error) => rendererErrors2.push(error.message))
+    page2.on('console', (message) => { if (message.type() === 'error') rendererErrors2.push(message.text()) })
+    const diagnostics2 = (): string => `rendererErrors=[${rendererErrors2.join(' | ')}] · Electron stderr (processo 2)=[${processErrors2.join('').slice(0, 1_000)}]`
+    await expect(page2).toHaveTitle('Tupiniquim AI Dev Studio')
+    await installAgentSendProbe(application)
+    await application.evaluate(({ dialog }, root) => {
+      Object.defineProperty(dialog, 'showOpenDialog', {
+        configurable: true,
+        value: () => Promise.resolve({ canceled: false, filePaths: [root] })
+      })
+      Object.defineProperty(dialog, 'showMessageBox', {
+        configurable: true,
+        value: () => Promise.resolve({ response: 0, checkboxChecked: false })
+      })
+    }, workspaceRoot2)
+    await page2.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
+    await expectWorkspaceAuthorized(page2, {
+      expectedWorkspaceName: path.basename(workspaceRoot2),
+      diagnostics: diagnostics2
+    })
+    await page2.locator('.mode-switch').getByRole('button', { name: 'Chat', exact: true }).click()
+
+    const providerSelect2 = page2.getByLabel('Provedor de IA')
+    const sendButton2 = page2.getByRole('button', { name: 'Enviar', exact: true })
+    const textarea2 = page2.getByLabel('Mensagem ao agente')
+
+    // Troca EXPLÍCITA Ollama → Codex (fixture autenticado) → READY.
+    await providerSelect2.selectOption('ollama', { timeout: 60_000 })
+    await expectAvailability(page2, 'READY', { diagnostics: diagnostics2 })
+    await providerSelect2.selectOption('codex-app-server', { timeout: 60_000 })
+    await expectAvailability(page2, 'READY', { diagnostics: diagnostics2 })
+
+    // ── (F) Codex READY: envio continua funcionando (botão + turno real) ──────
+    const readyMessage = 'Pedido com Codex READY.'
+    await textarea2.fill(readyMessage)
+    await expect(sendButton2).toBeEnabled()
+    await sendButton2.click()
+    await expect(page2.locator('.agent-conversation')).toContainText(readyMessage)
+    await expect(page2.locator('.agent-conversation')).toContainText('CONTROLLED_STREAM_OK', { timeout: 30_000 })
+    expect(await readAgentSendProbe(application)).toEqual({ count: 1, messages: [readyMessage] })
+    const sessionF = await page2.evaluate(async () => await window.studio.agent.session())
+    if (!sessionF.ok || sessionF.value === null) throw new Error('Sessão indisponível no processo 2.')
+    expect(sessionF.value.providerThreads).toContainEqual(expect.objectContaining({ provider: 'codex-app-server', threadId: 'thread-controlled', model: 'codex-test-model' }))
+    const codexStatusF = await page2.evaluate(async () => await window.studio.agent.status())
+    expect(codexStatusF).toMatchObject({ ok: true, value: { provider: 'codex-app-server', state: 'READY', activeThreadId: 'thread-controlled' } })
+    // Nenhum fallback silencioso para Ollama: o mock não recebeu request novo.
+    expect(mockOllama?.chatRequests ?? []).toHaveLength(1)
+
+    await page2.screenshot({ path: path.join(projectRoot, 'test-results', 'issue25-codex-ready.png'), fullPage: true })
+    const exitCode2 = await closeApplicationAndAwaitExit(application)
+    expect(exitCode2, `Processo 2 não encerrou limpo (stderr: ${processErrors2.join('').slice(0, 2_000)}).`).toBe(0)
+    application = null
+  } finally {
+    try {
+      if (application !== null) await application.close().catch(() => undefined)
+    } finally {
+      try {
+        if (workspaceRoot !== '') await rm(workspaceRoot, { recursive: true, force: true })
+        if (workspaceRoot2 !== '') await rm(workspaceRoot2, { recursive: true, force: true })
+        if (e2eDataRoot1 !== '') await rm(e2eDataRoot1, { recursive: true, force: true })
+        if (e2eDataRoot2 !== '') await rm(e2eDataRoot2, { recursive: true, force: true })
+      } finally {
+        if (mockOllama !== null) await mockOllama.close()
       }
     }
   }
