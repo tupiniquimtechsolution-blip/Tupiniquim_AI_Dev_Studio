@@ -225,6 +225,14 @@ export class GoogleTasksApiClient {
     return result
   }
 
+  public async createTaskList(title: string): Promise<GoogleTaskList> {
+    const response = await this.request('/users/@me/lists', {
+      method: 'POST',
+      body: JSON.stringify({ title })
+    })
+    return googleTaskListSchema.parse(await response.json())
+  }
+
   public async listTasks(input: {
     taskListId: string
     showCompleted?: boolean
