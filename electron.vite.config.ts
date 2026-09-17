@@ -31,7 +31,7 @@ export default defineConfig({
     },
     build: {
       rollupOptions: {
-        input: path.join(root, 'apps/desktop/src/preload/index.ts'),
+        input: path.join(root, 'apps/desktop/src/preload/bootstrap.ts'),
         external: ['electron'],
         output: {
           format: 'cjs',
