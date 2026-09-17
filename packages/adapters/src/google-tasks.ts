@@ -235,9 +235,9 @@ export class GoogleTasksApiClient {
 
   public async listTasks(input: {
     taskListId: string
-    showCompleted?: boolean
-    showHidden?: boolean
-    maxResults?: number
+    showCompleted?: boolean | undefined
+    showHidden?: boolean | undefined
+    maxResults?: number | undefined
   }): Promise<GoogleTask[]> {
     const result: GoogleTask[] = []
     let pageToken: string | undefined
@@ -262,8 +262,8 @@ export class GoogleTasksApiClient {
   public async createTask(input: {
     taskListId: string
     title: string
-    notes?: string
-    due?: string
+    notes?: string | undefined
+    due?: string | undefined
   }): Promise<GoogleTask> {
     const response = await this.request(`/lists/${encodeURIComponent(input.taskListId)}/tasks`, {
       method: 'POST',
@@ -279,9 +279,9 @@ export class GoogleTasksApiClient {
   public async updateTask(input: {
     taskListId: string
     taskId: string
-    title?: string
-    notes?: string | null
-    due?: string | null
+    title?: string | undefined
+    notes?: string | null | undefined
+    due?: string | null | undefined
   }): Promise<GoogleTask> {
     const body: Record<string, unknown> = {}
     if (input.title !== undefined) body.title = input.title
