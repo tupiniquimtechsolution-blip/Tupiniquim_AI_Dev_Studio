@@ -7,6 +7,19 @@ const jsonResponse = (value: unknown, status = 200): Response => new Response(JS
   headers: { 'content-type': 'application/json' }
 })
 
+const requestUrl = (input: RequestInfo | URL): string => {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  return input.url
+}
+
+const requestBodyText = (body: BodyInit | null | undefined): string | undefined => {
+  if (body === undefined || body === null) return undefined
+  if (typeof body === 'string') return body
+  if (body instanceof URLSearchParams) return body.toString()
+  throw new Error('Body de teste inesperado.')
+}
+
 describe('GoogleTasksOAuthClient', () => {
   it('gera autorização desktop com escopo mínimo, PKCE e state', () => {
     const client = new GoogleTasksOAuthClient({ clientId: 'desktop.apps.googleusercontent.com' })
@@ -30,15 +43,15 @@ describe('GoogleTasksOAuthClient', () => {
 
   it('troca authorization code e preserva somente dados normalizados do token', async () => {
     let submitted: URLSearchParams | undefined
-    const fetcher = (async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const fetcher = ((_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       submitted = init?.body as URLSearchParams
-      return jsonResponse({
+      return Promise.resolve(jsonResponse({
         access_token: 'access-token-123',
         refresh_token: 'refresh-token-123',
         expires_in: 3600,
         token_type: 'Bearer',
         scope: GOOGLE_TASKS_SCOPE
-      })
+      }))
     }) as typeof fetch
     const client = new GoogleTasksOAuthClient({
       clientId: 'desktop.apps.googleusercontent.com',
@@ -66,12 +79,12 @@ describe('GoogleTasksOAuthClient', () => {
   })
 
   it('mantém o refresh token anterior quando o refresh não devolve outro', async () => {
-    const fetcher = (async (): Promise<Response> => jsonResponse({
+    const fetcher = (() => Promise.resolve(jsonResponse({
       access_token: 'renewed-access-token',
       expires_in: 1800,
       token_type: 'Bearer',
       scope: GOOGLE_TASKS_SCOPE
-    })) as typeof fetch
+    }))) as typeof fetch
     const client = new GoogleTasksOAuthClient({
       clientId: 'desktop.apps.googleusercontent.com',
       fetch: fetcher,
@@ -88,17 +101,17 @@ describe('GoogleTasksOAuthClient', () => {
 describe('GoogleTasksApiClient', () => {
   it('pagina listas sem expor o bearer token na resposta', async () => {
     const calls: string[] = []
-    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const url = String(input)
+    const fetcher = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = requestUrl(input)
       calls.push(url)
       expect(new Headers(init?.headers).get('authorization')).toBe('Bearer private-access-token')
       if (calls.length === 1) {
-        return jsonResponse({
+        return Promise.resolve(jsonResponse({
           items: [{ id: 'list-1', title: 'CRM Tupiniquim' }],
           nextPageToken: 'next-page'
-        })
+        }))
       }
-      return jsonResponse({ items: [{ id: 'list-2', title: 'Top Tech BR' }] })
+      return Promise.resolve(jsonResponse({ items: [{ id: 'list-2', title: 'Top Tech BR' }] }))
     }) as typeof fetch
     const client = new GoogleTasksApiClient({ accessToken: 'private-access-token', fetch: fetcher })
 
@@ -112,18 +125,19 @@ describe('GoogleTasksApiClient', () => {
 
   it('cria tarefa e conclui tarefa com PATCH explícito', async () => {
     const calls: Array<{ url: string; method: string; body: unknown }> = []
-    const fetcher = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const body = init?.body === undefined ? undefined : JSON.parse(String(init.body)) as unknown
-      calls.push({ url: String(input), method: init?.method ?? 'GET', body })
+    const fetcher = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const bodyText = requestBodyText(init?.body)
+      const body = bodyText === undefined ? undefined : JSON.parse(bodyText) as unknown
+      calls.push({ url: requestUrl(input), method: init?.method ?? 'GET', body })
       if (calls.length === 1) {
-        return jsonResponse({ id: 'task-1', title: 'Revisar CI', status: 'needsAction' })
+        return Promise.resolve(jsonResponse({ id: 'task-1', title: 'Revisar CI', status: 'needsAction' }))
       }
-      return jsonResponse({
+      return Promise.resolve(jsonResponse({
         id: 'task-1',
         title: 'Revisar CI',
         status: 'completed',
         completed: '2026-09-17T15:00:00.000Z'
-      })
+      }))
     }) as typeof fetch
     const client = new GoogleTasksApiClient({ accessToken: 'token', fetch: fetcher })
 
@@ -142,7 +156,7 @@ describe('GoogleTasksApiClient', () => {
   })
 
   it('não incorpora token secreto no erro HTTP', async () => {
-    const fetcher = (async (): Promise<Response> => jsonResponse({ error: 'invalid private-access-token' }, 401)) as typeof fetch
+    const fetcher = (() => Promise.resolve(jsonResponse({ error: 'invalid private-access-token' }, 401))) as typeof fetch
     const client = new GoogleTasksApiClient({ accessToken: 'private-access-token', fetch: fetcher })
 
     const attempt = client.listTasks({ taskListId: 'list-1' })
