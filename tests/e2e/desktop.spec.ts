@@ -23,6 +23,7 @@ const issue25OllamaModelMessage = 'Selecione um modelo Ollama local antes de env
 const issue25OllamaUnavailableMessage = 'Ollama local indisponível no momento (estado NOT_INSTALLED). Envio bloqueado até READY.'
 const issue25UnauthServerMarker = 'UNAUTH_SERVER_REACHED_MARKER'
 const issue25OllamaPlainChatOk = 'OLLAMA_PLAIN_CHAT_OK'
+const issue25PlanReadOnlyMessage = 'Plano persistido, mas o provider atual permanece read-only. Selecione Ollama local com um modelo compatível para gerar a proposta sem habilitar APIs experimentais.'
 
 /**
  * Wave 16 — Incremento 4/4 (correção da auditoria externa, Bloqueio 3):
@@ -1965,12 +1966,66 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     const unauthThreadHistory = await page.evaluate(async () => await window.studio.agent.history({ threadId: 'thread-unauth-controlled' }))
     expect(unauthThreadHistory).toMatchObject({ ok: true, value: { thread: null, turns: [], events: [] } })
 
+    // ══ Modos INDEPENDENTES de provider com Codex AUTH_REQUIRED (L–P) ══════
+    // Readiness de provider NÃO pode bloquear funcionalidades Tupiniquim com
+    // fronteiras próprias (visual/prompt/research/planning.create) — e nenhuma
+    // delas pode chamar agent.send (probe do canal IPC real o comprova).
+
+    // ── (L) VISUAL: visual.statuses() continua executando ───────────────────
+    await page.locator('.mode-switch').getByRole('button', { name: 'Visual', exact: true }).click()
+    const lMessage = 'Visual Lab com provider em AUTH_REQUIRED.'
+    await textarea.fill(lMessage)
+    await expect(sendButton).toBeEnabled()
+    await sendButton.click()
+    await expect(page.locator('.agent-conversation')).toContainText('VISUAL LAB', { timeout: 15_000 })
+    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+
+    // ── (M) PROMPT: Prompt Architect continua executando ────────────────────
+    await page.locator('.mode-switch').getByRole('button', { name: 'Prompt', exact: true }).click()
+    const mMessage = 'Template Prompt Architect {{nome}} com provider em AUTH_REQUIRED.'
+    await textarea.fill(mMessage)
+    await expect(sendButton).toBeEnabled()
+    await sendButton.click()
+    await expect(page.locator('.agent-conversation')).toContainText('TEMPLATE VERSIONADO', { timeout: 15_000 })
+    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+
+    // ── (N) RESEARCH: Research continua executando (seu próprio boundary) ───
+    await page.locator('.mode-switch').getByRole('button', { name: 'Research', exact: true }).click()
+    const nMessage = 'Research com provider em AUTH_REQUIRED.'
+    await textarea.fill(nMessage)
+    await expect(sendButton).toBeEnabled()
+    await sendButton.click()
+    // 'TECHNOLOGY RESOLUTION' vem do engine LOCAL (determinístico): o modo
+    // executou de ponta a ponta mesmo com o provider indisponível.
+    await expect(page.locator('.agent-conversation')).toContainText('TECHNOLOGY RESOLUTION', { timeout: 60_000 })
+    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+
+    // ── (O) PLAN: planning.create() funciona independentemente do Codex ─────
+    await page.locator('.mode-switch').getByRole('button', { name: 'Plan', exact: true }).click()
+    const oMessage = 'Plano criado com provider em AUTH_REQUIRED.'
+    await textarea.fill(oMessage)
+    await expect(sendButton).toBeEnabled()
+    await sendButton.click()
+    // A mensagem só aparece após planning.create() OK (plano persistido); a
+    // etapa de proposta não roda (provider != Ollama) — e mesmo que rodasse,
+    // exigiria readiness pela guarda imediatamente antes do agent.send.
+    await expect(page.locator('.agent-conversation')).toContainText(issue25PlanReadOnlyMessage, { timeout: 15_000 })
+    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+
+    // ── (P) nenhum modo independente chamou agent.send ───────────────────────
+    const probeAfterIndependentModes = await readAgentSendProbe(application)
+    expect(probeAfterIndependentModes.count).toBe(0)
+    expect(probeAfterIndependentModes.messages).toEqual([])
+
     // ── (H) Ollama READY SEM modelo (mock ligado na porta morta): bloqueado ──
     mockOllama = await startMockOllamaPlainChat(ollamaPort)
     await expect(providerSelect).toBeEnabled({ timeout: 60_000 })
     await providerSelect.selectOption('ollama', { timeout: 60_000 })
     await expect(modelSelect).toBeVisible({ timeout: 60_000 })
     await expectAvailability(page, 'READY', { diagnostics })
+    // Volta ao CHAT (o modo ficou em Plan na fase O) para testar o caminho
+    // de envio ao agente.
+    await page.locator('.mode-switch').getByRole('button', { name: 'Chat', exact: true }).click()
     await textarea.fill('Ollama READY sem modelo selecionado.')
     await expect(sendButton).toBeDisabled()
     await expect(sendButton).toHaveAttribute('title', issue25OllamaModelMessage)
@@ -1978,7 +2033,6 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await expect(page.locator('.agent-conversation')).toContainText(issue25OllamaModelMessage, { timeout: 10_000 })
     expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
     await expect(page.locator('.agent-conversation')).not.toContainText('Ollama READY sem modelo selecionado.')
-    await expect(page.locator('.agent-message.user')).toHaveCount(0)
 
     // ── (I) Ollama READY + modelo EXPLÍCITO: envio continua permitido ─────────
     await modelSelect.selectOption(ollamaModel, { timeout: 60_000 })
@@ -1987,7 +2041,8 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await sendButton.click()
     await expect(page.locator('.agent-conversation')).toContainText('Ollama READY sem modelo selecionado.')
     await expect(page.locator('.agent-conversation')).toContainText(issue25OllamaPlainChatOk, { timeout: 30_000 })
-    await expect(page.locator('.agent-message.user')).toHaveCount(1)
+    // 4 mensagens user das fases L/M/N/O + 1 desta fase I.
+    await expect(page.locator('.agent-message.user')).toHaveCount(5)
     expect(await readAgentSendProbe(application)).toEqual({ count: 1, messages: ['Ollama READY sem modelo selecionado.'] })
     expect(mockOllama.chatRequests).toHaveLength(1)
     const sessionAfterSend = await page.evaluate(async () => await window.studio.agent.session())
