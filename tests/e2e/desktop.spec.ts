@@ -26,6 +26,15 @@ const issue25OllamaPlainChatOk = 'OLLAMA_PLAIN_CHAT_OK'
 const issue25PlanReadOnlyMessage = 'Plano persistido, mas o provider atual permanece read-only. Selecione Ollama local com um modelo compatível para gerar a proposta sem habilitar APIs experimentais.'
 
 /**
+ * Fase (M) PROMPT — comportamento CANÔNICO do produto (não é bug): o botão
+ * Enviar fica habilitado em modo independente de provider, mas `prompt.save` é
+ * HIGH + destructive e o PolicyEngine está em ASSISTED — logo a resposta é
+ * APPROVAL_REQUIRED. O renderer exibe decision.reason do PolicyEngine; o texto
+ * espelha EXATAMENTE packages/core/src/policy.ts.
+ */
+const issue25PromptAssistedApprovalMessage = 'Ação requer aprovação no perfil ASSISTED.'
+
+/**
  * Wave 16 — Incremento 4/4 (correção da auditoria externa, Bloqueio 3):
  * dataRoot ISOLADO e exclusivo do E2E. O Electron é lançado com o override
  * test-only `TUPINIQUIM_E2E=1` + `TUPINIQUIM_E2E_DATA_ROOT` apontando para um
@@ -1980,14 +1989,32 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await expect(page.locator('.agent-conversation')).toContainText('VISUAL LAB', { timeout: 15_000 })
     expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
 
-    // ── (M) PROMPT: Prompt Architect continua executando ────────────────────
+    // ── (M) PROMPT: fronteira própria com aprovação ASSISTED (canônico) ─────
+    // O botão continua HABILITADO em AUTH_REQUIRED (modo independente de
+    // provider). A submissão, porém, NÃO "TEMPLATE VERSIONADO": prompt.save é
+    // HIGH + destructive e o PolicyEngine em ASSISTED exige aprovação —
+    // a única resposta canônica é APPROVAL_REQUIRED ("Ação requer aprovação no
+    // perfil ASSISTED."). Isso é comportamento de produto, não bug.
     await page.locator('.mode-switch').getByRole('button', { name: 'Prompt', exact: true }).click()
     const mMessage = 'Template Prompt Architect {{nome}} com provider em AUTH_REQUIRED.'
     await textarea.fill(mMessage)
     await expect(sendButton).toBeEnabled()
     await sendButton.click()
-    await expect(page.locator('.agent-conversation')).toContainText('TEMPLATE VERSIONADO', { timeout: 15_000 })
+    // O template NÃO é versionado: o save é recusado pela política ASSISTED.
+    await expect(page.locator('.agent-conversation')).toContainText(issue25PromptAssistedApprovalMessage, { timeout: 15_000 })
+    await expect(page.locator('.agent-conversation')).not.toContainText('TEMPLATE VERSIONADO')
+    // Nenhum agente participa: agent.send permanece em 0.
     expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    // AuditLog fácil (já lido neste teste): a recusa ficou registrada como
+    // capability=prompt.save + errorCode=APPROVAL_REQUIRED (ASSISTED), sem
+    // ampliar o escopo sobre nenhum outro artefato.
+    const auditPromptLine = (await readFile(path.join(e2eDataRoot1, 'logs', 'audit.jsonl'), 'utf8'))
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { capability?: string; errorCode?: string })
+      .find((record) => record.capability === 'prompt.save' && record.errorCode === 'APPROVAL_REQUIRED')
+    expect(auditPromptLine).toBeDefined()
 
     // ── (N) RESEARCH: Research continua executando (seu próprio boundary) ───
     await page.locator('.mode-switch').getByRole('button', { name: 'Research', exact: true }).click()
