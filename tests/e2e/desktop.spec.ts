@@ -428,42 +428,40 @@ const closeApplicationAndAwaitExit = async (application: ElectronApplication, bu
 }
 
 /**
- * Issue #25 — probe do canal IPC REAL `agent.send` NO PROCESSO MAIN.
+ * Issue #25 — evidência de `agent.send` pelo AuditLog REAL do runtime E2E.
  *
- * Contabiliza cada dispatch de `studio:agent:send` (canal espelhando
- * ipcChannels.agentSend) antes do handler da aplicação — a prova de que o
- * fail-closed impede o envio não depende de espionagem do renderer (onde o
- * bridge do contextBridge pode ser invariável). A instalação é
- * AUTO-VALIDADA: o primeiro envio legítimo do teste (Ollama CHAT) DEVE
- * registrar exatamente 1 chamada; se o probe não capturar, o teste falha em
- * vez de passar de forma falsa.
+ * O preload real implementa window.studio.agent.send(...) →
+ * ipcRenderer.invoke(ipcChannels.agentSend, input): chamadas `invoke` NÃO são
+ * observadas por ipcMain.on (o request/response é atendido por
+ * ipcMain.handle), logo sondas IPC no main são cegas a este caminho. O canal
+ * canônico register(ipcChannels.agentSend, ..., 'agent.send', ...) grava no
+ * AuditLog — com await ANTES de responder — um registro por dispatch
+ * (SUCCESS/DENIED/ERROR) em <dataRoot>/logs/audit.jsonl: essa é a evidência
+ * determinística correta. A leitura é AUTO-VALIDADA: envios legítimos (fase I
+ * Ollama e processo 2 Codex READY) DEVEM produzir exatamente 1 registro
+ * agent.send; caminhos bloqueados (DISCONNECTED, NOT_INSTALLED, AUTH_REQUIRED,
+ * Ollama READY sem modelo e modos independentes L/M/N/O) DEVEM permanecer em 0.
  */
-interface AgentSendProbe {
-  count: number
-  messages: string[]
+interface E2eAuditRecord {
+  capability?: string
+  errorCode?: string
 }
 
-const installAgentSendProbe = async (application: ElectronApplication): Promise<void> => {
-  await application.evaluate(({ ipcMain }) => {
-    const globalState = globalThis as typeof globalThis & { __tupiniquimE2EAgentSendProbe?: AgentSendProbe }
-    globalState.__tupiniquimE2EAgentSendProbe = { count: 0, messages: [] }
-    ipcMain.on('studio:agent:send', (_event, input: unknown) => {
-      const probe = globalState.__tupiniquimE2EAgentSendProbe
-      if (probe === undefined) return
-      probe.count += 1
-      const value = input as { message?: unknown } | null
-      probe.messages.push(typeof value?.message === 'string' ? value.message.slice(0, 200) : '<ausente>')
-    })
+const readE2eAuditRecords = async (e2eDataRoot: string): Promise<E2eAuditRecord[]> => {
+  const content = await readFile(path.join(e2eDataRoot, 'logs', 'audit.jsonl'), 'utf8').catch((cause: unknown) => {
+    // AuditLog inexistente ainda = nenhum registro (contagem honesta de 0).
+    if (cause !== null && typeof cause === 'object' && (cause as { code?: string }).code === 'ENOENT') return ''
+    throw cause
   })
+  return content
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+    .map((line) => JSON.parse(line) as E2eAuditRecord)
 }
 
-const readAgentSendProbe = async (application: ElectronApplication): Promise<AgentSendProbe> =>
-  await application.evaluate(() => {
-    const globalState = globalThis as typeof globalThis & { __tupiniquimE2EAgentSendProbe?: AgentSendProbe }
-    const probe = globalState.__tupiniquimE2EAgentSendProbe
-    if (probe === undefined) throw new Error('Probe de agent.send não instalado no processo main.')
-    return { count: probe.count, messages: [...probe.messages] }
-  })
+const countAuditCapability = async (e2eDataRoot: string, capability: string): Promise<number> =>
+  (await readE2eAuditRecords(e2eDataRoot)).filter((record) => record.capability === capability).length
 
 /**
  * Issue #25 — espera bounded por um estado terminal ESPECÍFICO de
@@ -1898,8 +1896,6 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     page.on('console', (message) => { if (message.type() === 'error') rendererErrors.push(message.text()) })
     const diagnostics = (): string => `rendererErrors=[${rendererErrors.join(' | ')}] · Electron stderr=[${processErrors.join('').slice(0, 1_000)}]`
     await expect(page).toHaveTitle('Tupiniquim AI Dev Studio')
-    // Probe do canal IPC REAL (auto-validado pelo envio legítimo da fase I).
-    await installAgentSendProbe(application)
     await application.evaluate(({ dialog }, root) => {
       Object.defineProperty(dialog, 'showOpenDialog', {
         configurable: true,
@@ -1930,7 +1926,7 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await expect(sendButton).toHaveAttribute('title', issue25CodexDisconnectedMessage)
     await textarea.press('Control+Enter')
     await expect(page.locator('.agent-conversation')).toContainText(issue25CodexDisconnectedMessage, { timeout: 10_000 })
-    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    expect(await countAuditCapability(e2eDataRoot1, 'agent.send')).toBe(0)
     await expect(page.locator('.agent-conversation')).not.toContainText(initialMessage)
     await expect(page.locator('.agent-message.user')).toHaveCount(0)
 
@@ -1941,7 +1937,7 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await expect(sendButton).toHaveAttribute('title', issue25OllamaUnavailableMessage)
     await textarea.press('Control+Enter')
     await expect(page.locator('.agent-conversation')).toContainText(issue25OllamaUnavailableMessage, { timeout: 10_000 })
-    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    expect(await countAuditCapability(e2eDataRoot1, 'agent.send')).toBe(0)
     await expect(page.locator('.agent-conversation')).not.toContainText(initialMessage)
     expect(await textarea.inputValue()).toBe(initialMessage)
 
@@ -1963,7 +1959,7 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await textarea.press('Control+Enter') // segunda tentativa: deduplicação da mensagem de bloqueio
     await expect(page.locator('.agent-conversation')).toContainText(issue25CodexAuthMessage, { timeout: 10_000 })
     await expect(page.locator('.agent-message.error', { hasText: issue25CodexAuthMessage })).toHaveCount(1)
-    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    expect(await countAuditCapability(e2eDataRoot1, 'agent.send')).toBe(0)
     await expect(page.locator('.agent-conversation')).not.toContainText(blockedMessage)
     await expect(page.locator('.agent-message.user')).toHaveCount(0)
     expect(await textarea.inputValue()).toBe(blockedMessage) // textarea preservado para reenvio
@@ -1978,7 +1974,7 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     // ══ Modos INDEPENDENTES de provider com Codex AUTH_REQUIRED (L–P) ══════
     // Readiness de provider NÃO pode bloquear funcionalidades Tupiniquim com
     // fronteiras próprias (visual/prompt/research/planning.create) — e nenhuma
-    // delas pode chamar agent.send (probe do canal IPC real o comprova).
+    // delas pode chamar agent.send (o AuditLog do processo o comprova).
 
     // ── (L) VISUAL: visual.statuses() continua executando ───────────────────
     await page.locator('.mode-switch').getByRole('button', { name: 'Visual', exact: true }).click()
@@ -1987,7 +1983,7 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await expect(sendButton).toBeEnabled()
     await sendButton.click()
     await expect(page.locator('.agent-conversation')).toContainText('VISUAL LAB', { timeout: 15_000 })
-    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    expect(await countAuditCapability(e2eDataRoot1, 'agent.send')).toBe(0)
 
     // ── (M) PROMPT: fronteira própria com aprovação ASSISTED (canônico) ─────
     // O botão continua HABILITADO em AUTH_REQUIRED (modo independente de
@@ -2004,15 +2000,11 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await expect(page.locator('.agent-conversation')).toContainText(issue25PromptAssistedApprovalMessage, { timeout: 15_000 })
     await expect(page.locator('.agent-conversation')).not.toContainText('TEMPLATE VERSIONADO')
     // Nenhum agente participa: agent.send permanece em 0.
-    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
-    // AuditLog fácil (já lido neste teste): a recusa ficou registrada como
+    expect(await countAuditCapability(e2eDataRoot1, 'agent.send')).toBe(0)
+    // AuditLog (leitor JSONL compartilhado): a recusa ficou registrada como
     // capability=prompt.save + errorCode=APPROVAL_REQUIRED (ASSISTED), sem
     // ampliar o escopo sobre nenhum outro artefato.
-    const auditPromptLine = (await readFile(path.join(e2eDataRoot1, 'logs', 'audit.jsonl'), 'utf8'))
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line !== '')
-      .map((line) => JSON.parse(line) as { capability?: string; errorCode?: string })
+    const auditPromptLine = (await readE2eAuditRecords(e2eDataRoot1))
       .find((record) => record.capability === 'prompt.save' && record.errorCode === 'APPROVAL_REQUIRED')
     expect(auditPromptLine).toBeDefined()
 
@@ -2025,7 +2017,7 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     // 'TECHNOLOGY RESOLUTION' vem do engine LOCAL (determinístico): o modo
     // executou de ponta a ponta mesmo com o provider indisponível.
     await expect(page.locator('.agent-conversation')).toContainText('TECHNOLOGY RESOLUTION', { timeout: 60_000 })
-    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    expect(await countAuditCapability(e2eDataRoot1, 'agent.send')).toBe(0)
 
     // ── (O) PLAN: planning.create() funciona independentemente do Codex ─────
     await page.locator('.mode-switch').getByRole('button', { name: 'Plan', exact: true }).click()
@@ -2037,12 +2029,11 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     // etapa de proposta não roda (provider != Ollama) — e mesmo que rodasse,
     // exigiria readiness pela guarda imediatamente antes do agent.send.
     await expect(page.locator('.agent-conversation')).toContainText(issue25PlanReadOnlyMessage, { timeout: 15_000 })
-    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    expect(await countAuditCapability(e2eDataRoot1, 'agent.send')).toBe(0)
 
     // ── (P) nenhum modo independente chamou agent.send ───────────────────────
-    const probeAfterIndependentModes = await readAgentSendProbe(application)
-    expect(probeAfterIndependentModes.count).toBe(0)
-    expect(probeAfterIndependentModes.messages).toEqual([])
+    const agentSendCountAfterIndependentModes = await countAuditCapability(e2eDataRoot1, 'agent.send')
+    expect(agentSendCountAfterIndependentModes).toBe(0)
 
     // ── (H) Ollama READY SEM modelo (mock ligado na porta morta): bloqueado ──
     mockOllama = await startMockOllamaPlainChat(ollamaPort)
@@ -2058,7 +2049,7 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await expect(sendButton).toHaveAttribute('title', issue25OllamaModelMessage)
     await textarea.press('Control+Enter')
     await expect(page.locator('.agent-conversation')).toContainText(issue25OllamaModelMessage, { timeout: 10_000 })
-    expect(await readAgentSendProbe(application)).toEqual({ count: 0, messages: [] })
+    expect(await countAuditCapability(e2eDataRoot1, 'agent.send')).toBe(0)
     await expect(page.locator('.agent-conversation')).not.toContainText('Ollama READY sem modelo selecionado.')
 
     // ── (I) Ollama READY + modelo EXPLÍCITO: envio continua permitido ─────────
@@ -2070,7 +2061,11 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await expect(page.locator('.agent-conversation')).toContainText(issue25OllamaPlainChatOk, { timeout: 30_000 })
     // 4 mensagens user das fases L/M/N/O + 1 desta fase I.
     await expect(page.locator('.agent-message.user')).toHaveCount(5)
-    expect(await readAgentSendProbe(application)).toEqual({ count: 1, messages: ['Ollama READY sem modelo selecionado.'] })
+    // O envio legítimo desta fase é a AUTO-VALIDAÇÃO da evidência: exatamente
+    // 1 registro agent.send no AuditLog do dataRoot isolado do processo 1 (o
+    // wrapper register() faz await audit.write ANTES de responder, e a UI só
+    // exibe a resposta depois — o poll converge deterministicamente).
+    await expect.poll(() => countAuditCapability(e2eDataRoot1, 'agent.send'), { timeout: 10_000 }).toBe(1)
     expect(mockOllama.chatRequests).toHaveLength(1)
     const sessionAfterSend = await page.evaluate(async () => await window.studio.agent.session())
     if (!sessionAfterSend.ok || sessionAfterSend.value === null) throw new Error('Sessão indisponível após envio Ollama.')
@@ -2126,7 +2121,6 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     page2.on('console', (message) => { if (message.type() === 'error') rendererErrors2.push(message.text()) })
     const diagnostics2 = (): string => `rendererErrors=[${rendererErrors2.join(' | ')}] · Electron stderr (processo 2)=[${processErrors2.join('').slice(0, 1_000)}]`
     await expect(page2).toHaveTitle('Tupiniquim AI Dev Studio')
-    await installAgentSendProbe(application)
     await application.evaluate(({ dialog }, root) => {
       Object.defineProperty(dialog, 'showOpenDialog', {
         configurable: true,
@@ -2161,7 +2155,10 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await sendButton2.click()
     await expect(page2.locator('.agent-conversation')).toContainText(readyMessage)
     await expect(page2.locator('.agent-conversation')).toContainText('CONTROLLED_STREAM_OK', { timeout: 30_000 })
-    expect(await readAgentSendProbe(application)).toEqual({ count: 1, messages: [readyMessage] })
+    // Envio legítimo no processo 2: exatamente 1 registro agent.send no
+    // AuditLog do dataRoot ISOLADO deste processo (sem misturar com o
+    // processo 1 — auto-validação espelhada à fase I).
+    await expect.poll(() => countAuditCapability(e2eDataRoot2, 'agent.send'), { timeout: 10_000 }).toBe(1)
     const sessionF = await page2.evaluate(async () => await window.studio.agent.session())
     if (!sessionF.ok || sessionF.value === null) throw new Error('Sessão indisponível no processo 2.')
     expect(sessionF.value.providerThreads).toContainEqual(expect.objectContaining({ provider: 'codex-app-server', threadId: 'thread-controlled', model: 'codex-test-model' }))
