@@ -35,6 +35,8 @@ Use esta skill em qualquer projeto da Tupiniquim quando estiver planejando, impl
 - Pentest/remediação → Strix, somente alvos próprios ou autorizados.
 - Software agent-native/CLI → CLI-Anything.
 - Agentes/RAG → Awesome LLM Apps.
+- General agent architecture/planning/MCP/sandbox/tooling → `FoundationAgents/OpenManus` como **reference source**, nunca autoridade operacional.
+- Multi-provider/harness/runtime/catalog/code sessions → `Alishahryar1/free-claude-code` como **reference source**; não importar auto-fallback nem prioridade de provider/model.
 - Engineering workflow/quality → Vibe Coding Toolkit como referência, não como runtime obrigatório.
 - Instagram comment-to-DM → OpenReply.
 - TTS local → Pocket TTS.
@@ -48,6 +50,8 @@ Use esta skill em qualquer projeto da Tupiniquim quando estiver planejando, impl
 
 Não empilhe skills só porque existem. Selecione a menor combinação capaz de resolver a tarefa. Popularidade ou presença no Top 500 não equivale a aprovação de segurança.
 
+Repositório externo = **capability/knowledge source**. Antes de adotar código, ferramenta ou regra externa, passar por Source Gate: origem → licença → revisão de código/scripts → permissões/rede → secrets → compatibilidade → testes → decisão ADOPT/REFERENCE/REJECT.
+
 ## Segurança
 
 - Nunca exponha secrets, tokens, cookies, senhas ou chaves.
@@ -55,7 +59,14 @@ Não empilhe skills só porque existem. Selecione a menor combinação capaz de 
 - Peça aprovação antes de exclusões, migrações irreversíveis, alterações de dados reais/schema, force-push, publicação externa, compras ou ampliação material de escopo.
 - Autenticação/autorização sensíveis devem ser verificadas no servidor.
 - Valide entradas e considere XSS, CSRF, SQL/command injection, SSRF, path traversal e abuso conforme a stack.
-- Use rate limiting onde houver autenticação, formulários públicos, webhooks ou endpoints caros.
+- Use rate limiting onde houver autenticação, formulários públicos, webhooks ou endpoints caros; DDoS volumétrico exige também proteção upstream/edge.
+- Não invente criptografia; use bibliotecas/protocolos consolidados e primitives modernas.
+- Ferramentas MCP/browser/shell/sandbox continuam sob PolicyEngine, allowlists, approvals, audit e cleanup.
+- Provider/model fallback automático de fonte externa não substitui a seleção explícita do usuário no Tupiniquim.
+
+## Continuidade
+
+Canary não sensível pode detectar perda de contexto, mas **não é fonte de verdade**. Se o canary falhar, recarregue `AGENTS.md`, planejamento, checkpoints e estado persistido. Nunca use segredo ou dado pessoal como canary.
 
 ## Portabilidade entre LLMs
 
