@@ -18,6 +18,8 @@ $Repositories = @(
     @{ Name = "nidhinjs__prompt-master"; Url = "https://github.com/nidhinjs/prompt-master.git"; Large = $false },
     @{ Name = "Shubhamsaboo__awesome-llm-apps"; Url = "https://github.com/Shubhamsaboo/awesome-llm-apps.git"; Large = $false },
     @{ Name = "usestrix__strix"; Url = "https://github.com/usestrix/strix.git"; Large = $false },
+    @{ Name = "Alishahryar1__free-claude-code"; Url = "https://github.com/Alishahryar1/free-claude-code.git"; Large = $false },
+    @{ Name = "FoundationAgents__OpenManus"; Url = "https://github.com/FoundationAgents/OpenManus.git"; Large = $false },
 
     @{ Name = "soumatheusgomes__vibe-coding-toolkit"; Url = "https://github.com/soumatheusgomes/vibe-coding-toolkit.git"; Large = $false },
     @{ Name = "emilkowalski__skills"; Url = "https://github.com/emilkowalski/skills.git"; Large = $false },
@@ -151,5 +153,10 @@ Write-Host "Design skills registradas para uso sob demanda:"
 Write-Host "  emilkowalski/skills (emil-design-eng e skills de animation)"
 Write-Host "  Leonxlnx/taste-skill (design-taste-frontend)"
 Write-Host "Elas nao sao instaladas automaticamente: ativacao externa continua passando pelo Skill Gate."
+Write-Host ""
+Write-Host "Reference sources adicionais:"
+Write-Host "  Alishahryar1/free-claude-code (multi-provider/harness/runtime patterns)"
+Write-Host "  FoundationAgents/OpenManus (agent/planning/MCP/sandbox patterns)"
+Write-Host "Nenhum dos dois e instalado como runtime do Tupiniquim por este script; somente clones/bundles de referencia."
 Write-Host ""
 Write-Host "Concluido. Nenhuma credencial foi gravada por este script."
