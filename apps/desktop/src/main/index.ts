@@ -54,7 +54,7 @@ import {
   type Result
 } from '@tupiniquim/contracts'
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
-import { AwaitedShutdownCoordinator, PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, TupiniquimSessionSnapshotCoordinator, VisualIntelligenceService, WorkspaceWriteProposalService, agentRuntimeSealedMessage, isTransientTurnStatus, prepareProviderSendInput, resolveDataRoot, shouldCompleteTurnFromError, switchTupiniquimWorkspaceWithDurableFlush, withRuntimeOperation, type AwaitedShutdownReport, type ToolIntent } from '@tupiniquim/core'
+import { AwaitedShutdownCoordinator, PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, TupiniquimSessionSnapshotCoordinator, VisualIntelligenceService, WorkspaceWriteProposalService, agentRuntimeSealedMessage, isTransientTurnStatus, prepareProviderSendInput, reconnectSelectedProvider, resolveDataRoot, shouldCompleteTurnFromError, switchTupiniquimWorkspaceWithDurableFlush, withRuntimeOperation, type AwaitedShutdownReport, type ToolIntent } from '@tupiniquim/core'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 /**
@@ -634,7 +634,23 @@ const registerIpc = (): void => {
     if (runtimeGate.isSealedForShutdown()) throw new Error(agentRuntimeSealedMessage)
     if (provider === selectedAgentProvider) {
       if (runtimeGate.locked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
-      return tupiniquimSession.scopedStatus(activeAgent().status())
+      /**
+       * Issue #25 (dogfood pós-auth) — re-seleção EXPLÍCITA do MESMO provider:
+       * com o runtime livre e o provider não ativo (ex.: DISCONNECTED após
+       * restart do app), reconecta pelo caminho canônico — `connect()` sob o
+       * MESMO protocolo de gate da troca de provider. READY/BUSY não
+       * reiniciam (nem aqui, nem no adapter); AUTH_REQUIRED permanece
+       * fail-closed (terminal no adapter: sem login, sem retry). A identidade
+       * do provider NÃO muda: sem switch, sem invalidação de propostas, sem
+       * tocar sessão/modelo/workspace/thread — isso segue exclusivo do ramo
+       * de troca abaixo.
+       */
+      const reconnected = await reconnectSelectedProvider({
+        gate: runtimeGate,
+        currentStatus: () => activeAgent().status(),
+        connect: () => agents[provider].connect()
+      })
+      return tupiniquimSession.scopedStatus(reconnected)
     }
     runtimeGate.beginProviderSelect()
     try {

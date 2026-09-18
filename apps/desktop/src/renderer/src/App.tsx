@@ -149,7 +149,23 @@ export const App = (): React.JSX.Element => {
 
   useEffect(() => {
     void window.studio.system.info().then((result) => { if (result.ok) setSystem(result.value) })
-    void window.studio.agent.status().then((result) => { if (result.ok) setAIStatus(result.value) })
+    /**
+     * Issue #25 (dogfood pós-auth) — startup: processo novo com provider já
+     * selecionado e DISCONNECTED reconecta ESSE MESMO provider pela via
+     * explícita `agent.provider.select` (identidade preservada — nenhuma troca
+     * automática de provider/modelo). Uma ÚNICA tentativa no mount: sem loop de
+     * reconexão, sem login automático; `agent.status` permanece READ-ONLY (a
+     * consulta apenas descobre o provider corrente; a conexão é a ação
+     * explícita do canal canônico, sob runtimeGate no main). Credencial
+     * ausente converge fail-closed para AUTH_REQUIRED (terminal no adapter).
+     */
+    void window.studio.agent.status().then(async (result) => {
+      if (!result.ok) return
+      setAIStatus(result.value)
+      if (result.value.state !== 'DISCONNECTED') return
+      const reconnected = await window.studio.agent.selectProvider({ provider: result.value.provider })
+      if (reconnected.ok) setAIStatus(reconnected.value)
+    })
     void window.studio.settings.get().then((result) => { if (result.ok) { profileRef.current = result.value; setProfile(result.value) } })
     const removeAgentListener = window.studio.agent.onEvent((event) => handleAgentEvent(event, setAIStatus, setConversation, setSending, () => providerRef.current))
     const removeProposalListener = window.studio.agent.onWorkspaceWriteProposal((incoming) => {

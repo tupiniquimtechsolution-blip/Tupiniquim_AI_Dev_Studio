@@ -18,7 +18,6 @@ const proposalContent = 'TUPINIQUIM_E2E_PROPOSAL_PRIVATE_CONTENT\n'
  * de forma visível (title/message desalinhados).
  */
 const issue25CodexAuthMessage = 'Codex requer autenticação no runtime isolado do Tupiniquim.'
-const issue25CodexDisconnectedMessage = 'Codex indisponível no momento (estado DISCONNECTED). Envio bloqueado até READY.'
 const issue25OllamaModelMessage = 'Selecione um modelo Ollama local antes de enviar.'
 const issue25OllamaUnavailableMessage = 'Ollama local indisponível no momento (estado NOT_INSTALLED). Envio bloqueado até READY.'
 const issue25UnauthServerMarker = 'UNAUTH_SERVER_REACHED_MARKER'
@@ -150,11 +149,13 @@ interface ProviderReadinessOptions {
 interface ProviderSelectionOptions extends ProviderReadinessOptions {
   /**
    * SOMENTE para a PRIMEIRA seleção de provider logo após abrir o workspace
-   * (nenhum send anterior neste processo): o provider default
-   * (codex-app-server) ainda está DISCONNECTED — o estado terminal observável
-   * só passa a existir DEPOIS da própria troca, que o helper confirma ao
-   * final. Em qualquer cenário pós-send NÃO passe esta flag: a espera
-   * prévia por `.availability == READY` é OBRIGATÓRIA.
+   * (nenhum send anterior neste processo). Desde a correção do dogfood
+   * pós-auth (Issue #25), o provider default reconecta explicitamente no
+   * startup do processo e o teste CERCA o estado terminal dele ANTES de
+   * abrir o workspace — a flag apenas evita a espera redundante por READY
+   * dentro do helper (o caller já cercou o estado inicial). Em qualquer
+   * cenário pós-send NÃO passe esta flag: a espera prévia por
+   * `.availability == READY` é OBRIGATÓRIA.
    */
   initialProviderSelection?: boolean
 }
@@ -499,7 +500,13 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
       cwd: projectRoot,
       timeout: 180_000,
       env: withIsolatedE2eDataRoot(
-        { ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', TUPINIQUIM_OLLAMA_BASE_URL: mockOllama.url },
+        {
+          ...process.env,
+          ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
+          TUPINIQUIM_OLLAMA_BASE_URL: mockOllama.url,
+          TUPINIQUIM_CODEX_PATH: process.execPath,
+          TUPINIQUIM_CODEX_SERVER_ARGS: JSON.stringify([path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs')])
+        },
         e2eDataRoot
       )
     })
@@ -535,6 +542,12 @@ test('inicia o Electron seguro e carrega um workspace real', async () => {
         value: () => approvalState.count
       })
     }, workspaceRoot)
+    // CERCA (Issue #25 — dogfood pós-auth): a reconexão explícita do provider
+    // default no startup do processo corre em paralelo com a abertura do
+    // workspace, e workspace.configure exige runtime livre (gate canônico) —
+    // esperar o estado TERMINAL do provider ANTES de abrir o workspace
+    // (fixture controlada → convergência READY).
+    await expectAvailability(page, 'READY', { diagnostics: () => `rendererErrors=[${rendererErrors.join(' | ')}] · Electron stderr=[${processErrors.join('').slice(0, 1_000)}]` })
     await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
     await expectWorkspaceAuthorized(page, {
       expectedWorkspaceName: path.basename(workspaceRoot),
@@ -825,7 +838,7 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
       args: ['.'],
       cwd: projectRoot,
       timeout: 180_000,
-      env: withIsolatedE2eDataRoot({ ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', TUPINIQUIM_OLLAMA_BASE_URL: mockUrl }, e2eDataRoot)
+      env: withIsolatedE2eDataRoot({ ...process.env, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', TUPINIQUIM_OLLAMA_BASE_URL: mockUrl, TUPINIQUIM_CODEX_PATH: process.execPath, TUPINIQUIM_CODEX_SERVER_ARGS: JSON.stringify([path.join(projectRoot, 'tests', 'fixtures', 'fake-codex-app-server.mjs')]) }, e2eDataRoot)
     })
     const processErrors: string[] = []
     application.process().stderr?.on('data', (chunk: Buffer) => processErrors.push(chunk.toString('utf8')))
@@ -852,6 +865,12 @@ test('proposta substituída fica EXPIRED e aplicação da antiga é recusada', a
         value: () => Promise.resolve({ response: 0, checkboxChecked: false })
       })
     }, { root: workspaceRoot, nextRoot: workspaceRootB })
+    // CERCA (Issue #25 — dogfood pós-auth): a reconexão explícita do provider
+    // default no startup do processo corre em paralelo com a abertura do
+    // workspace, e workspace.configure exige runtime livre (gate canônico) —
+    // esperar o estado TERMINAL do provider ANTES de abrir o workspace
+    // (fixture controlada → convergência READY).
+    await expectAvailability(page, 'READY', { diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]` })
     await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
     await expectWorkspaceAuthorized(page, {
       expectedWorkspaceName: path.basename(workspaceRoot),
@@ -1171,6 +1190,12 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
         value: () => Promise.resolve({ response: 0, checkboxChecked: false })
       })
     }, { root: workspaceRoot, nextRoot: workspaceRootB })
+    // CERCA (Issue #25 — dogfood pós-auth): a reconexão explícita do provider
+    // default no startup do processo corre em paralelo com a abertura do
+    // workspace, e workspace.configure exige runtime livre (gate canônico) —
+    // esperar o estado TERMINAL do provider ANTES de abrir o workspace
+    // (fixture controlada → convergência READY).
+    await expectAvailability(page, 'READY', { diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]` })
     await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
     await expectWorkspaceAuthorized(page, {
       expectedWorkspaceName: path.basename(workspaceRoot),
@@ -1482,6 +1507,12 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
         value: () => Promise.resolve({ response: 0, checkboxChecked: false })
       })
     }, { root: workspaceRoot, nextRoot: workspaceRootB })
+    // CERCA (Issue #25 — dogfood pós-auth): a reconexão explícita do provider
+    // default no startup do processo corre em paralelo com a abertura do
+    // workspace, e workspace.configure exige runtime livre (gate canônico) —
+    // esperar o estado TERMINAL do provider ANTES de abrir o workspace
+    // (fixture controlada → convergência READY).
+    await expectAvailability(page, 'READY', { diagnostics: () => `Electron stderr=[${processErrors.join('').slice(0, 1_000)}]` })
     await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
     await expectWorkspaceAuthorized(page, {
       expectedWorkspaceName: path.basename(workspaceRoot),
@@ -1618,6 +1649,12 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
     expect(systemInfo2.value.dataRoot).toBe(e2eDataRoot)
 
     // Abrir o MESMO workspace A: recovery da MESMA session S.
+    // CERCA (Issue #25 — dogfood pós-auth): a reconexão explícita do provider
+    // default no startup do processo corre em paralelo com a abertura do
+    // workspace, e workspace.configure exige runtime livre (gate canônico) —
+    // esperar o estado TERMINAL do provider ANTES de abrir o workspace
+    // (fixture controlada → convergência READY).
+    await expectAvailability(page2, 'READY', { diagnostics: () => `Electron stderr (processo 2)=[${processErrors2.join('').slice(0, 1_000)}]` })
     await page2.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
     await expectWorkspaceAuthorized(page2, {
       expectedWorkspaceName: path.basename(workspaceRoot),
@@ -1906,6 +1943,14 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
         value: () => Promise.resolve({ response: 0, checkboxChecked: false })
       })
     }, workspaceRoot)
+    // CERCA (Issue #25 — dogfood pós-auth): a reconexão explícita do provider
+    // default no startup corre em paralelo com a abertura do workspace, e
+    // workspace.configure exige runtime livre (gate canônico) — esperar o
+    // estado TERMINAL do provider ANTES de abrir o workspace. Com a fixture
+    // NÃO autenticada a convergência é AUTH_REQUIRED (fail-closed: sem login,
+    // sem retry); o caso obrigatório DISCONNECTED→READY (credencial válida)
+    // é provado no processo 2 abaixo com a fixture autenticada.
+    await expectAvailability(page, 'AUTH_REQUIRED', { diagnostics })
     await page.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
     await expectWorkspaceAuthorized(page, {
       expectedWorkspaceName: path.basename(workspaceRoot),
@@ -1918,17 +1963,23 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     const sendButton = page.getByRole('button', { name: 'Enviar', exact: true })
     const textarea = page.getByLabel('Mensagem ao agente')
 
-    // ── Estado inicial: Codex DISCONNECTED → envio já bloqueado (fail-closed) ──
-    await expect(page.locator('.availability')).toHaveText('DISCONNECTED')
-    const initialMessage = 'Ping inicial com provider desconectado.'
+    // ── STARTUP (dogfood pós-auth, requisito D): processo novo com Codex já
+    // selecionado — a reconexão explícita do MESMO provider (cercada ANTES
+    // da abertura do workspace) NÃO executa login e NÃO troca o provider:
+    // converge fail-closed para o estado terminal AUTH_REQUIRED, com envio
+    // bloqueado, nenhuma chamada agent.send e nenhum turno fantasma. ──
+    await expect(providerSelect).toHaveValue('codex-app-server')
+    await expectAvailability(page, 'AUTH_REQUIRED', { diagnostics })
+    const initialMessage = 'Ping inicial com provider requerendo autenticação.'
     await textarea.fill(initialMessage)
     await expect(sendButton).toBeDisabled()
-    await expect(sendButton).toHaveAttribute('title', issue25CodexDisconnectedMessage)
-    await textarea.press('Control+Enter')
-    await expect(page.locator('.agent-conversation')).toContainText(issue25CodexDisconnectedMessage, { timeout: 10_000 })
+    await expect(sendButton).toHaveAttribute('title', issue25CodexAuthMessage)
     expect(await countAuditCapability(e2eDataRoot1, 'agent.send')).toBe(0)
     await expect(page.locator('.agent-conversation')).not.toContainText(initialMessage)
     await expect(page.locator('.agent-message.user')).toHaveCount(0)
+    // Os mechanics do envio bloqueado (Ctrl+Enter, deduplicação da mensagem
+    // de bloqueio, textarea preservado, sem thread) seguem provados nas
+    // fases (G) e (B)/(C) abaixo.
 
     // ── (G) Ollama NÃO READY (NOT_INSTALLED, sem runtime no loopback): bloqueado ──
     await providerSelect.selectOption('ollama', { timeout: 60_000 })
@@ -2131,6 +2182,12 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
         value: () => Promise.resolve({ response: 0, checkboxChecked: false })
       })
     }, workspaceRoot2)
+    // CERCA (Issue #25 — dogfood pós-auth): a reconexão explícita do provider
+    // default no startup do processo corre em paralelo com a abertura do
+    // workspace, e workspace.configure exige runtime livre (gate canônico) —
+    // esperar o estado TERMINAL do provider ANTES de abrir o workspace
+    // (fixture autenticada → convergência READY).
+    await expectAvailability(page2, 'READY', { diagnostics: diagnostics2 })
     await page2.locator('.welcome-canvas').getByRole('button', { name: 'Abrir workspace' }).click()
     await expectWorkspaceAuthorized(page2, {
       expectedWorkspaceName: path.basename(workspaceRoot2),
@@ -2142,7 +2199,16 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     const sendButton2 = page2.getByRole('button', { name: 'Enviar', exact: true })
     const textarea2 = page2.getByLabel('Mensagem ao agente')
 
-    // Troca EXPLÍCITA Ollama → Codex (fixture autenticado) → READY.
+    // ── STARTUP (dogfood pós-auth, caso obrigatório): processo NOVO com
+    // Codex já selecionado e status inicial DISCONNECTED + credencial
+    // válida (fixture autenticada) — a reconexão explícita do MESMO
+    // provider no startup (cercada ANTES da abertura do workspace)
+    // converge para READY SEM o ritual Ollama → Codex e SEM trocar a
+    // identidade do provider; nenhum agent.send sem ação explícita. ──
+    await expect(providerSelect2).toHaveValue('codex-app-server')
+    await expectAvailability(page2, 'READY', { diagnostics: diagnostics2 })
+    expect(await countAuditCapability(e2eDataRoot2, 'agent.send')).toBe(0)
+    // (F) O fluxo explícito de troca Ollama → Codex continua funcionando:
     await providerSelect2.selectOption('ollama', { timeout: 60_000 })
     await expectAvailability(page2, 'READY', { diagnostics: diagnostics2 })
     await providerSelect2.selectOption('codex-app-server', { timeout: 60_000 })
