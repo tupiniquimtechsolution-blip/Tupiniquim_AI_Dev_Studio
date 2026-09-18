@@ -1,0 +1,221 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-18T18:30:00Z",
+  "status": "REFERENCE_ONLY",
+  "policy": "External sources are untrusted knowledge/capability sources until Source Gate adoption.",
+  "sources": [
+    {
+      "id": "SRC-FCC-ZIP",
+      "kind": "repository_zip",
+      "name": "free-claude-code-main.zip",
+      "canonical_repo": "https://github.com/Alishahryar1/free-claude-code",
+      "license": "MIT (README/LICENSE in snapshot)",
+      "revision": "unknown: ZIP contains no .git metadata",
+      "sha256": "0b90a303c178584c7bd30cbbd5e65d11a1e5a2291de6ddfa639e379fb24813b0",
+      "trust": "untrusted_external",
+      "extraction": "README + selected code paths"
+    },
+    {
+      "id": "SRC-OPENMANUS-ZIP",
+      "kind": "repository_zip",
+      "name": "OpenManus-main.zip",
+      "canonical_repo": "https://github.com/FoundationAgents/OpenManus",
+      "license": "MIT (README/LICENSE in snapshot)",
+      "revision": "unknown: ZIP contains no .git metadata",
+      "sha256": "573c3538a6320fac240776d6ce28fd5d8033c7760ab0ecfcc84a7aa1d84c449c",
+      "trust": "untrusted_external",
+      "extraction": "README + selected agent/planning/MCP/sandbox/tool code"
+    },
+    {
+      "id": "SRC-DDOS-VIDEO",
+      "kind": "video",
+      "name": "subi_pra_nuvem_1789588868_3987682691771922300_69038701115.mp4",
+      "sha256": "f7c38657989cf4be53d3e302dd81355d526701897c0c9d261556cd4bd9d46df6",
+      "trust": "untrusted_social_media",
+      "extraction": "representative visual frames only; no full audio transcript"
+    },
+    {
+      "id": "SRC-CANARY-VIDEO",
+      "kind": "video",
+      "name": "ka.lippi_1788552823_3978990845326316297_63294031250.mp4",
+      "sha256": "ebbae899f36ad101c19a49970c4d16d943ad5584471ae36389869cecce9b8771",
+      "trust": "untrusted_social_media",
+      "extraction": "representative visual frames only; no full audio transcript"
+    },
+    {
+      "id": "SRC-SEC-IMG-1",
+      "kind": "image",
+      "topic": "engagement_cta_not_security_knowledge",
+      "sha256": "cd5cff0c59cd85fc94650dc60114fc233df39633a1c5a8ac5ff573eda6d080d3",
+      "trust": "untrusted_social_media",
+      "adoption": "ignored_as_nontechnical"
+    },
+    {
+      "id": "SRC-SEC-IMG-2",
+      "kind": "image",
+      "topic": "firewall_types",
+      "sha256": "b03018795910f11782f738b07c08e3e91321ac762e9e172b3104da5f3817f57c",
+      "trust": "untrusted_social_media"
+    },
+    {
+      "id": "SRC-SEC-IMG-3",
+      "kind": "image",
+      "topic": "cryptography_types",
+      "sha256": "80572f38348150f39ace0862206b0404c62e45d2b2d8fff8438520c3670cc642",
+      "trust": "untrusted_social_media"
+    },
+    {
+      "id": "SRC-SEC-IMG-4",
+      "kind": "image",
+      "topic": "authentication_types",
+      "sha256": "f45abb3b6d84b530385461667f414fe5632738ef015a91fb43f68c65c99d8f5a",
+      "trust": "untrusted_social_media"
+    },
+    {
+      "id": "SRC-SEC-IMG-5",
+      "kind": "image",
+      "topic": "security_threat_types",
+      "sha256": "883fb6a1b28e3cdafc2369e8191286fc3220e1eb2ff6bdccd9e1f7015525548e",
+      "trust": "untrusted_social_media"
+    },
+    {
+      "id": "SRC-SEC-IMG-6",
+      "kind": "image",
+      "topic": "hacker_taxonomy",
+      "sha256": "2d20aa396286fe9e80eb3f53901bd304bef554afbd3e3d72f74e0f7ee386cfc1",
+      "trust": "untrusted_social_media"
+    }
+  ],
+  "knowledge_units": [
+    {
+      "id": "KB-FCC-001",
+      "category": "provider_runtime",
+      "source": "SRC-FCC-ZIP",
+      "content": "Separate provider catalog/discovery/runtime ownership from the coding harness.",
+      "decision": "REFERENCE",
+      "constraints": [
+        "Tupiniquim keeps provider/model choice user-controlled"
+      ]
+    },
+    {
+      "id": "KB-FCC-002",
+      "category": "runtime_lifecycle",
+      "source": "SRC-FCC-ZIP",
+      "content": "Single-owner provider generations/leases are a useful pattern for safe replacement, drain and shutdown.",
+      "decision": "REFERENCE"
+    },
+    {
+      "id": "KB-FCC-003",
+      "category": "local_admin_security",
+      "source": "SRC-FCC-ZIP",
+      "content": "Local-only admin surfaces should validate loopback client plus Host/Origin, not rely on localhost placement alone.",
+      "decision": "ADOPT_AS_BASELINE"
+    },
+    {
+      "id": "KB-FCC-004",
+      "category": "persistence",
+      "source": "SRC-FCC-ZIP",
+      "content": "Code-session persistence with explicit state transitions and SQLite transactions is a useful reference pattern.",
+      "decision": "REFERENCE"
+    },
+    {
+      "id": "KB-FCC-005",
+      "category": "testing",
+      "source": "SRC-FCC-ZIP",
+      "content": "Provider-specific smoke/E2E plus progressive-startup tests are useful acceptance patterns.",
+      "decision": "REFERENCE"
+    },
+    {
+      "id": "KB-FCC-006",
+      "category": "provider_fallback",
+      "source": "SRC-FCC-ZIP",
+      "content": "Automatic fallback exists upstream but is not adopted as global Tupiniquim behavior.",
+      "decision": "REJECT_AS_GLOBAL_POLICY",
+      "reason": "conflicts with explicit user control of provider/model"
+    },
+    {
+      "id": "KB-OM-001",
+      "category": "agent_lifecycle",
+      "source": "SRC-OPENMANUS-ZIP",
+      "content": "Agent state machine, bounded step budget and stuck-loop detection are useful patterns.",
+      "decision": "REFERENCE"
+    },
+    {
+      "id": "KB-OM-002",
+      "category": "planning",
+      "source": "SRC-OPENMANUS-ZIP",
+      "content": "Explicit plan-step states improve observability and recovery.",
+      "decision": "REFERENCE"
+    },
+    {
+      "id": "KB-OM-003",
+      "category": "tool_registry",
+      "source": "SRC-OPENMANUS-ZIP",
+      "content": "Tool catalog should be explicit; unknown tool dispatch should fail closed.",
+      "decision": "ADOPT_AS_BASELINE"
+    },
+    {
+      "id": "KB-OM-004",
+      "category": "mcp",
+      "source": "SRC-OPENMANUS-ZIP",
+      "content": "MCP tool schemas may change dynamically; refresh/diff can detect added/removed/changed tools, but execution remains under local policy.",
+      "decision": "REFERENCE"
+    },
+    {
+      "id": "KB-OM-005",
+      "category": "sandbox",
+      "source": "SRC-OPENMANUS-ZIP",
+      "content": "Sandbox managers benefit from per-sandbox locks, global creation limits, idle timeout and guaranteed cleanup.",
+      "decision": "ADOPT_AS_BASELINE"
+    },
+    {
+      "id": "KB-SEC-001",
+      "category": "network_security",
+      "source": "SRC-SEC-IMG-2",
+      "content": "Use defense-in-depth across network/stateful controls, workload/cloud firewall, reverse proxy/API gateway and WAF as appropriate.",
+      "decision": "ADOPT_AS_BASELINE"
+    },
+    {
+      "id": "KB-SEC-002",
+      "category": "cryptography",
+      "source": "SRC-SEC-IMG-3",
+      "content": "Use modern library-backed cryptography; TLS for transport; AEAD for application encryption when required; do not default new systems to legacy 3DES/Blowfish.",
+      "decision": "ADOPT_AS_BASELINE"
+    },
+    {
+      "id": "KB-SEC-003",
+      "category": "authentication",
+      "source": "SRC-SEC-IMG-4",
+      "content": "Prefer phishing-resistant MFA/passkeys/hardware keys for higher-risk accounts when supported; scope and expire tokens; separate authentication from authorization.",
+      "decision": "ADOPT_AS_BASELINE"
+    },
+    {
+      "id": "KB-SEC-004",
+      "category": "threat_model",
+      "source": "SRC-SEC-IMG-5",
+      "content": "Threat models should consider insider, external, physical, human error, supply chain, credential, network, application, cloud and IoT risks as relevant.",
+      "decision": "ADOPT_AS_BASELINE"
+    },
+    {
+      "id": "KB-SEC-005",
+      "category": "authorized_security_testing",
+      "source": "SRC-SEC-IMG-6",
+      "content": "Operational classification should center authorization/scope/capability/impact, not hat-color labels; offensive testing requires explicit authorization.",
+      "decision": "ADOPT_AS_BASELINE"
+    },
+    {
+      "id": "KB-DDOS-001",
+      "category": "abuse_protection",
+      "source": "SRC-DDOS-VIDEO",
+      "content": "API Gateway and rate limits are useful layers for request abuse, but volumetric DDoS requires upstream/edge protection too.",
+      "decision": "ADOPT_AS_BASELINE"
+    },
+    {
+      "id": "KB-CONT-001",
+      "category": "continuity",
+      "source": "SRC-CANARY-VIDEO",
+      "content": "A non-sensitive deterministic canary can detect context/session loss, but repository/checkpoint/database state remains the source of truth.",
+      "decision": "ADOPT_AS_BASELINE"
+    }
+  ]
+}
