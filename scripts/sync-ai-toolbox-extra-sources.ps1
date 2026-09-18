@@ -7,10 +7,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
-$KnowledgeSource = Join-Path $RepoRoot "docs\AI_TOOLBOX\KNOWLEDGE_PACK_2026-09-18.json"
+$KnowledgeRoot = Join-Path $RepoRoot "docs\AI_TOOLBOX"
+$KnowledgeSources = @(Get-ChildItem -LiteralPath $KnowledgeRoot -Filter "KNOWLEDGE_PACK*_2026-09-18.json" -File)
 
-if (-not (Test-Path -LiteralPath $KnowledgeSource -PathType Leaf)) {
-    throw "Knowledge Pack canonico nao encontrado: $KnowledgeSource"
+if ($KnowledgeSources.Count -eq 0) {
+    throw "Nenhum Knowledge Pack datado de 2026-09-18 encontrado em: $KnowledgeRoot"
 }
 
 $Repositories = @(
@@ -65,15 +66,20 @@ if (-not $SkipRepositorySync) {
     }
 }
 
-$KnowledgeDestination = Join-Path $KnowledgeDir "KNOWLEDGE_PACK_2026-09-18.json"
-Copy-Item -LiteralPath $KnowledgeSource -Destination $KnowledgeDestination -Force
-
-$Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $KnowledgeDestination).Hash.ToLowerInvariant()
 Write-Host ""
-Write-Host "Knowledge Pack sincronizado: $KnowledgeDestination"
-Write-Host "SHA256: $Hash"
+Write-Host "Knowledge Packs:"
+foreach ($KnowledgeSource in $KnowledgeSources) {
+    $KnowledgeDestination = Join-Path $KnowledgeDir $KnowledgeSource.Name
+    Copy-Item -LiteralPath $KnowledgeSource.FullName -Destination $KnowledgeDestination -Force
+    $Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $KnowledgeDestination).Hash.ToLowerInvariant()
+    Write-Host "  OK: $KnowledgeDestination"
+    Write-Host "      SHA256: $Hash"
+}
+
+Write-Host ""
 Write-Host "Repositorios extras: $ReposDir"
 Write-Host "Bundles: $BundlesDir"
 Write-Host ""
+Write-Host "Fontes de pesquisa/media sem upstream seguro ou com material de credencial NAO sao clonadas por este script."
 Write-Host "As fontes permanecem referencias nao confiaveis ate o gate de adocao do projeto."
 Write-Host "Nenhuma credencial, cookie, token, sessao ou .env foi copiado por este script."
