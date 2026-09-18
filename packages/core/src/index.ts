@@ -1,3 +1,4 @@
+export * from './agent-provider-reconnect'
 export * from './agent-send-router'
 export * from './app-data-root'
 export * from './app-shutdown'

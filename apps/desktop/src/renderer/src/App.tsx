@@ -30,6 +30,91 @@ const providerLabel = (provider: AIProviderKind | null): string => provider === 
 
 // ProposalStatus imported from @tupiniquim/contracts — includes EXPIRED
 
+// ── Issue #25 (Wave 17) — fronteira de envio FAIL-CLOSED (escopo por modo) ──
+// Readiness de provider (state === 'READY') é requisito somente das OPERAÇÕES
+// QUE REALMENTE ENVIAM AO PROVIDER:
+//   - Modos que enviam ao agente (CHAT/EXECUTE/REVIEW/DEBUG e demais que
+//     chamam window.studio.agent.send): botão Enviar, Ctrl+Enter e a guarda do
+//     sendToAgent() exigem provider READY (Codex: state READY; Ollama: READY +
+//     modelo explicitamente selecionado);
+//   - PLAN: planning.create() roda INDEPENDENTE do provider; apenas a etapa
+//     que chama window.studio.agent.send() (geração de proposta) exige
+//     readiness — guarda posicionada imediatamente antes da chamada;
+//   - Modos independentes de provider (VISUAL/PROMPT/RESEARCH) usam as
+//     próprias fronteiras Tupiniquim (visual.statuses / prompt.* / research.*)
+//     e NUNCA chamam agent.send: readiness de provider não os bloqueia.
+//
+// Provider em estado != READY (AUTH_REQUIRED, DISCONNECTED, STARTING, ERROR,
+// STOPPED, NOT_INSTALLED) NUNCA inicia turno: as guardas executam ANTES de
+// adicionar a mensagem do usuário, ANTES de limpar o textarea, ANTES de
+// sending=true e ANTES de window.studio.agent.send() — logo, antes de criar
+// thread, alterar activeThreadId ou alterar a sessão.
+//
+// A troca de provider continua explícita pelo usuário — nenhum fallback
+// automático.
+const CODEX_AUTH_REQUIRED_MESSAGE = 'Codex requer autenticação no runtime isolado do Tupiniquim.'
+const OLLAMA_MODEL_REQUIRED_MESSAGE = 'Selecione um modelo Ollama local antes de enviar.'
+
+const sendBlockedReason = (status: AIStatus | null): string => {
+  if (status === null) return 'Provider ainda não reportou estado. Envio bloqueado até READY.'
+  if (status.state === 'AUTH_REQUIRED') {
+    return status.provider === 'codex-app-server' ? CODEX_AUTH_REQUIRED_MESSAGE : 'Ollama local requer autenticação; envio bloqueado.'
+  }
+  const label = status.provider === 'codex-app-server' ? 'Codex' : 'Ollama local'
+  return `${label} indisponível no momento (estado ${status.state}). Envio bloqueado até READY.`
+}
+
+/**
+ * Readiness ESTRITA para operações que realmente enviam ao provider — a
+ * última barreira, posicionada imediatamente antes de cada chamada a
+ * window.studio.agent.send(). Retorna a razão de bloqueio ou null quando o
+ * turno pode iniciar (state READY; Ollama: + modelo explicitamente selecionado).
+ */
+const providerTurnBlockReason = (status: AIStatus | null, selectedModel: string): string | null => {
+  if (status === null || status.state !== 'READY') return sendBlockedReason(status)
+  if (status.provider === 'ollama' && selectedModel === '') return OLLAMA_MODEL_REQUIRED_MESSAGE
+  return null
+}
+
+// Modos INDEPENDENTES de provider (funcionalidades Tupiniquim com fronteiras
+// próprias — nunca chamam window.studio.agent.send). PLAN entra aqui no nível
+// do composer: o plano é criado/persistido independentemente; a etapa
+// provider-backed de proposta é guardada internamente antes do agent.send.
+const PROVIDER_INDEPENDENT_MODES: ReadonlySet<Mode> = new Set<Mode>(['VISUAL', 'PROMPT', 'RESEARCH', 'PLAN'])
+
+const isProviderBackedMode = (mode: Mode): boolean => !PROVIDER_INDEPENDENT_MODES.has(mode)
+
+interface SendDecision {
+  allowed: boolean
+  /** Razão de indisponibilidade (provider/modelo) para exibição; null em bloqueios neutros (entrada vazia, sem workspace, turno em voo). */
+  blockReason: string | null
+}
+
+/**
+ * Capability do composer (botão Enviar + Ctrl+Enter + guarda de topo do
+ * sendToAgent) CONSCIENTE DO MODO ATUAL:
+ * - modo provider-backed → provider READY é obrigatório (fail-closed);
+ * - modo independente → somente workspace, mensagem e turno livre.
+ */
+const evaluateSend = (input: {
+  status: AIStatus | null
+  hasWorkspace: boolean
+  message: string
+  isSending: boolean
+  selectedModel: string
+  mode: Mode
+}): SendDecision => {
+  const message = input.message.trim()
+  if (message === '') return { allowed: false, blockReason: null }
+  if (!input.hasWorkspace) return { allowed: false, blockReason: null }
+  if (input.isSending) return { allowed: false, blockReason: null }
+  if (isProviderBackedMode(input.mode)) {
+    const providerReason = providerTurnBlockReason(input.status, input.selectedModel)
+    if (providerReason !== null) return { allowed: false, blockReason: providerReason }
+  }
+  return { allowed: true, blockReason: null }
+}
+
 export const App = (): React.JSX.Element => {
   const [system, setSystem] = useState<SystemInfo | null>(null)
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
@@ -64,7 +149,23 @@ export const App = (): React.JSX.Element => {
 
   useEffect(() => {
     void window.studio.system.info().then((result) => { if (result.ok) setSystem(result.value) })
-    void window.studio.agent.status().then((result) => { if (result.ok) setAIStatus(result.value) })
+    /**
+     * Issue #25 (dogfood pós-auth) — startup: processo novo com provider já
+     * selecionado e DISCONNECTED reconecta ESSE MESMO provider pela via
+     * explícita `agent.provider.select` (identidade preservada — nenhuma troca
+     * automática de provider/modelo). Uma ÚNICA tentativa no mount: sem loop de
+     * reconexão, sem login automático; `agent.status` permanece READ-ONLY (a
+     * consulta apenas descobre o provider corrente; a conexão é a ação
+     * explícita do canal canônico, sob runtimeGate no main). Credencial
+     * ausente converge fail-closed para AUTH_REQUIRED (terminal no adapter).
+     */
+    void window.studio.agent.status().then(async (result) => {
+      if (!result.ok) return
+      setAIStatus(result.value)
+      if (result.value.state !== 'DISCONNECTED') return
+      const reconnected = await window.studio.agent.selectProvider({ provider: result.value.provider })
+      if (reconnected.ok) setAIStatus(reconnected.value)
+    })
     void window.studio.settings.get().then((result) => { if (result.ok) { profileRef.current = result.value; setProfile(result.value) } })
     const removeAgentListener = window.studio.agent.onEvent((event) => handleAgentEvent(event, setAIStatus, setConversation, setSending, () => providerRef.current))
     const removeProposalListener = window.studio.agent.onWorkspaceWriteProposal((incoming) => {
@@ -132,9 +233,31 @@ export const App = (): React.JSX.Element => {
     else setNotice(result.error.message)
   }
 
+  /** Adiciona mensagem de erro na conversa (deduplicando o último texto idêntico). */
+  const pushErrorConversation = (text: string): void => {
+    setConversation((current) => {
+      const last = current.at(-1)
+      if (last !== undefined && last.role === 'error' && last.text === text) return current
+      return [...current, { id: crypto.randomUUID(), role: 'error', text, turnId: null, complete: true, provider: aiStatus?.provider ?? null }]
+    })
+  }
+
   const sendToAgent = async (): Promise<void> => {
     const message = agentInput.trim()
-    if (message === '' || workspaceRoot === null || sending) return
+    // Issue #25 — guarda fail-closed do composer (regra central evaluateSend,
+    // consciente do modo): para modos provider-backed executa ANTES de
+    // adicionar a mensagem do usuário, limpar o textarea, setar sending=true
+    // ou chamar window.studio.agent.send() (e, consequentemente, criar thread,
+    // alterar activeThreadId ou alterar a sessão). O textarea é preservado
+    // para o usuário poder reenviar quando o provider ficar READY. Modos
+    // independentes (VISUAL/PROMPT/RESEARCH/PLAN) não são bloqueados por
+    // readiness de provider — suas etapas provider-backed têm guarda própria
+    // imediatamente antes do agent.send.
+    const decision = evaluateSend({ status: aiStatus, hasWorkspace: workspaceRoot !== null, message, isSending: sending, selectedModel: selectedLocalModel, mode })
+    if (!decision.allowed) {
+      if (decision.blockReason !== null) pushErrorConversation(decision.blockReason)
+      return
+    }
     setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'user', text: message, turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
     setAgentInput('')
     setSending(true)
@@ -191,6 +314,15 @@ export const App = (): React.JSX.Element => {
           setSending(false)
           return
         }
+        // Issue #25 — guarda provider-turn imediatamente ANTES do único
+        // agent.send deste caminho (PLANO já foi persistido; apenas a geração
+        // da proposta depende de Ollama READY + modelo explícito).
+        const planTurnBlock = providerTurnBlockReason(aiStatus, selectedLocalModel)
+        if (planTurnBlock !== null) {
+          pushErrorConversation(planTurnBlock)
+          setSending(false)
+          return
+        }
         const turn = await window.studio.agent.send({
           message,
           mode,
@@ -202,6 +334,15 @@ export const App = (): React.JSX.Element => {
         }
       } else setConversation((current) => [...current, { id: crypto.randomUUID(), role: 'error', text: planResult.error.message, turnId: null, complete: true, provider: aiStatus?.provider ?? null }])
       if (!planResult.ok) setSending(false)
+      return
+    }
+    // Issue #25 — guarda provider-turn imediatamente ANTES do agent.send dos
+    // modos que enviam ao agente (CHAT/EXECUTE/REVIEW/DEBUG): last line of
+    // defense contra estado que mude entre a guarda de topo e o dispatch.
+    const turnBlock = providerTurnBlockReason(aiStatus, selectedLocalModel)
+    if (turnBlock !== null) {
+      pushErrorConversation(turnBlock)
+      setSending(false)
       return
     }
     const threadId = aiStatus?.activeThreadId
@@ -338,6 +479,19 @@ export const App = (): React.JSX.Element => {
   }
 
   const workspaceName = useMemo(() => workspaceRoot?.split(/[\\/]/).filter(Boolean).at(-1) ?? 'Nenhum projeto', [workspaceRoot])
+  // Issue #25 — a MESMA regra central (consciente do modo) decide o estado do
+  // botão Enviar e a indicação de indisponibilidade (fail-closed; nenhuma
+  // condição duplicada). Modos independentes não são bloqueados por readiness.
+  const sendDecision = evaluateSend({ status: aiStatus, hasWorkspace: workspaceRoot !== null, message: agentInput, isSending: sending, selectedModel: selectedLocalModel, mode })
+  const availabilityCaption = aiStatus === null
+    ? 'Aguardando estado do provider…'
+    : aiStatus.provider === 'ollama'
+      ? (selectedLocalModel === '' ? 'Selecione um modelo local' : 'Ollama somente loopback')
+      : aiStatus.state === 'AUTH_REQUIRED'
+        ? 'Codex requer autenticação no runtime isolado'
+        : aiStatus.state !== 'READY'
+          ? `Codex indisponível (estado ${aiStatus.state})`
+          : aiStatus.account === 'API_KEY' ? 'API key local' : aiStatus.account === 'CHATGPT' ? 'Conta Codex' : 'Ctrl + Enter para enviar'
   const missingEffectManifest = planned?.plan.steps.some((step) => step.requiresApproval && step.effects.length === 0) ?? false
   const proposalMatchesManifest = proposal !== null && planned !== null
     && proposal.executionId === planned.execution.id
@@ -415,7 +569,7 @@ export const App = (): React.JSX.Element => {
               </div>
             ) : conversation.length === 0 && <div className="plan-card"><div><CheckCircle2 size={15} /><strong>Fluxo protegido</strong></div><ol><li><span>1</span>Entender objetivo</li><li><span>2</span>Produzir plano verificável</li><li><span>3</span>Solicitar aprovação material</li><li><span>4</span>Executar e validar</li></ol></div>}
           </section>
-          <div className="composer"><textarea aria-label="Mensagem ao agente" placeholder={workspaceRoot === null ? 'Abra um workspace primeiro…' : 'Descreva o que deseja construir…'} value={agentInput} onChange={(event) => setAgentInput(event.target.value)} onKeyDown={(event) => { if (event.ctrlKey && event.key === 'Enter') { event.preventDefault(); void sendToAgent() } }} /><div><span>{aiStatus?.provider === 'ollama' ? selectedLocalModel === '' ? 'Selecione um modelo local' : 'Ollama somente loopback' : aiStatus?.account === 'API_KEY' ? 'API key local' : aiStatus?.account === 'CHATGPT' ? 'Conta Codex' : 'Ctrl + Enter para enviar'}</span>{aiStatus?.state === 'BUSY' ? <button onClick={() => void interruptAgent()}>Interromper</button> : <button disabled={workspaceRoot === null || agentInput.trim() === '' || sending || (aiStatus?.provider === 'ollama' && (aiStatus.state !== 'READY' || selectedLocalModel === ''))} onClick={() => void sendToAgent()}><Sparkles size={15} />{sending ? 'Conectando…' : 'Enviar'}</button>}</div></div>
+          <div className="composer"><textarea aria-label="Mensagem ao agente" placeholder={workspaceRoot === null ? 'Abra um workspace primeiro…' : 'Descreva o que deseja construir…'} value={agentInput} onChange={(event) => setAgentInput(event.target.value)} onKeyDown={(event) => { if (event.ctrlKey && event.key === 'Enter') { event.preventDefault(); void sendToAgent() } }} /><div><span>{availabilityCaption}</span>{aiStatus?.state === 'BUSY' ? <button onClick={() => void interruptAgent()}>Interromper</button> : <button disabled={!sendDecision.allowed} title={sendDecision.blockReason ?? undefined} onClick={() => void sendToAgent()}><Sparkles size={15} />{sending ? 'Conectando…' : 'Enviar'}</button>}</div></div>
         </aside>
 
         <section className="bottom-deck">
