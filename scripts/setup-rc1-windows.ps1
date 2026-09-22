@@ -59,7 +59,7 @@ function Invoke-OllamaPullWithRetry([string]$ModelName, [int]$MaxAttempts = 5) {
     try {
       $CurrentTags = Get-OllamaTags
       if (@($CurrentTags.models.name) -contains $ModelName) {
-        Write-Host "Modelo confirmado apos tentativa $Attempt: $ModelName"
+        Write-Host "Modelo confirmado apos tentativa ${Attempt}: $ModelName"
         return
       }
     } catch {
