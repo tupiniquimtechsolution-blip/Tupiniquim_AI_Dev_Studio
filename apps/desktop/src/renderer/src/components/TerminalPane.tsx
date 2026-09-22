@@ -25,7 +25,9 @@ export const TerminalPane = ({ workspaceReady }: { workspaceReady: boolean }): R
     terminal.writeln('\x1b[38;2;39;196;131mTupiniquim Terminal\x1b[0m — sessão ainda não iniciada.')
     terminal.onData((data) => {
       const terminalId = idRef.current
-      if (terminalId !== null) void window.studio.terminal.write({ terminalId, data })
+      if (terminalId !== null) void window.studio.terminal.write({ terminalId, data }).then((result) => {
+        if (!result.ok) terminal.writeln(`\r\n${result.error.message}`)
+      })
     })
     const unsubscribe = window.studio.terminal.onData((event) => {
       if (event.terminalId !== idRef.current) return
@@ -40,7 +42,11 @@ export const TerminalPane = ({ workspaceReady }: { workspaceReady: boolean }): R
     if (hostRef.current !== null) observer.observe(hostRef.current)
     terminalRef.current = terminal
     fitRef.current = fit
-    return () => { observer.disconnect(); unsubscribe(); terminal.dispose() }
+    return () => {
+      if (idRef.current !== null) void window.studio.terminal.kill({ terminalId: idRef.current })
+      idRef.current = null
+      observer.disconnect(); unsubscribe(); terminal.dispose()
+    }
   }, [])
 
   const start = async (): Promise<void> => {

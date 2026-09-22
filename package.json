@@ -1,8 +1,8 @@
 {
   "name": "tupiniquim-ai-dev-studio",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "private": true,
-  "description": "Plataforma privada local-first de engenharia de software agêntica.",
+  "description": "Plataforma privada local-first de engenharia de software ag\u00eantica.",
   "type": "module",
   "main": "out/main/index.js",
   "packageManager": "pnpm@11.16.0",
@@ -29,7 +29,7 @@
     "productName": "Tupiniquim AI Dev Studio",
     "asar": true,
     "directories": {
-      "output": "dist"
+      "output": "release"
     },
     "files": [
       "out/**/*",

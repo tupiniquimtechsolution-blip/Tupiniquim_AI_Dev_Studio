@@ -72,3 +72,7 @@ Achados devem ser classificados como `PRODUCTION BUG`, `E2E/HARNESS BUG`, `UX BU
 ## Próximo passo
 
 Executar a Wave 17 conforme Issue #24 na máquina Windows F:, começando por sincronizar a branch `wave-17/master-wave-1-dogfood-qa`, registrar HEAD/working tree e reexecutar `validate` + `test:e2e` antes do dogfood manual integrado.
+
+## RC1 consolidation — 2026-09-22 (estado mais recente)
+
+Branch fixa Arena `arena/01a0c8ba-tupiniquim-ai-dev-studio`; be33b64 + main eb93c35 integrados por merge sem conflito. Sem alteração em main. RC1 **NÃO APROVADA V1**: build JS disponível, lacunas reais de produto em `docs/RC1/KNOWN_ISSUES.md`, gates Windows/credenciais pendentes. Scripts setup/build/run/verify entregues, sem nova Wave. Ver `docs/RC1/AGENOR_UPDATE.md` e relatório final.

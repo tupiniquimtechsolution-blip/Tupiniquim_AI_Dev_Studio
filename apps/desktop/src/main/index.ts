@@ -1,3 +1,4 @@
+import { ProviderPreferenceStore } from '../../../../packages/adapters/src/provider-preferences'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
@@ -93,6 +94,8 @@ const terminal = new TerminalAdapter(
   () => workspace.getRoot(),
   (event) => mainWindow?.webContents.send(ipcChannels.terminalData, event)
 )
+const providerPreferences = new ProviderPreferenceStore(dataRoot)
+let persistedModelChoice: string | null = null
 let selectedAgentProvider: AIProviderKind = 'codex-app-server'
 const tupiniquimSession = new TupiniquimSessionService()
 /**
@@ -448,9 +451,28 @@ const register = <I, O>(
         await audit.write({ requestId, at: new Date().toISOString(), capability, outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'POLICY_DENIED' })
         return err('POLICY_DENIED', decision.reason)
       }
+      let approvedWorkspace: string | null = null
       if (decision.requiresApproval) {
-        await audit.write({ requestId, at: new Date().toISOString(), capability, outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'APPROVAL_REQUIRED' })
-        return err('APPROVAL_REQUIRED', decision.reason, true)
+        // A one-shot native decision, never a renderer-supplied approval flag.
+        // Agent effects still exclusively use the existing proposal/hash pipeline.
+        const interactive = new Set(['workspace.write', 'prompt.save', 'research.search', 'research.collect', 'visual.asset.add'])
+        let approved = false
+        if (interactive.has(capability) && mainWindow !== null && !runtimeGate.isSealedForShutdown()) {
+          approvedWorkspace = workspace.getRoot()
+          const intent = policyIntent(capability, input)
+          const confirmation = await dialog.showMessageBox(mainWindow, {
+            type: 'warning', title: 'Autorizar uma operação',
+            message: `Autorizar ${capability} uma única vez?`,
+            detail: `Workspace: ${redactContextMetadata(approvedWorkspace)}\nAlvo: ${redactContextMetadata(intent.target)}\nPayload SHA-256: ${contentHash(JSON.stringify(input))}\nRede: ${intent.requiresNetwork ? 'sim' : 'não'}. A autorização não vale para operações futuras.`,
+            buttons: ['Cancelar', 'Autorizar uma vez'], defaultId: 0, cancelId: 0, noLink: true
+          })
+          approved = confirmation.response === 1
+          await audit.write({ requestId, at: new Date().toISOString(), capability: `${capability}.approval`, outcome: approved ? 'SUCCESS' : 'DENIED', durationMs: Date.now() - started })
+        }
+        if (!approved) {
+          await audit.write({ requestId, at: new Date().toISOString(), capability, outcome: 'DENIED', durationMs: Date.now() - started, errorCode: 'APPROVAL_REQUIRED' })
+          return err('APPROVAL_REQUIRED', decision.reason, true)
+        }
       }
       // BARREIRA GLOBAL DE IPC (TERCEIRA correção da auditoria): TODO handler
       // registrado por este wrapper executa sob lease do runtime gate. Com o
@@ -458,7 +480,10 @@ const register = <I, O>(
       // qualquer lógica de negócio (handler body = 0 chamadas; nada toca
       // database/planning/workspace/preferences/visual). Em voo, o contador
       // global segura a quiescência do shutdown até a liberação.
-      const value = outputSchema.parse(await withRuntimeOperation(runtimeGate, () => handler(input)))
+      const value = outputSchema.parse(await withRuntimeOperation(runtimeGate, () => {
+        if (approvedWorkspace !== null && (runtimeGate.locked() || workspace.getRoot() !== approvedWorkspace)) throw new Error('Workspace mudou durante aprovação; tente novamente.')
+        return handler(input)
+      }))
       await audit.write({ requestId, at: new Date().toISOString(), capability, outcome: 'SUCCESS', durationMs: Date.now() - started })
       return ok(value)
     } catch (cause) {
@@ -655,6 +680,7 @@ const registerIpc = (): void => {
     runtimeGate.beginProviderSelect()
     try {
       const status = await agents[provider].connect()
+      await providerPreferences.save({ provider, model: persistedModelChoice })
       const previous = selectedAgentProvider
       selectedAgentProvider = provider
       for (const id of tupiniquimSession.switchProvider(previous, provider)) writeProposals.invalidate(id)
@@ -667,10 +693,15 @@ const registerIpc = (): void => {
     if (selectedAgentProvider !== 'ollama') throw new Error('Selecione Ollama local antes de listar modelos.')
     return ollamaAgent.listModels()
   })
-  register(ipcChannels.agentLocalModelSelect, agentLocalModelSelectInputSchema, 'agent.local-model.select', ({ model }) => {
+  register(ipcChannels.agentLocalModelSelect, agentLocalModelSelectInputSchema, 'agent.local-model.select', async ({ model }) => {
     if (selectedAgentProvider !== 'ollama') throw new Error('Selecione Ollama local antes de escolher um modelo.')
-    ollamaAgent.selectModel(model)
-    return tupiniquimSession.scopedStatus(ollamaAgent.status())
+    runtimeGate.beginProviderSelect()
+    try {
+      ollamaAgent.selectModel(model)
+      await providerPreferences.save({ provider: selectedAgentProvider, model })
+      persistedModelChoice = model
+      return tupiniquimSession.scopedStatus(ollamaAgent.status())
+    } finally { runtimeGate.endProviderSelect() }
   })
   register(ipcChannels.agentHistory, agentThreadIdInputSchema, 'agent.history', async ({ threadId }) => {
     const thread = await database.getAIThread(threadId)
@@ -896,6 +927,10 @@ else {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:*"] } })
     })
+    const choice = await providerPreferences.load()
+    selectedAgentProvider = choice.provider
+    persistedModelChoice = choice.model
+    ollamaAgent.restoreModelChoice(choice.model)
     registerIpc()
     await createWindow()
   }).catch((cause: unknown) => {

@@ -6,9 +6,7 @@ if (-not $ProjectRoot.Equals($ExpectedRoot, [System.StringComparison]::OrdinalIg
 
 $required = @(
   'F:\CODEX\programas\nodejs\node.exe',
-  'F:\CODEX\programas\nodejs\corepack.cmd',
-  'F:\CODEX\programas\pnpm\pnpm.cmd',
-  'F:\CODEX\programas\dotnet\dotnet.exe'
+  'F:\CODEX\programas\pnpm\pnpm.cmd'
 )
 foreach ($path in $required) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Componente obrigatório local não encontrado: $path" }

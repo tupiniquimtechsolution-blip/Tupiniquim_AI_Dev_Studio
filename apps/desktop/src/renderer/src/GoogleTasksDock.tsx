@@ -14,6 +14,7 @@ const projectSuggestions = [
 ] as const
 
 const initialStatus: GoogleTasksConnectionStatus = {
+  state: 'NOT_CONFIGURED',
   configured: false,
   authenticated: false,
   secureStorageAvailable: false,
@@ -189,7 +190,7 @@ export const GoogleTasksDock = (): JSX.Element => {
           <header className="google-tasks-header">
             <div>
               <strong>Google Tasks</strong>
-              <small>{status.authenticated ? 'Conectado' : status.configured ? 'Pronto para conectar' : 'Configuração pendente'}</small>
+              <small>{status.state}</small>
             </div>
             <button type="button" className="google-tasks-icon-button" onClick={() => setOpen(false)} aria-label="Fechar Google Tasks">×</button>
           </header>

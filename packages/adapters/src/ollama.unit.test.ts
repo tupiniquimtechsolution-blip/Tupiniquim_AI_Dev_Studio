@@ -588,3 +588,21 @@ describe('OllamaAdapter', () => {
     await adapter.close()
   })
 })
+
+describe('RC1 model discovery refresh', () => {
+  it('discovers every newly installed model without restarting and clears stale results on failure', async () => {
+    let names = ['first:latest']
+    let fail = false
+    const adapter = new OllamaAdapter({ onEvent: () => undefined, fetchImpl: () => {
+      if (fail) return Promise.reject(new Error('offline'))
+      return Promise.resolve(new Response(JSON.stringify({ models: names.map((name) => ({ name })) })))
+    } })
+    await adapter.connect()
+    adapter.selectModel('first:latest')
+    names = ['first:latest', 'second:latest', 'custom:local']
+    expect((await adapter.listModels()).map((model) => model.name)).toEqual(names)
+    fail = true
+    expect(await adapter.listModels()).toEqual([])
+    expect(adapter.status().state).toBe('NOT_INSTALLED')
+  })
+})

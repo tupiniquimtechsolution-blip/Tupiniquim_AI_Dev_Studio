@@ -1,3 +1,4 @@
+import { GitReviewPane } from './components/GitReviewPane'
 import Editor from '@monaco-editor/react'
 import { Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, Eye, FileSearch, GitBranch, History, LayoutDashboard, Palette, PanelBottom, Save, Search, Settings2, ShieldCheck, Sparkles, TerminalSquare } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -162,9 +163,16 @@ export const App = (): React.JSX.Element => {
     void window.studio.agent.status().then(async (result) => {
       if (!result.ok) return
       setAIStatus(result.value)
-      if (result.value.state !== 'DISCONNECTED') return
-      const reconnected = await window.studio.agent.selectProvider({ provider: result.value.provider })
-      if (reconnected.ok) setAIStatus(reconnected.value)
+      if (result.value.state === 'DISCONNECTED') {
+        const reconnected = await window.studio.agent.selectProvider({ provider: result.value.provider })
+        if (reconnected.ok) setAIStatus(reconnected.value)
+      }
+      if (result.value.provider === 'ollama') {
+        const models = await window.studio.agent.listLocalModels()
+        if (models.ok) setLocalModels(models.value)
+        const status = await window.studio.agent.status()
+        if (status.ok) { setAIStatus(status.value); setSelectedLocalModel(status.value.selectedModel ?? '') }
+      }
     })
     void window.studio.settings.get().then((result) => { if (result.ok) { profileRef.current = result.value; setProfile(result.value) } })
     const removeAgentListener = window.studio.agent.onEvent((event) => handleAgentEvent(event, setAIStatus, setConversation, setSending, () => providerRef.current))
@@ -372,7 +380,7 @@ export const App = (): React.JSX.Element => {
     }
     const session = await window.studio.agent.session()
     if (session.ok) setSessionId(session.value?.session.id ?? null)
-    setSelectedLocalModel('')
+    setSelectedLocalModel(result.value.selectedModel ?? '')
     if (provider !== 'ollama') { setLocalModels([]); return }
     const models = await window.studio.agent.listLocalModels()
     if (models.ok) setLocalModels(models.value)
@@ -510,8 +518,8 @@ export const App = (): React.JSX.Element => {
 
       <div className="workbench">
         <nav className="activity-rail" aria-label="Navegação principal">
-          <button className="active" title="Explorer"><Code2 /></button><button title="Pesquisa"><Search /></button><button title="Agentes"><Bot /></button>
-          <button title="Research"><FileSearch /></button><button title="Prompt Architect"><Sparkles /></button><button title="Visual Lab"><Palette /></button>
+          <button className="active" title="Explorer" onClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, explorerWidth: 230 } }))}><Code2 /></button><button title="Pesquisa" onClick={() => setMode('RESEARCH')}><Search /></button><button title="Agentes" onClick={() => setMode('CHAT')}><Bot /></button>
+          <button title="Research" onClick={() => setMode('RESEARCH')}><FileSearch /></button><button title="Prompt Architect" onClick={() => setMode('PROMPT')}><Sparkles /></button><button title="Visual Lab" onClick={() => setMode('VISUAL')}><Palette /></button>
           <div className="spacer" /><button title="Layout" onClick={() => updateProfile((current) => ({ ...current, layout: { explorerWidth: 230, agentWidth: 340, deckHeight: 220 } }))}><LayoutDashboard /></button><button title="Configurações" onClick={() => setShowSettings((current) => !current)}><Settings2 /></button>
         </nav>
 
@@ -544,7 +552,7 @@ export const App = (): React.JSX.Element => {
           <div className="context-strip" aria-label="Sessão Tupiniquim" data-session-id={sessionId ?? ''}><span>SESSÃO TUPINIQUIM</span><strong title={sessionId ?? ''}>{sessionId ?? 'NENHUMA'}</strong></div>
           <div className="provider-controls">
             <label>PROVIDER<select aria-label="Provedor de IA" value={aiStatus?.provider ?? 'codex-app-server'} disabled={sending || aiStatus?.state === 'BUSY'} onChange={(event) => void selectAgentProvider(event.target.value as AIProviderKind)}><option value="codex-app-server">Codex App Server</option><option value="ollama">Ollama local</option></select></label>
-            {aiStatus?.provider === 'ollama' && <label>MODELO<select aria-label="Modelo Ollama local" value={selectedLocalModel} disabled={localModels.length === 0 || aiStatus.state !== 'READY'} onChange={(event) => void selectOllamaModel(event.target.value)}><option value="">Selecionar modelo</option>{localModels.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select></label>}
+            {aiStatus?.provider === 'ollama' && <label>MODELO<select aria-label="Modelo Ollama local" value={selectedLocalModel} disabled={localModels.length === 0 || aiStatus.state !== 'READY'} onChange={(event) => void selectOllamaModel(event.target.value)}><option value="">Selecionar modelo</option>{localModels.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select><button disabled={sending || aiStatus.state === 'BUSY'} onClick={() => void window.studio.agent.listLocalModels().then(async (result) => { if (result.ok) { setLocalModels(result.value); if (!result.value.some((model) => model.name === selectedLocalModel)) setSelectedLocalModel('') } else setNotice(result.error.message); const status = await window.studio.agent.status(); if (status.ok) setAIStatus(status.value) })}>Atualizar modelos</button></label>}
           </div>
           <section className="agent-conversation">
             <div className="agent-message"><span className="message-label">SISTEMA</span><p>{aiStatus?.provider === 'ollama' ? 'Ollama usa somente o loopback local; modelos são escolhidos explicitamente e não há downloads automáticos.' : 'Codex usa stdio JSONL, dados em F:\\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.'}</p></div>
@@ -573,8 +581,8 @@ export const App = (): React.JSX.Element => {
         </aside>
 
         <section className="bottom-deck">
-          <nav><button className={deck === 'terminal' ? 'active' : ''} onClick={() => setDeck('terminal')}><TerminalSquare size={14} />Terminal</button><button className={deck === 'tests' ? 'active' : ''} onClick={() => setDeck('tests')}><CheckCircle2 size={14} />Testes</button><button className={deck === 'review' ? 'active' : ''} onClick={() => setDeck('review')}><Eye size={14} />Review</button><button className={deck === 'timeline' ? 'active' : ''} onClick={() => setDeck('timeline')}><History size={14} />Caixa-preta</button><div className="spacer" /><span className="notice">{notice}</span></nav>
-          <div className="deck-content">{deck === 'terminal' && <TerminalPane workspaceReady={workspaceRoot !== null} />}{deck === 'tests' && <DeckEmpty icon={<CheckCircle2 />} title="Nenhuma suíte executada" detail="Testes reais aparecerão aqui com comando, duração e evidência." />}{deck === 'review' && <DeckEmpty icon={<Eye />} title="Diff aguardando mudanças" detail="O review compara o baseline Git sem ocultar arquivos." />}{deck === 'timeline' && <Timeline key={aiStatus?.activeThreadId ?? 'empty'} workspaceReady={workspaceRoot !== null} threadId={aiStatus?.activeThreadId ?? null} />}</div>
+          <nav><button className={deck === 'terminal' ? 'active' : ''} onClick={() => setDeck('terminal')}><TerminalSquare size={14} />Terminal</button><button className={deck === 'tests' ? 'active' : ''} disabled title="Executor de suítes ainda não integrado na RC1"><CheckCircle2 size={14} />Testes</button><button className={deck === 'review' ? 'active' : ''} onClick={() => setDeck('review')}><Eye size={14} />Review</button><button className={deck === 'timeline' ? 'active' : ''} onClick={() => setDeck('timeline')}><History size={14} />Caixa-preta</button><div className="spacer" /><span className="notice">{notice}</span></nav>
+          <div className="deck-content">{deck === 'terminal' && <TerminalPane workspaceReady={workspaceRoot !== null} />}{deck === 'tests' && <DeckEmpty icon={<CheckCircle2 />} title="Nenhuma suíte executada" detail="Testes reais aparecerão aqui com comando, duração e evidência." />}{deck === 'review' && <GitReviewPane workspaceReady={workspaceRoot !== null} />}{deck === 'timeline' && <Timeline key={aiStatus?.activeThreadId ?? 'empty'} workspaceReady={workspaceRoot !== null} threadId={aiStatus?.activeThreadId ?? null} />}</div>
         </section>
         <div className="resize-handle explorer-resize" role="separator" aria-label="Redimensionar explorer" onPointerDown={(event) => beginResize('explorerWidth', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, explorerWidth: current.layout.explorerWidth === 0 ? 230 : 0 } }))} />
         <div className="resize-handle agent-resize" role="separator" aria-label="Redimensionar agente" onPointerDown={(event) => beginResize('agentWidth', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, agentWidth: current.layout.agentWidth === 0 ? 340 : 0 } }))} />

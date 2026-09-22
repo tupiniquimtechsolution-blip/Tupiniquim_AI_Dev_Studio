@@ -18,7 +18,8 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: path.join(root, 'apps/desktop/src/main/bootstrap.ts'),
-        external: ['electron', 'node-pty']
+        external: ['electron', 'node-pty'],
+        output: { format: 'es', entryFileNames: 'index.js' }
       }
     }
   },

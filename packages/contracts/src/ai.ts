@@ -15,6 +15,7 @@ export type AIAccountKind = z.infer<typeof aiAccountKindSchema>
 
 export const aiStatusSchema = z.object({
   provider: aiProviderKindSchema,
+  selectedModel: z.string().nullable().optional(),
   state: aiProviderStateSchema,
   account: aiAccountKindSchema,
   version: z.string().nullable(),

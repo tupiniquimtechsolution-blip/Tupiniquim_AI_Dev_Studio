@@ -481,6 +481,7 @@ const expectAvailability = async (page: Page, state: string, options: ProviderRe
 }
 
 test('inicia o Electron seguro e carrega um workspace real', async () => {
+  test.skip(process.platform !== 'win32', 'REQUIRES_WINDOWS_GATE: Electron em Windows F:.')
   const projectRoot = process.cwd()
   const mockOllama = await startMockOllama()
   let application: Awaited<ReturnType<typeof electron.launch>> | null = null

@@ -163,10 +163,15 @@ export class OllamaAdapter implements AIProvider {
     this.selectedModel = options.selectedModel ?? null
   }
 
-  public status(): AIStatus { return this.currentStatus }
+  public status(): AIStatus { return { ...this.currentStatus, selectedModel: this.selectedModel } }
 
-  public async connect(): Promise<AIStatus> {
-    if (this.currentStatus.state === 'READY' || this.currentStatus.state === 'BUSY') return this.currentStatus
+  public restoreModelChoice(model: string | null): void {
+    if (this.currentStatus.state !== 'DISCONNECTED') throw new Error('Restore permitido somente antes de conectar.')
+    this.selectedModel = model
+  }
+
+  public async connect(refresh = false): Promise<AIStatus> {
+    if ((!refresh && this.currentStatus.state === 'READY') || this.currentStatus.state === 'BUSY') return this.status()
     this.updateStatus({ state: 'STARTING', detail: 'Verificando runtime Ollama local.' })
     try {
       const response = await this.fetchImpl(new URL('/api/tags', this.baseUrl), { signal: AbortSignal.timeout(3_000) })
@@ -188,17 +193,18 @@ export class OllamaAdapter implements AIProvider {
           : null
       this.updateStatus({ state: 'READY', account: 'NONE', version: 'local', activeTurnId: null, detail })
     } catch (cause) {
+      this.models = []
       const message = cause instanceof Error ? cause.message : 'Falha desconhecida.'
       const detail = message.includes('HTTP ')
         ? 'O runtime Ollama local respondeu com erro.'
         : 'Ollama não está instalado ou não está em execução no loopback.'
       this.updateStatus({ state: message.includes('HTTP ') ? 'ERROR' : 'NOT_INSTALLED', account: 'NONE', version: null, activeTurnId: null, detail })
     }
-    return this.currentStatus
+    return this.status()
   }
 
   public async listModels(): Promise<LocalModel[]> {
-    await this.connect()
+    await this.connect(true)
     return this.models
   }
 

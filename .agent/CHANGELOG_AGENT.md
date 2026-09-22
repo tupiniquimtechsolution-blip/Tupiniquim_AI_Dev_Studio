@@ -351,3 +351,7 @@ Continuidade corretiva sobre o PR #12 (Ref #11). Nenhuma mudança arquitetural; 
 - Criada chave de API pelo fluxo seguro; arquivo local permanece ignorado.
 - Criada documentação durável, critérios de aceite, pesquisas e nove ADRs.
 - Validada a regra de disco dedicado e criado o checkpoint `wave-00`.
+
+## 2026-09-22 — RC1 consolidation
+
+Merge Wave17 + Google Tasks; entrypoint de packaging corrigido, Monaco offline, provider/model preferences duráveis, descoberta dinâmica Ollama, rail/diff ligados, aprovação manual nativa limitada e auditada, terminal não oculta erro nem deixa PTY ao desmontar. Bootstrap Windows e manifesto local, build/run/verify, regressões e auditoria honesta RF em docs/RC1. Não é aceite integral V1. Sem rebase/force push/main merge.
