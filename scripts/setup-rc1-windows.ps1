@@ -19,8 +19,10 @@ if (-not (Test-Path "$NodeRoot\node.exe")) {
   New-Item -ItemType Directory -Force $NodeRoot | Out-Null
   Copy-Item "$env:TEMP\node-$Version-win-x64\*" $NodeRoot -Recurse -Force
 }
-$Major = & "$NodeRoot\node.exe" -p 'process.versions.node.split(".")[0]'
-if ([int]$Major -lt 24) { throw 'Node >=24 necessario em F:\CODEX\programas\nodejs. Runtime existente preservado.' }
+$NodeVersion = (& "$NodeRoot\node.exe" --version).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $NodeVersion) { throw 'Falha ao consultar a versao do Node portatil.' }
+$Major = [int](($NodeVersion.TrimStart('v') -split '\.')[0])
+if ($Major -lt 24) { throw 'Node >=24 necessario em F:\CODEX\programas\nodejs. Runtime existente preservado.' }
 if (-not (Test-Path "$env:PNPM_HOME\pnpm.cmd")) {
   Confirm-Download 'pnpm 11.16.0 do registro npm oficial'
   Invoke-Checked "$NodeRoot\npm.cmd" @('install','--global','--prefix',$env:PNPM_HOME,'pnpm@11.16.0')
