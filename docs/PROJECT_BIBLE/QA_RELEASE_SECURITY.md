@@ -89,3 +89,13 @@ Uma RC pode existir com known issues documentados, mas não é V1 aprovada enqua
 ## 9. Evidence pack
 
 Cada gate final deve produzir, quando aplicável: HEAD, branch, timestamp, ambiente, versões runtime, resultados de suíte, screenshots/logs sanitizados, modelos/providers usados, IDs de session/thread sem conteúdo privado, artefato de package e hash quando possível.
+
+## 10. Reteste dirigido dos blockers RC1 — Windows 20260922-173713
+
+Evidence pack informado pelo operador: `F:\CODEX\Tupiniquim-AI-Dev-Studio.data\rc1-evidence\20260922-173713`, HEAD `48637999ac05f3f2d10c61b9bba46aefad8d5421`. Segundo o relato Windows: validate:f-drive/lint/typecheck/unit/integration/security/build PASS; E2E/package/ollama-live FAIL. O pack F: não é diretamente acessível no Arena Linux.
+
+Correções: barreira terminal antes da inspeção de sessão; helpers de troca confirmam identidade + READY (e modelo Ollama), inclusive via IPC; smoke required determinístico e logs sanitizados; preflight MSVC/Spectre fail-closed antes de package:win. Sem alteração do comportamento de produção para satisfazer E2E, sem aumento de timeout, sem remoção de node-pty/rebuild/gates. Detalhes de remediação manual e limites em `docs/RC1/KNOWN_ISSUES.md`.
+
+Spectre/VC\v180 continua pré-requisito externo: **REQUIRES_WINDOWS_ENV_FIX**. A inspeção de arquivos do preflight é apenas pré-condição, nunca substitui `@electron/rebuild` e packaging completos. Não foi provado o component ID oficial exato da instância observada; não inventar nem instalar automaticamente.
+
+Arena nesta correção: lint/typecheck/build PASS; unit 218 PASS; integration 102 PASS / 4 SKIPPED; security 38 PASS. Os cinco E2E permanecem não executáveis neste Linux e seus skips não são aceitos como validação. A chamada package:win retorna exit 1 com **REQUIRES_WINDOWS_GATE**, como esperado para este ambiente. Os testes PowerShell de smoke devem ser executados no Windows PowerShell real; nenhuma afirmação de Windows GREEN.

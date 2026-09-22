@@ -247,6 +247,11 @@ const selectOllamaAndWaitReady = async (page: Page, model: string, options: Prov
     await modelSelect.selectOption(model, { timeout })
     await expect(modelSelect).toHaveValue(model, { timeout })
     await expectAgentReady(page, options)
+    await expect(providerSelect).toBeEnabled({ timeout })
+    // O valor nativo do select muda antes de selectAgentProvider terminar.
+    // Consultar também a identidade autoritativa evita aceitar READY antigo.
+    await expect.poll(async () => await page.evaluate(async () => await window.studio.agent.status()), { timeout })
+      .toMatchObject({ ok: true, value: { provider: 'ollama', state: 'READY', selectedModel: model } })
   } catch (cause) {
     throw new Error(
       `Seleção Ollama (modelo ${model}) não convergiu para estado terminal READY. ${await providerReadinessDetail(page, options)}`,
@@ -266,6 +271,9 @@ const selectCodexAndWaitReady = async (page: Page, options: ProviderSelectionOpt
     await providerSelect.selectOption('codex-app-server', { timeout })
     await expect(providerSelect).toHaveValue('codex-app-server', { timeout })
     await expectAgentReady(page, options)
+    await expect(providerSelect).toBeEnabled({ timeout })
+    await expect.poll(async () => await page.evaluate(async () => await window.studio.agent.status()), { timeout })
+      .toMatchObject({ ok: true, value: { provider: 'codex-app-server', state: 'READY' } })
   } catch (cause) {
     throw new Error(
       `Seleção Codex App Server não convergiu para estado terminal READY. ${await providerReadinessDetail(page, options)}`,
@@ -1270,6 +1278,15 @@ test('sessão Tupiniquim sobrevive à troca de provider fake e isola workspace',
     await page.getByRole('button', { name: 'Enviar', exact: true }).click()
     await expect(page.locator('.agent-conversation')).toContainText('CONTEXTO_TUPINIQUIM_OK', { timeout: 30_000 })
 
+    // MESSAGE_DELTA torna o texto visível ANTES de TURN_COMPLETED: a leitura
+    // de bindings/model/provenance exige a barreira terminal, não só texto.
+    await expectAgentReady(page, { diagnostics: () => processErrors.join('').slice(0, 1_000) })
+    await expect(page.getByLabel('Provedor de IA')).toHaveValue('codex-app-server')
+    await expect(page.getByLabel('Provedor de IA')).toBeEnabled()
+    expect(await page.evaluate(async () => await window.studio.agent.status())).toMatchObject({
+      ok: true, value: { provider: 'codex-app-server', state: 'READY' }
+    })
+
     const afterSwitch = await page.evaluate(async () => await window.studio.agent.session())
     if (!afterSwitch.ok || afterSwitch.value === null) throw new Error('Sessão Tupiniquim indisponível depois da troca.')
     expect(afterSwitch.value.session.id).toBe(sessionIdA)
@@ -2210,10 +2227,15 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await expectAvailability(page2, 'READY', { diagnostics: diagnostics2 })
     expect(await countAuditCapability(e2eDataRoot2, 'agent.send')).toBe(0)
     // (F) O fluxo explícito de troca Ollama → Codex continua funcionando:
-    await providerSelect2.selectOption('ollama', { timeout: 60_000 })
-    await expectAvailability(page2, 'READY', { diagnostics: diagnostics2 })
-    await providerSelect2.selectOption('codex-app-server', { timeout: 60_000 })
-    await expectAvailability(page2, 'READY', { diagnostics: diagnostics2 })
+    // READY isolado pode pertencer ao provider anterior enquanto o handler
+    // async ainda troca provider. Cercar identidade, modelo e readiness juntos.
+    await selectOllamaAndWaitReady(page2, ollamaModel, { diagnostics: diagnostics2 })
+    await selectCodexAndWaitReady(page2, { diagnostics: diagnostics2 })
+    await expect(providerSelect2).toHaveValue('codex-app-server')
+    await expect(providerSelect2).toBeEnabled()
+    expect(await page2.evaluate(async () => await window.studio.agent.status())).toMatchObject({
+      ok: true, value: { provider: 'codex-app-server', state: 'READY' }
+    })
 
     // ── (F) Codex READY: envio continua funcionando (botão + turno real) ──────
     const readyMessage = 'Pedido com Codex READY.'
@@ -2226,6 +2248,9 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     // AuditLog do dataRoot ISOLADO deste processo (sem misturar com o
     // processo 1 — auto-validação espelhada à fase I).
     await expect.poll(() => countAuditCapability(e2eDataRoot2, 'agent.send'), { timeout: 10_000 }).toBe(1)
+    // A resposta textual/auditoria de send também não prova conclusão do turno.
+    await expectAgentReady(page2, { diagnostics: diagnostics2 })
+    await expect(providerSelect2).toBeEnabled()
     const sessionF = await page2.evaluate(async () => await window.studio.agent.session())
     if (!sessionF.ok || sessionF.value === null) throw new Error('Sessão indisponível no processo 2.')
     expect(sessionF.value.providerThreads).toContainEqual(expect.objectContaining({ provider: 'codex-app-server', threadId: 'thread-controlled', model: 'codex-test-model' }))

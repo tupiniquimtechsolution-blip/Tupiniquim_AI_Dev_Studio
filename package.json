@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "package:win": "pnpm build && electron-builder --win portable dir",
+    "package:win": "node scripts/check-windows-toolchain.ts && pnpm build && electron-builder --win portable dir",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -20,6 +20,7 @@
     "test:integration": "vitest run --project integration",
     "test:security": "vitest run --project security",
     "test:e2e": "playwright test",
+    "test:rc1-windows-scripts": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tests/scripts/ollama-live-smoke.test.ps1",
     "test:dogfood": "vitest run --project dogfood",
     "validate:f-drive": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/validate-f-drive.ps1",
     "validate": "pnpm validate:f-drive && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm test:security && pnpm build"
