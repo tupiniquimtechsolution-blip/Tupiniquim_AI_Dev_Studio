@@ -15,10 +15,10 @@ function Invoke-GateToLog([string]$Gate, [string]$LogPath) {
     $Process = Start-Process -FilePath $Pnpm -ArgumentList @($Gate) -NoNewWindow -Wait -PassThru `
       -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr
 
-    @(
-      if (Test-Path $Stdout) { Get-Content $Stdout }
-      if (Test-Path $Stderr) { Get-Content $Stderr }
-    ) | Set-Content $LogPath
+    $Combined = @()
+    if (Test-Path $Stdout) { $Combined += Get-Content $Stdout }
+    if (Test-Path $Stderr) { $Combined += Get-Content $Stderr }
+    $Combined | Set-Content $LogPath
 
     return $Process.ExitCode
   } finally {
