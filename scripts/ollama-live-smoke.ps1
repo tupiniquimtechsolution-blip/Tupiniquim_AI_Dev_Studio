@@ -1,4 +1,16 @@
 # Pure orchestration helper: bounded HTTP only; no pulls, model selection mutation or credentials.
+function Test-OllamaTimeoutException($Exception) {
+  $Current = $Exception
+  while ($null -ne $Current) {
+    if ($Current -is [TimeoutException]) { return $true }
+    if ($Current -is [System.Net.WebException] -and $Current.Status -eq [System.Net.WebExceptionStatus]::Timeout) { return $true }
+    if ($Current -is [System.Threading.Tasks.TaskCanceledException]) { return $true }
+    if ($Current.Message -match '(?i)timeout|timed out|tempo limite|cancel') { return $true }
+    $Current = $Current.InnerException
+  }
+  return $false
+}
+
 function Invoke-OllamaLiveSmoke([string]$ManifestPath, [string]$EvidencePath) {
   $Clock = [Diagnostics.Stopwatch]::StartNew()
   $Model = $null
@@ -32,9 +44,9 @@ function Invoke-OllamaLiveSmoke([string]$ManifestPath, [string]$EvidencePath) {
     $Code = 0
   } catch {
     if ($null -eq $Cause) {
-      # Do not log ErrorDetails, raw response bodies or Exception.Message: they can contain secrets.
+      # Inspect exception metadata only; do not log ErrorDetails, raw response bodies or Exception.Message because they can contain secrets.
       if ($Stage -eq 'MANIFEST') { $Cause = 'INVALID_MANIFEST: expected exactly one valid required model.' }
-      elseif ($_.Exception -is [TimeoutException] -or $_.Exception.Message -match '(?i)timeout|timed out|tempo limite|cancel') {
+      elseif (Test-OllamaTimeoutException $_.Exception) {
         $Cause = "${Stage}_TIMEOUT_OR_CANCELLED: bounded request failed (tags=5s, generate=${TimeoutSeconds}s)."
       } elseif ($null -ne $_.Exception.Response) {
         $Cause = "${Stage}_HTTP_ERROR: status=$([int]$_.Exception.Response.StatusCode)."
