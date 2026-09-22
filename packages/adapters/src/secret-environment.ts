@@ -1,7 +1,11 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const allowedSecretNames = new Set(['OPENAI_API_KEY'])
+const allowedSecretNames = new Set([
+  'OPENAI_API_KEY',
+  'GOOGLE_TASKS_CLIENT_ID',
+  'GOOGLE_TASKS_CLIENT_SECRET'
+])
 
 const inheritedEnvironmentNames = [
   'ALLUSERSPROFILE',

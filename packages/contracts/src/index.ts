@@ -1,5 +1,6 @@
 export * from './ai'
 export * from './domain'
+export * from './google-tasks'
 export * from './ipc'
 export * from './prompt'
 export * from './preview'
