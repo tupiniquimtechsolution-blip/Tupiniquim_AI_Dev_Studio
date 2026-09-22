@@ -99,6 +99,17 @@ Isso não cria um `AGENTS.md` global, para evitar aplicar regras corporativas po
 | Voz/TTS local | Pocket TTS |
 | Mídia generativa | Open Generative AI |
 | Pesquisa de inferência Kimi | kimi-k3-in-c |
+| Produtos Google, Gemini, Google Cloud e Google Ads | google/skills (first-party, sob demanda) |
+
+## Fontes first-party
+
+Para produtos específicos, fontes oficiais podem ter prioridade de consulta sobre equivalentes comunitários sem alterar a neutralidade Multi-LLM.
+
+A primeira fonte registrada é `google/skills`:
+- `finding-google-skills` funciona como roteador sob demanda;
+- skills específicas são carregadas apenas quando pertinentes;
+- a origem oficial não concede autorização automática para shell, rede, OAuth, credenciais ou infraestrutura;
+- a escolha de modelo/provider permanece separada da escolha da skill.
 
 ## Regras contra divergência
 
