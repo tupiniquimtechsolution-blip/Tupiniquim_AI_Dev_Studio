@@ -8,11 +8,13 @@ Este diretório é o pacote documental canônico de leitura executiva e operacio
 
 1. `BIBLIA_DO_PROJETO.md` — visão integral, escopo, arquitetura, estado, fases e Definition of Done.
 2. `BACKLOG_E_STATUS.md` — concluído, em andamento, bloqueado e pendente, incluindo a RC1 e o mapeamento Agenor.
-3. `QA_RELEASE_SECURITY.md` — estratégia de testes, gates, release, segurança e evidência.
-4. `MODELOS_PROVIDERS_AGENTES.md` — separação Agent/Model/Provider/Tool/Skill, providers atuais e roadmap multi-modelo/multiagente.
-5. `MERCADO_PRECIFICACAO_E_VALOR.md` — benchmarks de mercado, custo de reposição e hipóteses de monetização.
-6. `AGENOR_SYNC.md` — protocolo de sincronização GitHub → Agenor → Notion/Miro.
-7. `PROMPT_MANTENEDOR_BIBLIA.md` — prompt profissional para futuros agentes manterem a documentação viva.
+3. `MATRIZ_RASTREABILIDADE_V1.md` — RF/RNF → estado → evidência → task Agenor.
+4. `QA_RELEASE_SECURITY.md` — estratégia de testes, gates, release, segurança e evidência.
+5. `OPERACAO_DEPLOYMENT_SUPORTE.md` — setup, run, verify, packaging, recovery, suporte e troubleshooting.
+6. `MODELOS_PROVIDERS_AGENTES.md` — separação Agent/Model/Provider/Tool/Skill, providers atuais e roadmap multi-modelo/multiagente.
+7. `MERCADO_PRECIFICACAO_E_VALOR.md` — benchmarks de mercado, custo de reposição e hipóteses de monetização.
+8. `AGENOR_SYNC.md` — protocolo de sincronização GitHub → Agenor → Notion/Miro.
+9. `PROMPT_MANTENEDOR_BIBLIA.md` — prompt profissional para futuros agentes manterem a documentação viva.
 
 ## Fontes de verdade
 
