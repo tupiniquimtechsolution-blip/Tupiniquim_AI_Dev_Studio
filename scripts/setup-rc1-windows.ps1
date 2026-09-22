@@ -50,6 +50,31 @@ if ($null -eq $Ollama) {
   $Ollama = Get-Command ollama.exe
 }
 function Get-OllamaTags { Invoke-RestMethod 'http://127.0.0.1:11434/api/tags' -TimeoutSec 3 }
+function Invoke-OllamaPullWithRetry([string]$ModelName, [int]$MaxAttempts = 5) {
+  for ($Attempt = 1; $Attempt -le $MaxAttempts; $Attempt++) {
+    & $Ollama.Source pull $ModelName
+    $ExitCode = $LASTEXITCODE
+    if ($ExitCode -eq 0) { return }
+
+    try {
+      $CurrentTags = Get-OllamaTags
+      if (@($CurrentTags.models.name) -contains $ModelName) {
+        Write-Host "Modelo confirmado apos tentativa $Attempt: $ModelName"
+        return
+      }
+    } catch {
+      # The service may be momentarily busy after a failed transfer; retry below.
+    }
+
+    if ($Attempt -ge $MaxAttempts) {
+      throw "$($Ollama.Source) pull $ModelName falhou apos $MaxAttempts tentativas; ultimo codigo $ExitCode. Nenhum modelo existente foi removido."
+    }
+
+    $DelaySeconds = [math]::Min(60, $Attempt * 10)
+    Write-Warning "Pull de $ModelName falhou na tentativa $Attempt/$MaxAttempts (codigo $ExitCode). Nova tentativa em $DelaySeconds s. O script reutiliza o mesmo store do Ollama e nao apaga blobs/modelos existentes."
+    Start-Sleep -Seconds $DelaySeconds
+  }
+}
 try { $Tags = Get-OllamaTags } catch {
   # Do not change model storage for an already-running service. Reuse existing store when present.
   if (-not $env:OLLAMA_MODELS) {
@@ -76,7 +101,7 @@ foreach ($Model in $Manifest.models) {
   Write-Host "$($Model.name): download estimado $($Model.estimatedDownloadGB) GB; livre F: $FreeGB GB (estimativas, nao garantias)."
   if ($FreeGB -lt ($Model.estimatedDownloadGB * 2)) { throw 'Espaco insuficiente: necessario pelo menos 2x o download estimado.' }
   Confirm-Download "Modelo $($Model.name)"
-  Invoke-Checked $Ollama.Source @('pull',$Model.name)
+  Invoke-OllamaPullWithRetry $Model.name
   $Tags = Get-OllamaTags
 }
 Invoke-Checked $Pnpm @('build')
