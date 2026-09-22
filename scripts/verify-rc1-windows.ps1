@@ -3,9 +3,32 @@ $Pnpm = "$env:PNPM_HOME\pnpm.cmd"
 $Evidence = Join-Path $DataRoot ('rc1-evidence\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Force $Evidence | Out-Null
 $Results = @()
+
+function Invoke-GateToLog([string]$Gate, [string]$LogPath) {
+  $Stdout = "$LogPath.stdout.tmp"
+  $Stderr = "$LogPath.stderr.tmp"
+  try {
+    # Windows PowerShell 5.1 converts native stderr into ErrorRecord objects.
+    # With ErrorActionPreference=Stop (set by rc1-environment.ps1), direct *> redirection
+    # can terminate verification even when the gate runner itself is behaving normally.
+    # Start-Process keeps native stdout/stderr native and lets us decide solely by exit code.
+    $Process = Start-Process -FilePath $Pnpm -ArgumentList @($Gate) -NoNewWindow -Wait -PassThru `
+      -RedirectStandardOutput $Stdout -RedirectStandardError $Stderr
+
+    @(
+      if (Test-Path $Stdout) { Get-Content $Stdout }
+      if (Test-Path $Stderr) { Get-Content $Stderr }
+    ) | Set-Content $LogPath
+
+    return $Process.ExitCode
+  } finally {
+    Remove-Item $Stdout,$Stderr -Force -ErrorAction SilentlyContinue
+  }
+}
+
 foreach ($Gate in @('validate:f-drive','lint','typecheck','test:unit','test:integration','test:security','build','test:e2e','package:win')) {
-  & $Pnpm $Gate *> (Join-Path $Evidence ($Gate.Replace(':','-') + '.log'))
-  $Code = $LASTEXITCODE
+  $LogPath = Join-Path $Evidence ($Gate.Replace(':','-') + '.log')
+  $Code = Invoke-GateToLog $Gate $LogPath
   $Results += [pscustomobject]@{ gate=$Gate; exitCode=$Code; status=$(if ($Code -eq 0) {'PASS'} else {'FAIL'}) }
   Write-Host "$Gate : $Code"
 }
