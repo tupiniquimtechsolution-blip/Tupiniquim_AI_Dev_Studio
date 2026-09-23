@@ -1,12 +1,28 @@
 # Pure orchestration helper: bounded HTTP only; no pulls, model selection mutation or credentials.
-function Test-OllamaTimeoutException($Exception) {
-  $Current = $Exception
-  while ($null -ne $Current) {
-    if ($Current -is [TimeoutException]) { return $true }
-    if ($Current -is [System.Net.WebException] -and $Current.Status -eq [System.Net.WebExceptionStatus]::Timeout) { return $true }
-    if ($Current -is [System.Threading.Tasks.TaskCanceledException]) { return $true }
-    if ($Current.Message -match '(?i)timeout|timed out|tempo limite|cancel') { return $true }
-    $Current = $Current.InnerException
+function Test-OllamaTimeoutError($ErrorRecord) {
+  $Candidates = @()
+  if ($null -eq $ErrorRecord) { return $false }
+
+  # PowerShell 5.1 wraps objects passed to `throw` in an ErrorRecord/RuntimeException.
+  # Preserve the thrown object itself because typed exceptions can live in TargetObject
+  # instead of Exception.InnerException.
+  if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) {
+    if ($null -ne $ErrorRecord.TargetObject) { $Candidates += $ErrorRecord.TargetObject }
+    if ($null -ne $ErrorRecord.Exception) { $Candidates += $ErrorRecord.Exception }
+  } else {
+    $Candidates += $ErrorRecord
+  }
+
+  foreach ($Candidate in @($Candidates)) {
+    if ($Candidate -isnot [Exception]) { continue }
+    $Current = $Candidate
+    while ($null -ne $Current) {
+      if ($Current -is [TimeoutException]) { return $true }
+      if ($Current -is [System.Net.WebException] -and $Current.Status -eq [System.Net.WebExceptionStatus]::Timeout) { return $true }
+      if ($Current -is [System.Threading.Tasks.TaskCanceledException]) { return $true }
+      if ($Current.Message -match '(?i)timeout|timed out|tempo limite|cancel') { return $true }
+      $Current = $Current.InnerException
+    }
   }
   return $false
 }
@@ -46,7 +62,7 @@ function Invoke-OllamaLiveSmoke([string]$ManifestPath, [string]$EvidencePath) {
     if ($null -eq $Cause) {
       # Inspect exception metadata only; do not log ErrorDetails, raw response bodies or Exception.Message because they can contain secrets.
       if ($Stage -eq 'MANIFEST') { $Cause = 'INVALID_MANIFEST: expected exactly one valid required model.' }
-      elseif (Test-OllamaTimeoutException $_.Exception) {
+      elseif (Test-OllamaTimeoutError $_) {
         $Cause = "${Stage}_TIMEOUT_OR_CANCELLED: bounded request failed (tags=5s, generate=${TimeoutSeconds}s)."
       } elseif ($null -ne $_.Exception.Response) {
         $Cause = "${Stage}_HTTP_ERROR: status=$([int]$_.Exception.Response.StatusCode)."
