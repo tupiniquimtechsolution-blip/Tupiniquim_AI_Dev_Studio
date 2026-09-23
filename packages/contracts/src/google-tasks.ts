@@ -77,7 +77,11 @@ export interface GoogleTasksOAuthTokenSet {
   scope: string[]
 }
 
+export const googleTasksConnectionState = (configured: boolean, authenticated: boolean): 'NOT_CONFIGURED' | 'AUTH_REQUIRED' | 'READY' =>
+  !configured ? 'NOT_CONFIGURED' : authenticated ? 'READY' : 'AUTH_REQUIRED'
+
 export interface GoogleTasksConnectionStatus {
+  state: ReturnType<typeof googleTasksConnectionState>
   configured: boolean
   authenticated: boolean
   secureStorageAvailable: boolean

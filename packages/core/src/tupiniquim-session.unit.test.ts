@@ -625,3 +625,171 @@ describe('TupiniquimSessionService', () => {
     expect(sessions.lifecycleResidue()).toEqual({ pending: 0, settledSuccess: 0, settledFailure: 0 })
   })
 })
+
+describe('TupiniquimSessionService — lifecycle efêmero bounded (Incremento 4/4)', () => {
+  const driveTerminalTurn = (sessions: TupiniquimSessionService, index: number, status: string): void => {
+    sessions.appendTurn({
+      role: 'user',
+      text: `pergunta ${String(index)}`,
+      provider: 'ollama',
+      model: 'modelo-a',
+      threadId: 'thread-ollama',
+      turnId: `turn-${String(index)}`
+    })
+    sessions.applyAssistantDelta({
+      provider: 'ollama',
+      model: 'modelo-a',
+      threadId: 'thread-ollama',
+      turnId: `turn-${String(index)}`,
+      text: `resposta ${String(index)}`
+    })
+    sessions.completeTurn('ollama', 'thread-ollama', `turn-${String(index)}`, status)
+  }
+
+  it('settledSuccess/finalizedTurns: 257 entradas → 256, eviction oldest-first, mais recente preservada', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'modelo-a')
+
+    for (let index = 1; index <= 257; index += 1) driveTerminalTurn(sessions, index, 'COMPLETED')
+
+    const lifecycle = sessions.ephemeralLifecycle()
+    expect(lifecycle.settledSuccess).toBe(256)
+    expect(lifecycle.finalizedTurns).toBe(256)
+    expect(lifecycle.settledFailure).toBe(0)
+
+    // Eviction oldest-first determinística: a 1ª entrada saiu, a 2ª ficou.
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-1')).toEqual({
+      finalized: false,
+      settledSuccess: false,
+      settledFailure: false
+    })
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-2').finalized).toBe(true)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-2').settledSuccess).toBe(true)
+    // A entrada MAIS RECENTE (257ª) permanece retida.
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-257').finalized).toBe(true)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-257').settledSuccess).toBe(true)
+  })
+
+  it('settledFailure/finalizedTurns: 257 falhas → 256, eviction oldest-first', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'modelo-a')
+
+    for (let index = 1; index <= 257; index += 1) driveTerminalTurn(sessions, index, 'FAILED')
+
+    const lifecycle = sessions.ephemeralLifecycle()
+    expect(lifecycle.settledFailure).toBe(256)
+    expect(lifecycle.finalizedTurns).toBe(256)
+    expect(lifecycle.settledSuccess).toBe(0)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-1').settledFailure).toBe(false)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-2').settledFailure).toBe(true)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-257').settledFailure).toBe(true)
+  })
+
+  it('mixed success/failure: cada set respeita o próprio teto de 256 de forma independente', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'modelo-a')
+
+    // 520 turns terminais: 260 COMPLETED (pares) + 260 FAILED (ímpares) —
+    // cada set estoura o próprio teto de 256 de forma independente.
+    for (let index = 1; index <= 520; index += 1) {
+      driveTerminalTurn(sessions, index, index % 2 === 0 ? 'COMPLETED' : 'FAILED')
+    }
+
+    const lifecycle = sessions.ephemeralLifecycle()
+    expect(lifecycle.settledSuccess).toBe(256)
+    expect(lifecycle.settledFailure).toBe(256)
+    // finalizedTurns acumula AMBOS os caminhos: pico 520 → teto 256 com
+    // eviction oldest-first (turns 1..264 saem; turn-265 é o primeiro retido).
+    expect(lifecycle.finalizedTurns).toBe(256)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-265').finalized).toBe(true)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-264').finalized).toBe(false)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-520').finalized).toBe(true)
+    // Sets específicos: pares 2,4,6,8 evictados de settledSuccess (260→256);
+    // o par 10 é o primeiro retido. Ímpares 1,3,5,7 evictados de
+    // settledFailure; o ímpar 9 é o primeiro retido.
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-8').settledSuccess).toBe(false)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-10').settledSuccess).toBe(true)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-7').settledFailure).toBe(false)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-9').settledFailure).toBe(true)
+    // A entrada mais recente de cada caminho permanece.
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-520').settledSuccess).toBe(true)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-519').settledFailure).toBe(true)
+  })
+
+  it('turn duplicado retido é idempotente; turn MUITO antigo evictado é reprocessado sem duplicar conversa', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'modelo-a')
+
+    for (let index = 1; index <= 257; index += 1) driveTerminalTurn(sessions, index, 'COMPLETED')
+
+    // Duplicado do turn retido (turn-257): early-return do finalizedTurns —
+    // nenhum set muda de tamanho.
+    sessions.completeTurn('ollama', 'thread-ollama', 'turn-257', 'COMPLETED')
+    expect(sessions.ephemeralLifecycle().settledSuccess).toBe(256)
+    expect(sessions.ephemeralLifecycle().finalizedTurns).toBe(256)
+
+    // Turn evictado (turn-1) completado de novo: é reprocessado como novo
+    // (re-adiciona o id e evicta o próximo mais antigo), MAS nenhuma conversa
+    // é duplicada — o append é keyed por inProgress, que está vazio.
+    const turnsBefore = sessions.snapshot()?.turns.length ?? 0
+    sessions.completeTurn('ollama', 'thread-ollama', 'turn-1', 'COMPLETED')
+    expect(sessions.ephemeralLifecycle().settledSuccess).toBe(256)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-1').settledSuccess).toBe(true)
+    expect(sessions.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-2').settledSuccess).toBe(false)
+    expect(sessions.snapshot()?.turns.length ?? 0).toBe(turnsBefore)
+  })
+
+  it('snapshot durável NUNCA contém os sets efêmeros bounded; hydrate começa com lifecycle vazio', () => {
+    const sessions = new TupiniquimSessionService()
+    sessions.open(workspaceA)
+    sessions.bindProviderThread('ollama', 'thread-ollama', 'modelo-a')
+
+    for (let index = 1; index <= 260; index += 1) driveTerminalTurn(sessions, index, 'COMPLETED')
+
+    const durable = sessions.durableSnapshotFor(workspaceA)
+    expect(durable).not.toBeNull()
+    const serialized = JSON.stringify(durable)
+    // Contrato estrutural: o snapshot durável possui exatamente session,
+    // turns, providerBindings e seenByProvider — nenhum lifecycle efêmero.
+    expect(Object.keys(durable ?? {}).sort()).toEqual(['providerBindings', 'seenByProvider', 'session', 'turns'])
+    expect(serialized).not.toContain('finalizedTurns')
+    expect(serialized).not.toContain('settledSuccess')
+    expect(serialized).not.toContain('settledFailure')
+    expect(serialized).not.toContain('unsuccessfulTurns')
+    expect(serialized).not.toContain('pendingByTurn')
+    expect(serialized).not.toContain('proposalIds')
+
+    // Retenção durável independente do lifecycle: a janela canônica de 200
+    // turns elegíveis continua aplicada.
+    expect(durable?.turns.length).toBeLessThanOrEqual(200)
+
+    // Hydrate do mesmo snapshot em outro processo-simulado começa com TODO o
+    // lifecycle efêmero vazio.
+    const restored = new TupiniquimSessionService()
+    const thread = {
+      id: 'thread-ollama',
+      provider: 'ollama' as const,
+      workspaceRoot: workspaceA,
+      model: 'modelo-a',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+    const hydrated = restored.hydrateWorkspace(durable ?? { session: { id: 'x', workspaceRoot: workspaceA, createdAt: '', updatedAt: '' }, turns: [], providerBindings: [], seenByProvider: {} }, [thread], workspaceA)
+    expect(hydrated.status).toBe('HYDRATED')
+    expect(restored.ephemeralLifecycle()).toEqual({
+      authority: null,
+      proposalIds: 0,
+      inProgress: 0,
+      pending: 0,
+      settledSuccess: 0,
+      settledFailure: 0,
+      finalizedTurns: 0,
+      unsuccessfulTurns: 0
+    })
+    expect(restored.turnLifecycleMembership('ollama', 'thread-ollama', 'turn-260').finalized).toBe(false)
+  })
+})

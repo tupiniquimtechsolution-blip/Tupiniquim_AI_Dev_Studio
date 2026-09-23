@@ -25,7 +25,7 @@ const materializeEffects = (plan: Awaited<ReturnType<PlanApprovalService['create
 
 beforeEach(async () => {
   const temp = process.env.TEMP
-  if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de testes precisa estar em F:.')
+  if (temp === undefined || (process.platform === 'win32' && path.parse(temp).root.toUpperCase() !== 'F:\\')) throw new Error('TEMP de testes precisa estar em F:.')
   fixture = await mkdtemp(path.join(temp, 'tupiniquim-sqlite-'))
   database = new LocalDatabase(fixture)
 })

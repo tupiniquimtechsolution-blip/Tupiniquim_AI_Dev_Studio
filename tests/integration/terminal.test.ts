@@ -10,8 +10,7 @@ let fixture = ''
 afterEach(async () => { if (fixture !== '') await rm(fixture, { recursive: true, force: true }) })
 
 describe('TerminalAdapter', () => {
-  it('executa uma sessão ConPTY real', async () => {
-    if (!isWindows) return // ConPTY and powershell.exe are Windows-only
+  it.runIf(isWindows)('executa uma sessão ConPTY real', async () => {
 
     const temp = process.env.TEMP ?? process.env.TMP ?? os.tmpdir()
     if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\')

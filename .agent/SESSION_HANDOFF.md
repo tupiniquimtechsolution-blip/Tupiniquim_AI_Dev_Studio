@@ -1,74 +1,84 @@
 # SESSION HANDOFF
 
 Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-Checkpoint wave-15: gates técnicos **APROVADOS**; fechamento formal após merge do PR #17
-(NÃO é uma nova Master Wave; NÃO encerra a Master Wave 1).
-Branch: `arena/01a0776a-tupiniquim-ai-dev-studio`
-PR: #17
-Issue: #16
-HEAD de runtime validado no Windows F: `787bd304ce99c5916ba870870d2b5c2b6600e166`
+Wave 16: **FECHADA**
+`checkpoint/wave-16`: **CRIADO E CONFIRMADO**
+Checkpoint commit: `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`
+Wave 17: **DOGFOOD/QA FINAL EM ANDAMENTO**
+Branch: `wave-17/master-wave-1-dogfood-qa`
+Issue: #24 — `[MASTER WAVE 1] wave-17 — dogfood/QA final e gate de fechamento`
+Master Wave 2: **NÃO INICIADA**
 
 ## Contexto
 
-O GitHub é a fonte de verdade. A Wave 15 (Tupiniquim-owned conversation continuity)
-passou os gates reais na máquina Windows `F:` e o CI remoto. O PR #17 não deve ser
-mergeado nesta etapa; este handoff registra o fechamento documental para auditoria
-externa.
+O GitHub é a fonte de verdade. A Wave 16 implementou restart/recovery local da Tupiniquim Session, passou os gates reais Windows F:, foi auditada, mergeada na branch canônica, teve a Issue #18 fechada e recebeu a tag anotada `checkpoint/wave-16`.
 
-## Ponto de retomada pós-wave-15
+A Master Wave 1 ainda NÃO está concluída. O gate final obrigatório é a Wave 17 de dogfood/QA integrado.
 
-1. Auditoria externa deste diff documental.
-2. Merge controlado PR #17 → fechar Issue #16 → tag `checkpoint/wave-15`.
-3. Próxima unidade: **wave-16 — restart/recovery da memória/sessão Tupiniquim**.
+## Baseline herdado da Wave 16
 
-## GAP WAVE 16 (explícito)
-
-Ainda NÃO persistimos completamente:
-
-- Tupiniquim Session
-- provider bindings
-- seen-by-provider cursors
-- lifecycle necessário para recuperação pós-restart
-
-`terminalTurns` e `finalizedTurns` são in-memory; Wave 16 precisa de bounded
-cleanup / recovery. Isso **não** bloqueia o fechamento da Wave 15.
-
-Não implementar Wave 16 antes do merge formal da Wave 15.
-
-## Windows F: — evidência real (runtime HEAD `787bd30`)
+HEAD técnico Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`.
 
 | Gate | Resultado |
 |---|---|
 | `pnpm-f.ps1 validate` | PASS integral |
 | F:\CODEX-only | PASS |
-| lint / typecheck / build | PASS |
-| `pnpm test:unit` | 82/82 PASS |
-| `pnpm test:integration` | 49 passed / 2 skipped |
-| `tests/integration/persistence.test.ts` | 22/22 PASS |
+| lint / typecheck | PASS |
+| `pnpm test:unit` | 194/194 PASS |
+| `pnpm test:integration` | 99 passed / 2 skipped |
+| `tests/integration/tupiniquim-shutdown-restart.test.ts` | 4/4 PASS |
 | `pnpm test:security` | 34/34 PASS |
-| `pnpm-f.ps1 test:e2e` | 3/3 PASS |
+| `pnpm build` | PASS |
+| `pnpm-f.ps1 test:e2e` | 4/4 PASS · 0 failed · 0 skipped · 39.8s |
 
-CI remoto: run #34 `34067158283` SUCCESS.
+## Invariantes canônicas preservadas
 
-E2E:
+- `Agent != Model != Provider != Tool != Skill != Source Repository`.
+- `Tupiniquim Session != Provider Thread`.
+- nenhuma provider thread cruza providers.
+- nenhuma sessão/contexto cruza workspace.
+- provider/model switch não troca memória, regras, workspace ou authority.
+- snapshot SQLite v5 atômico por workspace.
+- recovery/hydrate integral e fail-closed.
+- retenção durável = últimos 200 turns públicos por workspace.
+- seen-by-provider/ACK durável evita retransmissão indevida.
+- proposals privadas/payload privado não persistem e não sobrevivem restart.
+- workspaceContext/sessionContext são efêmeros por request.
+- write-through estável é serializado/FIFO.
+- ACK apenas após sucesso terminal.
+- shutdown aguardável + runtime quiescence + barreira global IPC.
+- providers fecham antes do database; database close é crítico.
+- provider/model continuam escolha explícita do usuário.
+- Terminal mutável e Git mutável continuam indisponíveis.
 
-1. Electron seguro + workspace real — PASS
-2. proposta substituída EXPIRED; apply da antiga recusado — PASS
-3. sessão Tupiniquim sobrevive à troca de provider fake e isola workspace — PASS
+## Wave 17 — missão
 
-## Bugs Windows F: já corrigidos no runtime
+Executar dogfood/QA real usando o produto como produto e validar:
 
-1. CHAT Ollama T1 + PLAN com `execution.threadId` null criava T2.
-   `execution.threadId ?? session.threadFor(provider) ?? undefined`.
-2. `turn/completed` antes do retorno de `send()` → BUSY tardio.
-   `terminalTurns` / monotonicidade de status.
+1. startup/workspace real;
+2. sessão/conversa;
+3. multi-provider explícito;
+4. restart/recovery;
+5. A → B → A;
+6. proposal/EXPIRED;
+7. privacidade/persistência;
+8. UX/estado;
+9. `validate` + Electron E2E no Windows F:.
 
-## Fora de escopo (NÃO implementar agora)
+Cada achado deve ser classificado antes de correção. Não corrigir silenciosamente.
 
-Restart/recovery; persistência da sessão Tupiniquim no SQLite; novos providers;
-Agent/Skill Registry; RAG; Terminal mutável; Git mutável; voz; multimodal;
-autonomous loop; persistência de segredo; payload privado de proposta.
+## Ponto de retomada
 
-## External blockers
+1. sincronizar a branch `wave-17/master-wave-1-dogfood-qa` no Windows F:;
+2. confirmar working tree limpa e SHAs local/remoto;
+3. executar `pnpm-f.ps1 validate`;
+4. executar `pnpm-f.ps1 test:e2e`;
+5. se GREEN, executar dogfood manual da Issue #24;
+6. registrar achados e evidências;
+7. correções somente se necessárias e delimitadas;
+8. documentação final + auditoria externa;
+9. somente então avaliar fechamento da Master Wave 1.
 
-- OPENAI_API_NO_CREDITS para inferência live paga.
+## Fora de escopo
+
+Master Wave 2+, novos providers, Research/Knowledge/RAG, Agent Registry runtime, Skill Registry, Terminal/Git mutáveis, voz, multimodal e autonomous loop.

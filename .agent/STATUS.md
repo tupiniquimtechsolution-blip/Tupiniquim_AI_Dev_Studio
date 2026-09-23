@@ -1,33 +1,34 @@
 # Status
 
-Atualizado em: 2026-09-06
+Atualizado em: 2026-09-22
 
 ## Estado atual
 
 - Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-- Checkpoint: wave-15 — Tupiniquim-owned conversation continuity
-- **wave-15: gates técnicos APROVADOS**; fechamento formal (merge/tag `checkpoint/wave-15`) após auditoria externa e merge controlado do PR #17
-- Current branch: `arena/01a0776a-tupiniquim-ai-dev-studio`
-- PR atual: #17
-- Issue referenciada: #16
-- HEAD de runtime validado no Windows F: `787bd304ce99c5916ba870870d2b5c2b6600e166`
-- Repositório operacional (máquina real): `F:\CODEX\Tupiniquim-AI-Dev-Studio`
-- Dados: `F:\CODEX\Tupiniquim-AI-Dev-Studio.data`
+- Wave 16 — restart/recovery da memória e sessão Tupiniquim: **FECHADA**
+- PR #23: **MERGEADO**
+- Merge commit da Inc4: `d23a43e5543b455c59e193929122f332267fdf18`
+- Issue #18: **CLOSED / COMPLETED**
+- `checkpoint/wave-16`: **CRIADO E CONFIRMADO**
+- checkpoint target: `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`
+- Wave 17 — dogfood/QA final da Master Wave 1: **EM ANDAMENTO**
+- Issue atual: #24 — `[MASTER WAVE 1] wave-17 — dogfood/QA final e gate de fechamento`
+- Branch RC1 atual: `arena/01a0c8ba-tupiniquim-ai-dev-studio`
+- PR RC1: #32 — **DRAFT / NÃO MERGEADO**
+- Repositório operacional: `F:\CODEX\Tupiniquim-AI-Dev-Studio`
+- Dados operacionais: `F:\CODEX\Tupiniquim-AI-Dev-Studio.data`
+- Master Wave 2: **NÃO INICIADA**
+- Project Bible canônica: `docs/PROJECT_BIBLE/README.md`
 
-## Contexto de onda
+## Situação da Wave 16
 
-- O `MASTER_PLAN` mantém a **Master Wave 1 em andamento**. `wave-15` é um checkpoint
-  interno dessa Master Wave 1, NÃO uma nova wave mestre e NÃO o encerramento da
-  Master Wave 1.
-- Checkpoints anteriores: wave-13 (ciclo de propostas), wave-14 (protocolo
-  provider-neutral + provenance + expiration).
-- Próxima unidade prevista: **wave-16 — restart/recovery da memória/sessão Tupiniquim**.
-  Não iniciar Wave 16 nesta etapa.
-- Terminal mutável e Git mutável continuam **INDISPONÍVEIS**.
+A Wave 16 está formalmente encerrada no checkpoint `checkpoint/wave-16`, confirmado no remoto e apontando para `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`.
 
-## Gates Windows F: — evidência real (runtime HEAD `787bd30`)
+A conclusão da Wave 16 **não encerra a Master Wave 1**. O gate final obrigatório agora é a Wave 17 de dogfood/QA integrado.
 
-Na máquina Windows real (`F:`), com o wrapper de validação oficial:
+## Baseline autoritativo herdado da Wave 16
+
+HEAD técnico Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`.
 
 | Gate | Resultado |
 |---|---|
@@ -35,78 +36,63 @@ Na máquina Windows real (`F:`), com o wrapper de validação oficial:
 | F:\CODEX-only | PASS |
 | lint | PASS |
 | typecheck | PASS |
-| `pnpm test:unit` | 82/82 PASS |
-| `pnpm test:integration` | 49 passed / 2 skipped |
-| `tests/integration/persistence.test.ts` | 22/22 PASS |
+| `pnpm test:unit` | 194/194 PASS |
+| `pnpm test:integration` | 99 passed / 2 skipped |
+| `tests/integration/tupiniquim-shutdown-restart.test.ts` | 4/4 PASS |
 | `pnpm test:security` | 34/34 PASS |
 | `pnpm build` | PASS |
-| `pnpm-f.ps1 test:e2e` | 3/3 PASS |
+| `pnpm-f.ps1 test:e2e` | 4/4 PASS · 0 failed · 0 skipped · 39.8s |
 
-CI remoto do runtime: run #34 `34067158283` SUCCESS.
+## Wave 17 — objetivo
 
-## E2E Electron (Windows F:)
+Executar dogfood/QA real sobre a base do checkpoint Wave 16, usando o produto como produto e procurando regressões ou inconsistências que a suíte automatizada possa não capturar.
 
-1. inicia o Electron seguro e carrega um workspace real — PASS
-2. proposta substituída fica EXPIRED e aplicação da antiga é recusada — PASS
-3. sessão Tupiniquim sobrevive à troca de provider fake e isola workspace — PASS
+Cobertura obrigatória:
 
-## Invariantes Wave 15 comprovados
+- startup e workspace real;
+- Tupiniquim Session e continuidade;
+- multi-provider explícito;
+- restart real;
+- isolamento A → B → A;
+- proposal/approval/EXPIRED;
+- privacidade e persistência;
+- UX/estado BUSY/READY/provider/model;
+- `validate` Windows F:;
+- Electron E2E.
 
-- Tupiniquim Session ≠ Provider Thread
-- troca de provider preserva a sessão Tupiniquim
-- threads continuam provider-specific; sem reutilização cross-provider
-- workspace A → B → A isolado; thread/status scoped por workspace/session
-- workspace switch bloqueado enquanto o runtime está ocupado
-- transição de workspace protegida antes do primeiro await
-- contexto público incremental entre providers
-- ACK apenas após sucesso terminal (`TURN_COMPLETED` / SUCCESS)
-- Codex ERROR/RETRYING não consome contexto
-- ERROR/CANCELLED/FAILED não ACKam contexto incorretamente
-- race completion-before-pending tratada
-- race completion-before-send-return tratada
-- ordem user → assistant preservada
-- proveniência do modelo preservada
-- proposal authority não transfere de provider
-- proposal EXPIRED ao trocar provider/workspace quando aplicável
-- payload privado ausente de DOM, conversation, SQLite, AuditLog e history coberto
-- renderer não escolhe provenance privilegiada
-- primeira PLAN reutiliza thread confiável da sessão quando apropriado
-- `execution.threadId` tem precedência
-- sem chat anterior, o provider pode criar a primeira thread
+Achados devem ser classificados como `PRODUCTION BUG`, `E2E/HARNESS BUG`, `UX BUG`, `DOCUMENTATION GAP`, `ENVIRONMENT` ou `OUT OF SCOPE`.
 
-## Bugs reais descobertos pelo Windows F: (corrigidos no runtime)
+## Regras de fechamento
 
-1. CHAT Ollama criava T1 e a primeira PLAN tentava criar T2.
-   Correção: `execution.threadId ?? session.threadFor(provider) ?? undefined`.
-2. Codex fake podia emitir `turn/completed` antes do retorno de `send()`, e BUSY
-   tardio sobrescrevia READY. Correção: `terminalTurns` / monotonicidade de status.
+- nenhuma nova Master Wave durante Wave 17/RC1;
+- gaps funcionais já comprovados da própria V1 podem e devem ser corrigidos na mesma RC1;
+- nenhum bloqueio crítico/alto pode permanecer aberto;
+- documentação final só depois da evidência real;
+- auditoria externa obrigatória antes de fechar a Master Wave 1;
+- Master Wave 2 permanece bloqueada até esse fechamento.
 
-## GAP explícito — Wave 16
+## RC1 consolidation — estado atual
 
-Restart/recovery permanece **GAP WAVE 16**. Ainda NÃO persistimos completamente:
+Branch Arena `arena/01a0c8ba-tupiniquim-ai-dev-studio`; Wave17 + `main`/Google Tasks integrados sem alteração em `main`. RC1 **NÃO APROVADA V1**: build JS disponível, lacunas reais de produto registradas em `docs/RC1/KNOWN_ISSUES.md` e `docs/PROJECT_BIBLE/MATRIZ_RASTREABILIDADE_V1.md`; gates Windows/providers/OAuth ainda em validação.
 
-- Tupiniquim Session
-- provider bindings
-- seen-by-provider cursors
-- lifecycle necessário para recuperação
+O setup Windows encontrou um bug real de PowerShell 5.1 no probe da versão Node; correção aplicada na mesma RC1 no commit `c4714cafcecb5025bdbc35495205477627930f8a`. Os commits documentais posteriores não alteram runtime/setup.
 
-Observação para Wave 16 (não bloqueia o fechamento da Wave 15): `terminalTurns` e
-`finalizedTurns` são estruturas in-memory e precisarão de bounded cleanup / recovery.
+## Backlog V1 rastreado pelo Agenor
 
-## Preservado
+#18 permanece umbrella de consolidação. As lacunas V1 foram materializadas no Notion como #19–#33: Files UX, Terminal, Git, providers reais, EXECUTE/VISUAL, Test Runner/Evidence, perfis de autonomia, browser-second, Prompt Architect, Visual Lab, Preferences, Preview, Windows package/E2E/ConPTY, Google Tasks OAuth real e closeout V1/Master Wave 1.
 
-PolicyEngine; ApprovalStore/PlanApprovalService; AuditLog; payload privado só em
-memória; schema público `agentSendInputSchema` sem `proposalContext + threadId`;
-Terminal mutável indisponível; Git mutável indisponível.
+## Documentação canônica complementar
+
+- `docs/PROJECT_BIBLE/BIBLIA_DO_PROJETO.md`
+- `docs/PROJECT_BIBLE/BACKLOG_E_STATUS.md`
+- `docs/PROJECT_BIBLE/MATRIZ_RASTREABILIDADE_V1.md`
+- `docs/PROJECT_BIBLE/QA_RELEASE_SECURITY.md`
+- `docs/PROJECT_BIBLE/OPERACAO_DEPLOYMENT_SUPORTE.md`
+- `docs/PROJECT_BIBLE/MODELOS_PROVIDERS_AGENTES.md`
+- `docs/PROJECT_BIBLE/MERCADO_PRECIFICACAO_E_VALOR.md`
+- `docs/PROJECT_BIBLE/AGENOR_SYNC.md`
+- `docs/PROJECT_BIBLE/PROMPT_MANTENEDOR_BIBLIA.md`
 
 ## Próximo passo
 
-1. Auditoria externa do diff documental.
-2. Depois: merge controlado do PR #17, fechar Issue #16, tag `checkpoint/wave-15`.
-3. Somente então preparar Wave 16.
-4. NÃO mergear o PR #17 nesta etapa. NÃO iniciar Wave 16.
-
-## Bloqueios externos
-
-- OPENAI_API_NO_CREDITS bloqueia somente inferência live paga; não invalida o transporte controlado.
-- Provedores visuais pagos permanecem NOT_CONFIGURED.
+Concluir o setup/verify no Windows real; registrar qualquer falha concreta; corrigir blockers V1 no mesmo PR #32; reexecutar gates no HEAD final; fechar #19–#32 por evidência; só então executar #33 (auditoria, documentação final e checkpoint da Master Wave 1).

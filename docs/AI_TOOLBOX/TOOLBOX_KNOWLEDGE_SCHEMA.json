@@ -1,0 +1,151 @@
+{
+  "schemaVersion": "1.0.0",
+  "purpose": "Structured ingestion output for Tupiniquim Toolbox",
+  "allowedConfidence": ["confirmed", "probable", "inferred", "unknown"],
+  "allowedEvidenceLevels": [
+    "USER_SUPPLIED",
+    "MEDIA_CONFIRMED",
+    "SOURCE_VERIFIED",
+    "CODE_REVIEWED",
+    "SANDBOX_TESTED",
+    "PROJECT_VALIDATED"
+  ],
+  "allowedNormativeLevels": [
+    "MANDATORY",
+    "RECOMMENDED",
+    "CONDITIONAL",
+    "REFERENCE_ONLY",
+    "DEFERRED",
+    "REJECTED"
+  ],
+  "allowedAdoptionDecisions": [
+    "ADOPT",
+    "GUARDED_ADOPTION",
+    "REFERENCE_ONLY",
+    "DEFER",
+    "REJECT"
+  ],
+  "pack": {
+    "metadata": {
+      "pack_id": "KP-YYYYMMDD-NNN",
+      "created_at": "ISO-8601",
+      "created_by": "agent-or-human",
+      "project_scope": ["global"],
+      "contains_secrets": false
+    },
+    "sources": [
+      {
+        "source_id": "SRC-YYYYMMDD-NNN",
+        "type": "video|carousel|screenshot|post|article|paper|repository|skill|mcp|api|pdf|code|other",
+        "title": "",
+        "author": "",
+        "platform": "",
+        "url": "",
+        "received_at": "ISO-8601",
+        "evidence_level": "USER_SUPPLIED",
+        "notes": ""
+      }
+    ],
+    "entities": [
+      {
+        "entity_id": "ENT-NNN",
+        "type": "repository|tool|skill|mcp|api|model|provider|framework|library|technique|checklist|pattern|service|other",
+        "name": "",
+        "canonical_url": "",
+        "upstream_verified": false,
+        "source_ids": [],
+        "tags": []
+      }
+    ],
+    "knowledge_units": [
+      {
+        "id": "KU-CATEGORY-NNN",
+        "title": "",
+        "type": "rule|technique|checklist-item|pattern|anti-pattern|security-rule|design-guideline|architecture-pattern|tool-usage|business-insight|other",
+        "content": "",
+        "confidence": "confirmed",
+        "evidence_level": "MEDIA_CONFIRMED",
+        "normative_level": "REFERENCE_ONLY",
+        "source_ids": [],
+        "entity_ids": [],
+        "tags": [],
+        "relationships": [],
+        "applies_to": [],
+        "obsolete": false
+      }
+    ],
+    "repository_candidates": [
+      {
+        "entity_id": "",
+        "upstream": "",
+        "license": "unknown",
+        "commit_or_ref": "",
+        "maintenance": "unknown",
+        "dependencies": [],
+        "permissions": [],
+        "network_requirements": [],
+        "cost": "unknown",
+        "security_findings": [],
+        "secret_risk": "none|suspected|confirmed-sanitized",
+        "fit": "unknown",
+        "decision": "DEFER",
+        "rationale": ""
+      }
+    ],
+    "tool_candidates": [],
+    "skill_candidates": [],
+    "security_findings": [
+      {
+        "finding_id": "SEC-NNN",
+        "severity": "info|low|medium|high|critical",
+        "summary": "",
+        "source_ids": [],
+        "contains_secret_material": false,
+        "recommended_action": ""
+      }
+    ],
+    "project_impacts": [
+      {
+        "project": "",
+        "applicability": "high|medium|low|none",
+        "value": "",
+        "change_type": "rule|skill|tool|refactor|security|ux|deploy|knowledge|other",
+        "risk": "",
+        "effort": "S|M|L|XL",
+        "wave_fit": "now|next-wave|future",
+        "proposed_task": "",
+        "auto_apply": false
+      }
+    ],
+    "conflicts": [],
+    "obsolete_information": [],
+    "rejected_items": [],
+    "deferred_items": [],
+    "adoption_decisions": [
+      {
+        "target_id": "",
+        "decision": "REFERENCE_ONLY",
+        "rationale": "",
+        "approved_by": "",
+        "approved_at": ""
+      }
+    ],
+    "agenor_updates": [
+      {
+        "task_title": "",
+        "status": "A Fazer|Em Andamento|Bloqueada|Concluída",
+        "priority": "Crítica|Alta|Média|Baixa",
+        "dependencies": [],
+        "evidence": [],
+        "next_action": ""
+      }
+    ]
+  },
+  "hardRules": [
+    "Never store API keys, tokens, cookies, sessions, passwords or real .env values",
+    "Never treat public visibility as authorization",
+    "Never auto-apply a discovery to all projects",
+    "Never silently resolve conflicting sources",
+    "Never mark adoption complete without evidence"
+  ]
+}

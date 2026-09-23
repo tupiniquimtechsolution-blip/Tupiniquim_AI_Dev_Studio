@@ -1,3 +1,4 @@
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { VisualAsset } from '@tupiniquim/contracts'
 import { VisualIntelligenceService, type VisualRepository } from './visual-intelligence'
@@ -18,7 +19,7 @@ describe('VisualIntelligenceService', () => {
   it('bloqueia uso de asset sem licença conhecida', async () => {
     const repository = new MemoryVisuals()
     const service = new VisualIntelligenceService(repository, 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data')
-    const asset = await service.add({ name: 'Referência', localPath: 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data\\assets\\ref.png', sourceUrl: 'https://example.com/ref', provider: 'STILLS', license: 'UNKNOWN', licenseName: null, attribution: null, rightsNote: 'Licença ainda não comprovada.' })
+    const asset = await service.add({ name: 'Referência', localPath: path.join('F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data', 'assets', 'ref.png'), sourceUrl: 'https://example.com/ref', provider: 'STILLS', license: 'UNKNOWN', licenseName: null, attribution: null, rightsNote: 'Licença ainda não comprovada.' })
     await expect(service.assertUsable(asset.id)).rejects.toThrow('licença')
   })
 })
