@@ -1,3 +1,4 @@
+# Cloud-first canonical quality gate.
 name: Cloud Quality Gate
 
 on:
