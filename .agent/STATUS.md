@@ -13,7 +13,7 @@ Atualizado em: 2026-09-24
 - `package:win` chegou a PASS no Windows físico após instalação das bibliotecas Spectre; RC1 completa ainda não foi declarada GREEN.
 - Master Wave 2: **AUTORIZADA NA TRILHA CLOUD**, condicionada aos gates `CLOUD-GREEN` da fundação cloud-first.
 - Cloudflare: control-plane/preview e ambientes MW0–MW5 versionados; deploy direto pelo conector está aguardando autenticação válida, enquanto GitHub Actions está preparado para deploy por secrets.
-- Supabase: readiness/estrutura preparados, sem projeto existente selecionado implicitamente e sem DDL remoto aplicado.
+- Supabase: projeto dedicado `Tupiniquim-AI-Dev-Studio` provisionado em `sa-east-1`, ref `brqokxlmxwyxwwbtsltc`, estado `ACTIVE_HEALTHY`; advisors iniciais de segurança e performance sem achados; nenhum DDL remoto aplicado.
 - Google Drive: workspace real criado e verificado; funciona como acervo/evidência, não como fonte de verdade.
 
 ## Estados formais
@@ -68,9 +68,17 @@ Arquivos canônicos:
 - `cloudflare/src/index.ts`
 - `supabase/README.md`
 
-Secrets esperados quando a integração for ativada:
-- Cloudflare / GitHub Environment `cloud-preview`: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
-- Supabase / GitHub Environment `supabase-dev`: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_PROJECT_REF`, `SUPABASE_DB_PASSWORD`.
+Cloudflare / GitHub Environment `cloud-preview`:
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+Supabase dedicado:
+- projeto: `Tupiniquim-AI-Dev-Studio`
+- ref público/canônico: `brqokxlmxwyxwwbtsltc`
+- URL: `https://brqokxlmxwyxwwbtsltc.supabase.co`
+- região: `sa-east-1`
+- GitHub Environment: `supabase-dev`
+- secrets de CI ainda necessários: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`
 
 Nenhum secret real deve ser versionado.
 
@@ -80,5 +88,5 @@ Nenhum secret real deve ser versionado.
 2. Classificar arquivos enviados para `01_INBOX_UPLOADS` e mover para a Master Wave correta sem alterar a fonte de verdade GitHub.
 3. Quando a fundação estiver `CLOUD-GREEN`, iniciar os incrementos funcionais da Master Wave 2.
 4. Reautenticar/configurar Cloudflare e executar o deploy explícito de `preview`/MW desejada sem uso do PC.
-5. Selecionar/criar explicitamente um projeto Supabase próprio antes de qualquer schema ou runtime Supabase do Tupiniquim.
+5. Configurar os dois secrets de CI do ambiente `supabase-dev` e rodar `Supabase Readiness`; schema/migrations só entram depois, versionados e auditados.
 6. Manter a certificação Windows como gate independente de release, sem exigir uso contínuo do PC durante desenvolvimento.
