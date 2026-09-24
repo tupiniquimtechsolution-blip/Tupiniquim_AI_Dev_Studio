@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { registryEntrySchema, type RegistryEntry } from '@tupiniquim/contracts'
-import { assessSkillGate, RegistryCatalog } from './registry-catalog'
+import { assessRegistryGate, assessSkillGate, RegistryCatalog } from './registry-catalog'
 
 const makeEntry = (overrides: Partial<RegistryEntry> = {}): RegistryEntry => registryEntrySchema.parse({
   id: randomUUID(),
@@ -17,7 +17,7 @@ const makeEntry = (overrides: Partial<RegistryEntry> = {}): RegistryEntry => reg
   permissions: [],
   citations: ['https://example.com/skill'],
   tags: ['test'],
-  metadata: {},
+  metadata: { dependenciesReviewed: 'true', permissionsReviewed: 'true' },
   provenance: {
     sourceUrl: 'https://example.com/skill',
     retrievedAt: new Date().toISOString(),
@@ -36,6 +36,52 @@ describe('RegistryCatalog', () => {
     expect(catalog.listForProject('project-a').map((entry) => entry.name)).toEqual(['Global', 'Projeto A'])
     expect(catalog.listForProject('project-b').map((entry) => entry.name)).toEqual(['Global', 'Projeto B'])
     expect(catalog.findForProject(projectA.id, 'project-b')).toBeNull()
+  })
+
+  it('toda descoberta nasce não confiável e não aprovada, inclusive API/MCP/tool/technology', () => {
+    const catalog = new RegistryCatalog()
+    const kinds = ['PUBLIC_API', 'MCP_SERVER', 'TOOL', 'TECHNOLOGY'] as const
+
+    const entries = kinds.map((kind) => catalog.discover({
+      kind,
+      name: `${kind} descoberta`,
+      description: 'Entrada descoberta para prova de lifecycle seguro.',
+      provenance: { sourceUrl: 'https://example.com/source', sourceRef: 'discovery-v1' }
+    }))
+
+    expect(entries.every((entry) => entry.status === 'DISCOVERED')).toBe(true)
+    expect(entries.every((entry) => entry.trust === 'EXTERNAL_UNTRUSTED')).toBe(true)
+    expect(catalog.listByKindForProject('PUBLIC_API', 'project-a')).toHaveLength(1)
+    expect(assessRegistryGate(entries[0]!, 'project-a').runtimeExecutionAuthorized).toBe(false)
+  })
+})
+
+describe('assessRegistryGate', () => {
+  it('bloqueia capability executável sem revisão explícita de dependências/permissões', () => {
+    const assessment = assessRegistryGate(makeEntry({
+      kind: 'TOOL',
+      metadata: {},
+      status: 'VERIFIED'
+    }), 'project-a')
+
+    expect(assessment.blockers).toEqual(expect.arrayContaining([
+      'DEPENDENCIES_NOT_REVIEWED',
+      'PERMISSIONS_NOT_REVIEWED'
+    ]))
+    expect(assessment.adoptionReady).toBe(false)
+    expect(assessment.runtimeExecutionAuthorized).toBe(false)
+  })
+
+  it('uma PUBLIC_API aprovada ainda não ganha autorização de execução', () => {
+    const assessment = assessRegistryGate(makeEntry({
+      kind: 'PUBLIC_API',
+      status: 'APPROVED'
+    }), 'project-a')
+
+    expect(assessment.blockers).toEqual([])
+    expect(assessment.adoptionReady).toBe(true)
+    expect(assessment.runtimeExecutionAuthorized).toBe(false)
+    expect(assessment.requiresHumanApproval).toBe(true)
   })
 })
 
@@ -72,14 +118,17 @@ describe('assessSkillGate', () => {
       scope: { kind: 'PROJECT', projectId: 'project-a' },
       license: 'UNKNOWN',
       cost: 'UNKNOWN',
-      trust: 'EXTERNAL_UNTRUSTED'
+      trust: 'EXTERNAL_UNTRUSTED',
+      metadata: {}
     }), 'project-b')
 
     expect(assessment.blockers).toEqual(expect.arrayContaining([
       'PROJECT_SCOPE_MISMATCH',
       'LICENSE_NOT_KNOWN',
       'COST_NOT_DECLARED',
-      'PROVENANCE_NOT_CURATED'
+      'PROVENANCE_NOT_CURATED',
+      'DEPENDENCIES_NOT_REVIEWED',
+      'PERMISSIONS_NOT_REVIEWED'
     ]))
     expect(assessment.adoptionReady).toBe(false)
     expect(assessment.runtimeExecutionAuthorized).toBe(false)
