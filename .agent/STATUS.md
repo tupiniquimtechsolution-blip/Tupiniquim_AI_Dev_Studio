@@ -6,32 +6,13 @@ Atualizado em: 2026-09-24
 
 - Estratégia operacional: **CLOUD-FIRST**.
 - GitHub: fonte de verdade e ambiente canônico de desenvolvimento/CI/checkpoints.
-- Branch de ambientação cloud: `cloud/master-wave-2-foundation`.
-- Base da branch cloud: `9e9840a38a05d1989effe91134f6329abae507aa`.
-- PR cloud foundation: #33 — **DRAFT / NÃO MERGEADO**.
-- Fundação cloud-first: **CLOUD-GREEN** comprovado pelo GitHub Actions run `36001845512` no HEAD `649d5ce102043ce84f98104782b903b67390d281`.
 - PR #32 / branch `arena/01a0c8ba-tupiniquim-ai-dev-studio`: preservado como trilha RC1 Windows, **DRAFT / NÃO MERGEADO / WINDOWS-DEFERRED**.
-- `package:win` chegou a PASS no Windows físico após instalação das bibliotecas Spectre; RC1 completa ainda não foi declarada GREEN.
-- Master Wave 2: **LIBERADA PARA EXECUÇÃO FUNCIONAL NA TRILHA CLOUD**; não implica fechamento da RC1 Windows.
-- Cloudflare: control-plane/preview e ambientes MW0–MW5 versionados e validados por dry-run no gate cloud; deploy real continua condicionado às credenciais Cloudflare.
-- Supabase: projeto dedicado `Tupiniquim-AI-Dev-Studio` provisionado em `sa-east-1`, ref `brqokxlmxwyxwwbtsltc`, estado `ACTIVE_HEALTHY`; advisors iniciais de segurança e performance sem achados; nenhum DDL remoto aplicado.
-- Google Drive: workspace real criado e verificado; funciona como acervo/evidência, não como fonte de verdade.
-
-## Evidência CLOUD-GREEN da fundação
-
-GitHub Actions run `36001845512`:
-- install: PASS
-- lint: PASS
-- typecheck: PASS
-- unit: PASS
-- integration: PASS
-- security: PASS
-- build: PASS
-- Cloudflare preview dry-run: PASS
-- Cloudflare MW0–MW5 dry-runs: PASS
-- evidence step: PASS
-
-O workflow não gerou artifact persistido porque os caminhos opcionais de evidence estavam vazios, mas o próprio run e seus steps constituem a evidência operacional do gate.
+- PR #33 / branch `cloud/master-wave-2-foundation`: fundação cloud-first **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
+- PR #36 / branch `cloud/mw2-research-knowledge-registries`: Master Wave 2 **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
+- `package:win` chegou a PASS no Windows físico após instalação das bibliotecas Spectre; RC1 completa não foi declarada RELEASE-GREEN.
+- Cloudflare: preview + ambientes MW0–MW5 validados por dry-run no gate cloud; deploy real segue condicionado a credenciais válidas.
+- Supabase: projeto dedicado `Tupiniquim-AI-Dev-Studio`, ref `brqokxlmxwyxwwbtsltc`, `ACTIVE_HEALTHY`; nenhum DDL remoto aplicado pela MW2.
+- Google Drive: workspace MW0–MW5 preparado; uploads ainda podem chegar ao `01_INBOX_UPLOADS` e serão classificados após conclusão do envio.
 
 ## Estados formais
 
@@ -42,15 +23,50 @@ O workflow não gerou artifact persistido porque os caminhos opcionais de eviden
 ## Master Waves
 
 - Master Wave 0: CONCLUÍDA.
-- Master Wave 1: desenvolvimento cloud consolidado para continuidade; RC1 Windows preservada como `WINDOWS-DEFERRED`.
-- Master Wave 2: **LIBERADA / PRÓXIMA EXECUÇÃO FUNCIONAL CLOUD**.
-- Master Waves 3–5: seguem a ordem do `MASTER_PLAN.md` e só avançam após o gate cloud da anterior.
+- Master Wave 1: desenvolvimento cloud consolidado; RC1 Windows preservada como `WINDOWS-DEFERRED`.
+- Master Wave 2: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
+- Master Wave 3: **AUTORIZADA COMO PRÓXIMA TRILHA CLOUD**, sem implicar RELEASE-GREEN Windows.
+- Master Waves 4–5: seguem a ordem do `.agent/MASTER_PLAN.md`.
 
-## Google Drive preparado
+## Master Wave 2 — entregas
+
+- Registry contracts provider-neutral com scopes `GLOBAL` / `PROJECT`.
+- Lifecycle explícito: `DISCOVERED`, `VERIFIED`, `APPROVED`, `REJECTED`, `DEPRECATED`.
+- Registry/Skill Gate com licença, custo, dependências, permissões, provenance, citations e aprovação; runtime permanece não autorizado por construction.
+- Research Agent citation-first; conteúdo externo continua `EXTERNAL_UNTRUSTED` e `instructionsAuthoritative=false`.
+- Knowledge/RAG Registry isolado por `projectId`, com chunks, hashes, citations e policy de auto-ingestion.
+- Technology Resolution integrado ao registry como descoberta por projeto, sem adoção automática.
+- Tool/MCP/Public API/Platform usando contrato/gate comum; Public APIs não vira allowlist.
+- Skill Registry + snapshot validation; `find-skills` pinned continua apenas descoberta.
+- referências curadas MW2 registradas como metadata/capability sources, sem ativação automática.
+
+## Evidência MW2
+
+HEAD funcional auditado: `f34a883a235ae447355500112a6a37b92ea52ed5`.
+
+Cloud Quality Gate run `36017449406`: PASS
+- lint
+- typecheck
+- unit
+- integration
+- security
+- build
+- Cloudflare preview dry-run
+- Cloudflare MW0–MW5 dry-runs
+- evidence step
+
+Skills Snapshot Validation run `36017449373`: PASS.
+
+Documentos:
+- `.agent/MW2_EXECUTION_PLAN.md`
+- `.agent/MW2_TEST_RESULTS.md`
+- `.agent/MW2_HANDOFF.md`
+
+## Google Drive
 
 Raiz: `Tupiniquim AI Dev Studio/`.
 
-Áreas globais verificadas:
+Áreas globais:
 - `00_CANONICAL`
 - `01_INBOX_UPLOADS`
 - `02_MASTER_WAVES`
@@ -60,49 +76,27 @@ Raiz: `Tupiniquim AI Dev Studio/`.
 - `06_HANDOFFS`
 - `07_ARCHIVE`
 
-`02_MASTER_WAVES` contém:
-- `MW0_Foundation_Trusted`
-- `MW1_Dev_AI_Local_Autonomous_RC1`
-- `MW2_Research_Knowledge_Registries`
-- `MW3_Dev_Studio_Hardening_Dogfood`
-- `MW4_AI_Studio_Agent_Registry`
-- `MW5_Multimodal_Automation_Voice`
+MW2:
+`02_MASTER_WAVES/MW2_Research_Knowledge_Registries/`
+- `00_INPUTS`
+- `01_RESEARCH`
+- `02_EVIDENCE`
+- `03_ARTIFACTS`
+- `04_HANDOFF`
 
-Cada wave possui `00_INPUTS`, `01_RESEARCH`, `02_EVIDENCE`, `03_ARTIFACTS` e `04_HANDOFF`.
+## Supabase dedicado
 
-## Infraestrutura cloud-first
-
-Arquivos canônicos:
-- `docs/CLOUD_FIRST/README.md`
-- `docs/CLOUD_FIRST/MASTER_WAVE_INFRASTRUCTURE.md`
-- `.agent/CLOUD_MATRIX.json`
-- `.github/workflows/cloud-quality.yml`
-- `.github/workflows/master-wave-gate.yml`
-- `.github/workflows/cloudflare-preview.yml`
-- `.github/workflows/supabase-readiness.yml`
-- `.github/workflows/windows-certification.yml`
-- `cloudflare/wrangler.jsonc`
-- `cloudflare/src/index.ts`
-- `supabase/README.md`
-
-Cloudflare / GitHub Environment `cloud-preview`:
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-
-Supabase dedicado:
 - projeto: `Tupiniquim-AI-Dev-Studio`
-- ref público/canônico: `brqokxlmxwyxwwbtsltc`
+- ref: `brqokxlmxwyxwwbtsltc`
 - URL: `https://brqokxlmxwyxwwbtsltc.supabase.co`
 - região: `sa-east-1`
-- GitHub Environment: `supabase-dev`
-- secrets de CI ainda necessários: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`
-
-Nenhum secret real deve ser versionado.
+- estado inicial validado: `ACTIVE_HEALTHY`
+- nenhum secret real versionado
+- nenhuma migration/DDL MW2 aplicada remotamente
 
 ## Próximo passo
 
-1. Iniciar os incrementos funcionais da Master Wave 2 na trilha cloud, preservando PR #33 sem merge automático até review explícito.
-2. Classificar arquivos enviados para `01_INBOX_UPLOADS` e mover para a Master Wave correta sem alterar a fonte de verdade GitHub.
-3. Reautenticar/configurar Cloudflare e executar o deploy explícito de `preview`/MW desejada sem uso do PC.
-4. Configurar os dois secrets de CI do ambiente `supabase-dev` e rodar `Supabase Readiness`; schema/migrations só entram depois, versionados e auditados.
-5. Manter a certificação Windows como gate independente de release, sem exigir uso contínuo do PC durante desenvolvimento.
+1. Rodar o gate final do HEAD documental MW2.
+2. Classificar os arquivos restantes do `01_INBOX_UPLOADS` quando o upload estiver completo; isso é ingestão de conteúdo e não reabre o contrato MW2 salvo evidência de conflito.
+3. Após o checkpoint final, iniciar Master Wave 3 na trilha cloud.
+4. Manter Windows como certificação independente de release.
