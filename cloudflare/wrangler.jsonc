@@ -2,9 +2,68 @@
   "name": "tupiniquim-ai-dev-studio-cloud",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-24",
+  "workers_dev": true,
   "vars": {
     "DEPLOYMENT_MODE": "cloud-preview",
-    "RELEASE_STATE": "WINDOWS_DEFERRED"
+    "RELEASE_STATE": "WINDOWS_DEFERRED",
+    "MASTER_WAVE": "PREVIEW",
+    "WAVE_STATE": "FOUNDATION"
+  },
+  "env": {
+    "mw0": {
+      "name": "tupiniquim-ai-dev-studio-cloud-mw0",
+      "vars": {
+        "DEPLOYMENT_MODE": "master-wave",
+        "RELEASE_STATE": "CLOUD_GREEN",
+        "MASTER_WAVE": "MW0",
+        "WAVE_STATE": "COMPLETED"
+      }
+    },
+    "mw1": {
+      "name": "tupiniquim-ai-dev-studio-cloud-mw1",
+      "vars": {
+        "DEPLOYMENT_MODE": "master-wave",
+        "RELEASE_STATE": "WINDOWS_DEFERRED",
+        "MASTER_WAVE": "MW1",
+        "WAVE_STATE": "RC1_OPEN"
+      }
+    },
+    "mw2": {
+      "name": "tupiniquim-ai-dev-studio-cloud-mw2",
+      "vars": {
+        "DEPLOYMENT_MODE": "master-wave",
+        "RELEASE_STATE": "WINDOWS_DEFERRED",
+        "MASTER_WAVE": "MW2",
+        "WAVE_STATE": "AUTHORIZED_CLOUD"
+      }
+    },
+    "mw3": {
+      "name": "tupiniquim-ai-dev-studio-cloud-mw3",
+      "vars": {
+        "DEPLOYMENT_MODE": "master-wave",
+        "RELEASE_STATE": "WINDOWS_DEFERRED",
+        "MASTER_WAVE": "MW3",
+        "WAVE_STATE": "PENDING"
+      }
+    },
+    "mw4": {
+      "name": "tupiniquim-ai-dev-studio-cloud-mw4",
+      "vars": {
+        "DEPLOYMENT_MODE": "master-wave",
+        "RELEASE_STATE": "WINDOWS_DEFERRED",
+        "MASTER_WAVE": "MW4",
+        "WAVE_STATE": "PENDING"
+      }
+    },
+    "mw5": {
+      "name": "tupiniquim-ai-dev-studio-cloud-mw5",
+      "vars": {
+        "DEPLOYMENT_MODE": "master-wave",
+        "RELEASE_STATE": "WINDOWS_DEFERRED",
+        "MASTER_WAVE": "MW5",
+        "WAVE_STATE": "PENDING"
+      }
+    }
   },
   "observability": {
     "enabled": true
