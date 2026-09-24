@@ -9,7 +9,7 @@ import type {
   ProjectAgentThreadBinding
 } from '@tupiniquim/contracts'
 import { AgentRegistryRuntime } from './agent-registry-runtime'
-import { Mw5CapabilityRuntime, type Mw5CapabilityStateRepository } from './mw5-capability-runtime'
+import { Mw5CapabilityRuntime, type Mw5CapabilityStateRepository, type Mw5SourceAvailability } from './mw5-capability-runtime'
 import type { AgentProjectRepository } from './agent-project-runtime'
 
 const registryDocument = () => ({
@@ -36,28 +36,74 @@ const registryDocument = () => ({
 
 class MemoryProjectRepository implements AgentProjectRepository {
   public assignments = new Map<string, ProjectAgentAssignment>()
-  public async putAssignment(value: ProjectAgentAssignment): Promise<void> { this.assignments.set(`${value.projectId}:${value.agentId}`, value) }
-  public async getAssignment(projectId: string, agentId: AgentId): Promise<ProjectAgentAssignment | null> { return this.assignments.get(`${projectId}:${agentId}`) ?? null }
-  public async listAssignments(projectId: string): Promise<ProjectAgentAssignment[]> { return [...this.assignments.values()].filter((value) => value.projectId === projectId) }
-  public async putThreadBinding(_binding: ProjectAgentThreadBinding): Promise<void> {}
-  public async getThreadBinding(_projectId: string, _agentId: AgentId, _provider: AIProviderKind): Promise<ProjectAgentThreadBinding | null> { return null }
-  public async findThreadBinding(_threadId: string): Promise<ProjectAgentThreadBinding | null> { return null }
-  public async putTeam(_team: ProjectAgentTeam): Promise<void> {}
-  public async listTeams(_projectId: string): Promise<ProjectAgentTeam[]> { return [] }
+
+  public putAssignment(value: ProjectAgentAssignment): Promise<void> {
+    this.assignments.set(`${value.projectId}:${value.agentId}`, value)
+    return Promise.resolve()
+  }
+
+  public getAssignment(projectId: string, agentId: AgentId): Promise<ProjectAgentAssignment | null> {
+    return Promise.resolve(this.assignments.get(`${projectId}:${agentId}`) ?? null)
+  }
+
+  public listAssignments(projectId: string): Promise<ProjectAgentAssignment[]> {
+    return Promise.resolve([...this.assignments.values()].filter((value) => value.projectId === projectId))
+  }
+
+  public putThreadBinding(binding: ProjectAgentThreadBinding): Promise<void> {
+    void binding
+    return Promise.resolve()
+  }
+
+  public getThreadBinding(projectId: string, agentId: AgentId, provider: AIProviderKind): Promise<ProjectAgentThreadBinding | null> {
+    void projectId
+    void agentId
+    void provider
+    return Promise.resolve(null)
+  }
+
+  public findThreadBinding(threadId: string): Promise<ProjectAgentThreadBinding | null> {
+    void threadId
+    return Promise.resolve(null)
+  }
+
+  public putTeam(team: ProjectAgentTeam): Promise<void> {
+    void team
+    return Promise.resolve()
+  }
+
+  public listTeams(projectId: string): Promise<ProjectAgentTeam[]> {
+    void projectId
+    return Promise.resolve([])
+  }
 }
 
 class MemoryMw5State implements Mw5CapabilityStateRepository {
   public provenance: Mw5AssetProvenance[] = []
   public consents: Mw5VoiceConsent[] = []
-  public async putProvenance(record: Mw5AssetProvenance): Promise<void> { this.provenance.push(record) }
-  public async listProvenance(projectId: string): Promise<Mw5AssetProvenance[]> { return this.provenance.filter((record) => record.projectId === projectId) }
-  public async putVoiceConsent(record: Mw5VoiceConsent): Promise<void> { this.consents.push(record) }
-  public async getVoiceConsent(projectId: string, consentId: string): Promise<Mw5VoiceConsent | null> { return this.consents.find((record) => record.projectId === projectId && record.id === consentId) ?? null }
+
+  public putProvenance(record: Mw5AssetProvenance): Promise<void> {
+    this.provenance.push(record)
+    return Promise.resolve()
+  }
+
+  public listProvenance(projectId: string): Promise<Mw5AssetProvenance[]> {
+    return Promise.resolve(this.provenance.filter((record) => record.projectId === projectId))
+  }
+
+  public putVoiceConsent(record: Mw5VoiceConsent): Promise<void> {
+    this.consents.push(record)
+    return Promise.resolve()
+  }
+
+  public getVoiceConsent(projectId: string, consentId: string): Promise<Mw5VoiceConsent | null> {
+    return Promise.resolve(this.consents.find((record) => record.projectId === projectId && record.id === consentId) ?? null)
+  }
 }
 
 const approved = (agentId: AgentId): ProjectAgentAssignment => ({ projectId: 'project-a', agentId, lifecycle: 'APPROVED_FOR_PROJECT', approvalRef: 'approval://mw5', skillIds: [], memoryNamespace: `project:project-a:agent:${agentId}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
 
-const setup = async (availability = {}) => {
+const setup = async (availability: Mw5SourceAvailability = {}) => {
   const registry = new AgentRegistryRuntime(registryDocument())
   const projects = new MemoryProjectRepository()
   for (const agentId of ['AGENT-ILLUSTRATOR', 'AGENT-VOICE', 'AGENT-SOCIAL'] as AgentId[]) await projects.putAssignment(approved(agentId))
