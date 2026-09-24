@@ -16,7 +16,7 @@ const json = (body: unknown, init: ResponseInit = {}): Response =>
   })
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  fetch(request: Request, env: Env): Response {
     const url = new URL(request.url)
 
     if (url.pathname === '/healthz') {
