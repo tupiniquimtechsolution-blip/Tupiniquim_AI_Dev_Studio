@@ -1,98 +1,108 @@
 # Status
 
-Atualizado em: 2026-09-22
+Atualizado em: 2026-09-24
 
 ## Estado atual
 
-- Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-- Wave 16 — restart/recovery da memória e sessão Tupiniquim: **FECHADA**
-- PR #23: **MERGEADO**
-- Merge commit da Inc4: `d23a43e5543b455c59e193929122f332267fdf18`
-- Issue #18: **CLOSED / COMPLETED**
-- `checkpoint/wave-16`: **CRIADO E CONFIRMADO**
-- checkpoint target: `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`
-- Wave 17 — dogfood/QA final da Master Wave 1: **EM ANDAMENTO**
-- Issue atual: #24 — `[MASTER WAVE 1] wave-17 — dogfood/QA final e gate de fechamento`
-- Branch RC1 atual: `arena/01a0c8ba-tupiniquim-ai-dev-studio`
-- PR RC1: #32 — **DRAFT / NÃO MERGEADO**
-- Repositório operacional: `F:\CODEX\Tupiniquim-AI-Dev-Studio`
-- Dados operacionais: `F:\CODEX\Tupiniquim-AI-Dev-Studio.data`
-- Master Wave 2: **NÃO INICIADA**
-- Project Bible canônica: `docs/PROJECT_BIBLE/README.md`
+- Estratégia operacional: **CLOUD-FIRST**.
+- GitHub: fonte de verdade e ambiente canônico de desenvolvimento/CI/checkpoints.
+- Branch de ambientação cloud: `cloud/master-wave-2-foundation`.
+- Base da branch cloud: `9e9840a38a05d1989effe91134f6329abae507aa`.
+- PR cloud foundation: #33 — **DRAFT / NÃO MERGEADO**.
+- Fundação cloud-first: **CLOUD-GREEN** comprovado pelo GitHub Actions run `36001845512` no HEAD `649d5ce102043ce84f98104782b903b67390d281`.
+- PR #32 / branch `arena/01a0c8ba-tupiniquim-ai-dev-studio`: preservado como trilha RC1 Windows, **DRAFT / NÃO MERGEADO / WINDOWS-DEFERRED**.
+- `package:win` chegou a PASS no Windows físico após instalação das bibliotecas Spectre; RC1 completa ainda não foi declarada GREEN.
+- Master Wave 2: **LIBERADA PARA EXECUÇÃO FUNCIONAL NA TRILHA CLOUD**; não implica fechamento da RC1 Windows.
+- Cloudflare: control-plane/preview e ambientes MW0–MW5 versionados e validados por dry-run no gate cloud; deploy real continua condicionado às credenciais Cloudflare.
+- Supabase: projeto dedicado `Tupiniquim-AI-Dev-Studio` provisionado em `sa-east-1`, ref `brqokxlmxwyxwwbtsltc`, estado `ACTIVE_HEALTHY`; advisors iniciais de segurança e performance sem achados; nenhum DDL remoto aplicado.
+- Google Drive: workspace real criado e verificado; funciona como acervo/evidência, não como fonte de verdade.
 
-## Situação da Wave 16
+## Evidência CLOUD-GREEN da fundação
 
-A Wave 16 está formalmente encerrada no checkpoint `checkpoint/wave-16`, confirmado no remoto e apontando para `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`.
+GitHub Actions run `36001845512`:
+- install: PASS
+- lint: PASS
+- typecheck: PASS
+- unit: PASS
+- integration: PASS
+- security: PASS
+- build: PASS
+- Cloudflare preview dry-run: PASS
+- Cloudflare MW0–MW5 dry-runs: PASS
+- evidence step: PASS
 
-A conclusão da Wave 16 **não encerra a Master Wave 1**. O gate final obrigatório agora é a Wave 17 de dogfood/QA integrado.
+O workflow não gerou artifact persistido porque os caminhos opcionais de evidence estavam vazios, mas o próprio run e seus steps constituem a evidência operacional do gate.
 
-## Baseline autoritativo herdado da Wave 16
+## Estados formais
 
-HEAD técnico Windows F: `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`.
+- `CLOUD-GREEN`: gates cloud compatíveis passam no GitHub Actions.
+- `WINDOWS-DEFERRED`: certificação Windows real permanece pendente.
+- `RELEASE-GREEN`: cloud + certificações obrigatórias de release comprovadas.
 
-| Gate | Resultado |
-|---|---|
-| `pnpm-f.ps1 validate` | PASS integral |
-| F:\CODEX-only | PASS |
-| lint | PASS |
-| typecheck | PASS |
-| `pnpm test:unit` | 194/194 PASS |
-| `pnpm test:integration` | 99 passed / 2 skipped |
-| `tests/integration/tupiniquim-shutdown-restart.test.ts` | 4/4 PASS |
-| `pnpm test:security` | 34/34 PASS |
-| `pnpm build` | PASS |
-| `pnpm-f.ps1 test:e2e` | 4/4 PASS · 0 failed · 0 skipped · 39.8s |
+## Master Waves
 
-## Wave 17 — objetivo
+- Master Wave 0: CONCLUÍDA.
+- Master Wave 1: desenvolvimento cloud consolidado para continuidade; RC1 Windows preservada como `WINDOWS-DEFERRED`.
+- Master Wave 2: **LIBERADA / PRÓXIMA EXECUÇÃO FUNCIONAL CLOUD**.
+- Master Waves 3–5: seguem a ordem do `MASTER_PLAN.md` e só avançam após o gate cloud da anterior.
 
-Executar dogfood/QA real sobre a base do checkpoint Wave 16, usando o produto como produto e procurando regressões ou inconsistências que a suíte automatizada possa não capturar.
+## Google Drive preparado
 
-Cobertura obrigatória:
+Raiz: `Tupiniquim AI Dev Studio/`.
 
-- startup e workspace real;
-- Tupiniquim Session e continuidade;
-- multi-provider explícito;
-- restart real;
-- isolamento A → B → A;
-- proposal/approval/EXPIRED;
-- privacidade e persistência;
-- UX/estado BUSY/READY/provider/model;
-- `validate` Windows F:;
-- Electron E2E.
+Áreas globais verificadas:
+- `00_CANONICAL`
+- `01_INBOX_UPLOADS`
+- `02_MASTER_WAVES`
+- `03_EVIDENCE`
+- `04_BUILDS_RELEASES`
+- `05_DATA_IMPORTS`
+- `06_HANDOFFS`
+- `07_ARCHIVE`
 
-Achados devem ser classificados como `PRODUCTION BUG`, `E2E/HARNESS BUG`, `UX BUG`, `DOCUMENTATION GAP`, `ENVIRONMENT` ou `OUT OF SCOPE`.
+`02_MASTER_WAVES` contém:
+- `MW0_Foundation_Trusted`
+- `MW1_Dev_AI_Local_Autonomous_RC1`
+- `MW2_Research_Knowledge_Registries`
+- `MW3_Dev_Studio_Hardening_Dogfood`
+- `MW4_AI_Studio_Agent_Registry`
+- `MW5_Multimodal_Automation_Voice`
 
-## Regras de fechamento
+Cada wave possui `00_INPUTS`, `01_RESEARCH`, `02_EVIDENCE`, `03_ARTIFACTS` e `04_HANDOFF`.
 
-- nenhuma nova Master Wave durante Wave 17/RC1;
-- gaps funcionais já comprovados da própria V1 podem e devem ser corrigidos na mesma RC1;
-- nenhum bloqueio crítico/alto pode permanecer aberto;
-- documentação final só depois da evidência real;
-- auditoria externa obrigatória antes de fechar a Master Wave 1;
-- Master Wave 2 permanece bloqueada até esse fechamento.
+## Infraestrutura cloud-first
 
-## RC1 consolidation — estado atual
+Arquivos canônicos:
+- `docs/CLOUD_FIRST/README.md`
+- `docs/CLOUD_FIRST/MASTER_WAVE_INFRASTRUCTURE.md`
+- `.agent/CLOUD_MATRIX.json`
+- `.github/workflows/cloud-quality.yml`
+- `.github/workflows/master-wave-gate.yml`
+- `.github/workflows/cloudflare-preview.yml`
+- `.github/workflows/supabase-readiness.yml`
+- `.github/workflows/windows-certification.yml`
+- `cloudflare/wrangler.jsonc`
+- `cloudflare/src/index.ts`
+- `supabase/README.md`
 
-Branch Arena `arena/01a0c8ba-tupiniquim-ai-dev-studio`; Wave17 + `main`/Google Tasks integrados sem alteração em `main`. RC1 **NÃO APROVADA V1**: build JS disponível, lacunas reais de produto registradas em `docs/RC1/KNOWN_ISSUES.md` e `docs/PROJECT_BIBLE/MATRIZ_RASTREABILIDADE_V1.md`; gates Windows/providers/OAuth ainda em validação.
+Cloudflare / GitHub Environment `cloud-preview`:
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
 
-O setup Windows encontrou um bug real de PowerShell 5.1 no probe da versão Node; correção aplicada na mesma RC1 no commit `c4714cafcecb5025bdbc35495205477627930f8a`. Os commits documentais posteriores não alteram runtime/setup.
+Supabase dedicado:
+- projeto: `Tupiniquim-AI-Dev-Studio`
+- ref público/canônico: `brqokxlmxwyxwwbtsltc`
+- URL: `https://brqokxlmxwyxwwbtsltc.supabase.co`
+- região: `sa-east-1`
+- GitHub Environment: `supabase-dev`
+- secrets de CI ainda necessários: `SUPABASE_ACCESS_TOKEN`, `SUPABASE_DB_PASSWORD`
 
-## Backlog V1 rastreado pelo Agenor
-
-#18 permanece umbrella de consolidação. As lacunas V1 foram materializadas no Notion como #19–#33: Files UX, Terminal, Git, providers reais, EXECUTE/VISUAL, Test Runner/Evidence, perfis de autonomia, browser-second, Prompt Architect, Visual Lab, Preferences, Preview, Windows package/E2E/ConPTY, Google Tasks OAuth real e closeout V1/Master Wave 1.
-
-## Documentação canônica complementar
-
-- `docs/PROJECT_BIBLE/BIBLIA_DO_PROJETO.md`
-- `docs/PROJECT_BIBLE/BACKLOG_E_STATUS.md`
-- `docs/PROJECT_BIBLE/MATRIZ_RASTREABILIDADE_V1.md`
-- `docs/PROJECT_BIBLE/QA_RELEASE_SECURITY.md`
-- `docs/PROJECT_BIBLE/OPERACAO_DEPLOYMENT_SUPORTE.md`
-- `docs/PROJECT_BIBLE/MODELOS_PROVIDERS_AGENTES.md`
-- `docs/PROJECT_BIBLE/MERCADO_PRECIFICACAO_E_VALOR.md`
-- `docs/PROJECT_BIBLE/AGENOR_SYNC.md`
-- `docs/PROJECT_BIBLE/PROMPT_MANTENEDOR_BIBLIA.md`
+Nenhum secret real deve ser versionado.
 
 ## Próximo passo
 
-Concluir o setup/verify no Windows real; registrar qualquer falha concreta; corrigir blockers V1 no mesmo PR #32; reexecutar gates no HEAD final; fechar #19–#32 por evidência; só então executar #33 (auditoria, documentação final e checkpoint da Master Wave 1).
+1. Iniciar os incrementos funcionais da Master Wave 2 na trilha cloud, preservando PR #33 sem merge automático até review explícito.
+2. Classificar arquivos enviados para `01_INBOX_UPLOADS` e mover para a Master Wave correta sem alterar a fonte de verdade GitHub.
+3. Reautenticar/configurar Cloudflare e executar o deploy explícito de `preview`/MW desejada sem uso do PC.
+4. Configurar os dois secrets de CI do ambiente `supabase-dev` e rodar `Supabase Readiness`; schema/migrations só entram depois, versionados e auditados.
+5. Manter a certificação Windows como gate independente de release, sem exigir uso contínuo do PC durante desenvolvimento.

@@ -2,10 +2,20 @@
 
 Leia primeiro `.agent/STATUS.md`, `.agent/EXECUTION_PLAN.md`, `.agent/MASTER_PLAN.md`, `.agent/SECURITY.md`, `.agent/AGENT_REGISTRY.json` e o ADR relevante.
 
+## Modelo operacional cloud-first
+
+- GitHub é a fonte de verdade e o ambiente canônico de desenvolvimento, CI, PRs, evidências e checkpoints.
+- `F:\CODEX\Tupiniquim-AI-Dev-Studio` continua sendo a raiz canônica **somente para certificação Windows física/local**.
+- Estados formais: `CLOUD-GREEN`, `WINDOWS-DEFERRED` e `RELEASE-GREEN`. Nunca converter `CLOUD-GREEN` em alegação de certificação Windows.
+- Master Waves podem avançar após o gate `CLOUD-GREEN` da wave anterior. Release que dependa de Electron/ConPTY/Ollama local/hardware exige também certificação Windows e `RELEASE-GREEN`.
+- Cloudflare é control-plane/preview cloud; não é emulador de Electron, ConPTY ou Ollama local.
+- Supabase é integração opcional por projeto e nunca dependência global automática.
+- Google Drive pode arquivar evidências/builds, mas não substitui GitHub como fonte editável.
+- PR #32 permanece trilha histórica/certificação RC1 Windows e não pode ser mergeado apenas por causa da migração cloud-first.
+
 ## Regras invariantes
 
-- Todo artefato controlável do projeto vive em `F:\CODEX`. Não grave código, cache, dados, logs ou builds em outros discos.
-- A raiz oficial desta máquina é `F:\CODEX\Tupiniquim-AI-Dev-Studio`; preserve os demais projetos irmãos em `F:\CODEX`.
+- No desenvolvimento cloud, artefatos controláveis vivem no GitHub/GitHub Actions. Na certificação Windows local, código, cache, dados, logs e builds permanecem em `F:\CODEX` conforme os scripts RC1.
 - Nunca leia, imprima, registre ou versione valores de `.env*`. Use apenas verificações silenciosas de presença.
 - Renderer Electron não acessa Node. Toda capacidade privilegiada passa por preload mínimo, IPC tipado, PolicyEngine e AuditLog.
 - Nunca simule filesystem, terminal, Git, agentes, pesquisa ou preview. Uma capacidade indisponível deve retornar estado explícito.
@@ -19,9 +29,11 @@ Leia primeiro `.agent/STATUS.md`, `.agent/EXECUTION_PLAN.md`, `.agent/MASTER_PLA
 
 ## Loop de trabalho
 
-Para cada onda: TESTE → CORRIJA → REVIEW DO DIFF → atualize `.agent/STATUS.md` e `.agent/CHANGELOG_AGENT.md` → commit → tag `checkpoint/wave-NN` → continue.
+Para cada onda: TESTE → CORRIJA → REVIEW DO DIFF → atualize `.agent/STATUS.md` e `.agent/CHANGELOG_AGENT.md` → commit/checkpoint → continue.
 
-## Comandos
+Cloud-first: o checkpoint funcional usa gates GitHub Actions. Windows físico fica diferido até o gate de release quando a capacidade exigir Windows real.
+
+## Comandos Windows de certificação
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\bootstrap-f.ps1
@@ -50,6 +62,7 @@ Consulte quando relevante:
 - Skill universal: `.agents/skills/tupiniquim-toolbox/SKILL.md`.
 - Agent Registry documental: `.agent/AGENT_REGISTRY.json`.
 - Políticas/catálogos: `docs/AI_TOOLBOX/`.
+- Operação cloud-first: `docs/CLOUD_FIRST/README.md`.
 - Adaptadores de fornecedor: `.claude/CLAUDE.md`, `QWEN.md`, `GEMINI.md` e equivalentes.
 
 ### Roteamento de capacidades

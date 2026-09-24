@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "sourceOfTruth": "github",
+  "gateStates": ["CLOUD-GREEN", "WINDOWS-DEFERRED", "RELEASE-GREEN"],
+  "googleDrive": {
+    "root": "Tupiniquim AI Dev Studio",
+    "canonical": "00_CANONICAL",
+    "inbox": "01_INBOX_UPLOADS",
+    "wavesRoot": "02_MASTER_WAVES",
+    "evidence": "03_EVIDENCE",
+    "buildsReleases": "04_BUILDS_RELEASES",
+    "dataImports": "05_DATA_IMPORTS",
+    "handoffs": "06_HANDOFFS",
+    "archive": "07_ARCHIVE",
+    "folderIdsVersioned": false
+  },
+  "github": {
+    "repository": "tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio",
+    "cloudFoundationBranch": "cloud/master-wave-2-foundation",
+    "rc1WindowsBranch": "arena/01a0c8ba-tupiniquim-ai-dev-studio",
+    "cloudFoundationPr": 33,
+    "rc1WindowsPr": 32,
+    "futureBranchPattern": "cloud/mw<N>-<scope>"
+  },
+  "cloudflare": {
+    "config": "cloudflare/wrangler.jsonc",
+    "deploymentWorkflow": ".github/workflows/cloudflare-preview.yml",
+    "role": "control-plane-preview",
+    "isWindowsCertification": false
+  },
+  "supabase": {
+    "mode": "optional-project-platform",
+    "projectSelection": "dedicated",
+    "projectName": "Tupiniquim-AI-Dev-Studio",
+    "projectRef": "brqokxlmxwyxwwbtsltc",
+    "projectUrl": "https://brqokxlmxwyxwwbtsltc.supabase.co",
+    "region": "sa-east-1",
+    "provisioned": true,
+    "health": "ACTIVE_HEALTHY",
+    "reuseExistingProjectsImplicitly": false,
+    "githubEnvironment": "supabase-dev",
+    "requiredSecretsWhenEnabled": [
+      "SUPABASE_ACCESS_TOKEN",
+      "SUPABASE_DB_PASSWORD"
+    ]
+  },
+  "waves": [
+    {
+      "id": "MW0",
+      "title": "Foundation Trusted",
+      "drivePath": "02_MASTER_WAVES/MW0_Foundation_Trusted",
+      "cloudflareEnv": "mw0",
+      "waveState": "COMPLETED",
+      "gateState": "CLOUD-GREEN"
+    },
+    {
+      "id": "MW1",
+      "title": "Dev AI Local Autonomous RC1",
+      "drivePath": "02_MASTER_WAVES/MW1_Dev_AI_Local_Autonomous_RC1",
+      "cloudflareEnv": "mw1",
+      "waveState": "RC1_OPEN",
+      "gateState": "WINDOWS-DEFERRED"
+    },
+    {
+      "id": "MW2",
+      "title": "Research Knowledge Registries",
+      "drivePath": "02_MASTER_WAVES/MW2_Research_Knowledge_Registries",
+      "cloudflareEnv": "mw2",
+      "waveState": "AUTHORIZED_CLOUD",
+      "gateState": "WINDOWS-DEFERRED"
+    },
+    {
+      "id": "MW3",
+      "title": "Dev Studio Hardening Dogfood",
+      "drivePath": "02_MASTER_WAVES/MW3_Dev_Studio_Hardening_Dogfood",
+      "cloudflareEnv": "mw3",
+      "waveState": "PENDING",
+      "gateState": "WINDOWS-DEFERRED"
+    },
+    {
+      "id": "MW4",
+      "title": "AI Studio Agent Registry",
+      "drivePath": "02_MASTER_WAVES/MW4_AI_Studio_Agent_Registry",
+      "cloudflareEnv": "mw4",
+      "waveState": "PENDING",
+      "gateState": "WINDOWS-DEFERRED"
+    },
+    {
+      "id": "MW5",
+      "title": "Multimodal Automation Voice",
+      "drivePath": "02_MASTER_WAVES/MW5_Multimodal_Automation_Voice",
+      "cloudflareEnv": "mw5",
+      "waveState": "PENDING",
+      "gateState": "WINDOWS-DEFERRED"
+    }
+  ],
+  "waveFolderTemplate": ["00_INPUTS", "01_RESEARCH", "02_EVIDENCE", "03_ARTIFACTS", "04_HANDOFF"]
+}

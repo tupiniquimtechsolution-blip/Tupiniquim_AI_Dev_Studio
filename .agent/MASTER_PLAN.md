@@ -4,18 +4,33 @@
 
 Este plano operacionaliza o Prompt Mestre de 2026-08-17. Git, código e testes prevalecem sobre documentação histórica. A implementação preservada em `66f94a7` mistura entregas da antiga Wave 4 com código antecipado das Waves 5–10; ela será consolidada sem descartar componentes válidos.
 
-O ambiente desta máquina usa `F:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0012 substitui o ADR 0011 apenas quanto à letra do volume e preserva a cadeia histórica.
+Desde 2026-09-24, o desenvolvimento adota operação **cloud-first**. GitHub é a fonte de verdade e ambiente canônico de desenvolvimento/CI. `F:\CODEX\Tupiniquim-AI-Dev-Studio` permanece a raiz obrigatória para certificação Windows física/local, não para o ciclo diário de desenvolvimento.
+
+Estados de gate:
+- `CLOUD-GREEN`: gates cloud compatíveis passam no GitHub Actions.
+- `WINDOWS-DEFERRED`: requisitos Windows reais seguem pendentes e não podem ser reportados como aprovados.
+- `RELEASE-GREEN`: cloud + certificações obrigatórias de release estão comprovadas.
 
 ## Waves
 
 | Wave Mestre | Escopo | Estado |
 |---:|---|---|
 | 0 | Fundação confiável: isolamento local, AIProvider, persistência, IPC/PolicyEngine, E2E e redaction | CONCLUÍDA; checkpoint/wave-04 |
-| 1 | Dev AI local autônomo: runtime local, agente, workspace, memória, contexto e browser QA | EM ANDAMENTO; wave-13 propostas; wave-14 protocolo provider-neutral + provenance; wave-15 conversation continuity concluída; wave-16 restart/recovery fechada em `checkpoint/wave-16`; wave-17 dogfood/QA final ATIVA pela Issue #24. A Master Wave 1 só fecha se a Wave 17 ficar GREEN sem bloqueios críticos/altos |
-| 2 | Research, Knowledge, Technology/Tool/MCP/Skill Registries | PENDENTE; bloqueada até fechamento da Master Wave 1 |
-| 3 | Dev Studio completo, hardening e dogfood controlado | PENDENTE |
+| 1 | Dev AI local autônomo: runtime local, agente, workspace, memória, contexto e browser QA | CLOUD-GREEN PENDENTE / WINDOWS-DEFERRED; Wave 17/RC1 permanece aberta no PR #32 e não é declarada V1 GREEN |
+| 2 | Research, Knowledge, Technology/Tool/MCP/Skill Registries | AUTORIZADA EM TRILHA CLOUD após fundação cloud-first; não implica fechamento da RC1 Windows |
+| 3 | Dev Studio completo, hardening e dogfood controlado | PENDENTE; poderá iniciar após Master Wave 2 `CLOUD-GREEN` |
 | 4 | Tupiniquim AI Studio: Agent Registry e Agents → Projects/Threads | PENDENTE |
 | 5 | Multimodal, automação e voz, conforme hardware | PENDENTE |
+
+## Política de avanço cloud-first
+
+1. Uma Master Wave pode avançar quando sua antecessora estiver `CLOUD-GREEN` para o escopo cloud compatível.
+2. Capacidades não reproduzíveis em nuvem ficam marcadas `WINDOWS-DEFERRED`, nunca PASS fictício.
+3. Electron packaging, ConPTY, Ollama local/hardware e fluxos OAuth humanos permanecem gates de release quando aplicáveis.
+4. Cloudflare hospeda control-plane/preview e não substitui runtime Windows.
+5. Supabase permanece platform source opcional por projeto; nenhuma adoção global implícita.
+6. Google Drive pode receber cópias de evidências/builds, mas não substitui GitHub como fonte de verdade.
+7. PR #32 permanece DRAFT/não mergeado até decisão baseada em evidência própria da RC1 Windows.
 
 ## Mapeamento de legado
 
@@ -60,22 +75,23 @@ O ambiente desta máquina usa `F:\CODEX\Tupiniquim-AI-Dev-Studio`. O ADR 0012 su
 
 ## Aceite da Wave 0
 
-1. Scripts, dados, caches e testes usam somente o volume operacional autorizado, atualmente F:.
+1. Scripts, dados, caches e testes respeitam a raiz operacional do ambiente em que estão rodando; na certificação Windows física, permanece obrigatório F:.
 2. O transporte Codex stdio JSONL inicializa, autentica quando disponível, transmite eventos, interrompe e encerra sem expor segredos.
 3. Threads, turns e eventos normalizados persistem e retomam.
 4. Toda IPC privilegiada aplica política, valida input e output, e audita o resultado sanitizado.
-5. `lint`, `typecheck`, unit, integration, security, build e Electron E2E passam. Inferência sem créditos é relatada como bloqueio externo, não como aprovação falsa.
+5. `lint`, `typecheck`, unit, integration, security, build e Electron E2E passam nos gates aplicáveis; skips/deferências são reportados explicitamente.
 
 ## Gate final da Master Wave 1 — Wave 17
 
-A Wave 17 é um gate de dogfood/QA, não uma feature wave.
+A Wave 17 continua sendo o gate de dogfood/QA da RC1 Windows. Ela não é apagada pela mudança cloud-first.
 
-Ela deve exercitar o produto integrado no Windows F: e validar startup, sessão, conversa, multi-provider, restart/recovery, isolamento A→B→A, proposal/EXPIRED, privacidade, persistência, UX/estado e regressão automatizada.
-
-Achados devem ser classificados antes de correção. Bugs reais só podem gerar mudanças mínimas e auditáveis; nenhuma feature da Master Wave 2 pode ser antecipada.
-
-A Master Wave 1 só pode ser marcada CONCLUÍDA depois da Issue #24 GREEN, sem bloqueios críticos/altos, com gates reais e documentação final auditados.
+No estado cloud-first:
+- a trilha RC1 Windows permanece `WINDOWS-DEFERRED` até evidência própria;
+- a trilha de desenvolvimento pode prosseguir para Master Wave 2 sem declarar a Wave 17 `RELEASE-GREEN`;
+- qualquer release Windows futura continua exigindo os gates reais de startup, sessão, conversa, multi-provider, restart/recovery, isolamento A→B→A, proposal/EXPIRED, privacidade, persistência, UX/estado, pacote, E2E/ConPTY e provider local aplicável.
 
 ## Protocolo de execução
 
-Para cada wave: teste → correção → review do diff → atualização de STATUS/TEST_RESULTS/handoff → commit `wave-NN:` → tag `checkpoint/wave-NN` → próxima wave.
+Para cada wave cloud-first: teste → correção → review do diff → atualização de STATUS/TEST_RESULTS/handoff → commit/checkpoint → próxima wave quando `CLOUD-GREEN`.
+
+Para release Windows: executar certificação específica e somente então promover para `RELEASE-GREEN`.

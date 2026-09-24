@@ -1,0 +1,63 @@
+name: Supabase Readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      wave:
+        description: Master Wave requesting Supabase readiness
+        required: true
+        type: choice
+        options:
+          - mw0
+          - mw1
+          - mw2
+          - mw3
+          - mw4
+          - mw5
+
+permissions:
+  contents: read
+
+jobs:
+  readiness:
+    runs-on: ubuntu-latest
+    environment: supabase-dev
+    timeout-minutes: 15
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: brqokxlmxwyxwwbtsltc
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require dedicated Supabase CI credentials
+        shell: bash
+        run: |
+          test -n "$SUPABASE_ACCESS_TOKEN" || (echo 'SUPABASE_ACCESS_TOKEN is not configured' && exit 1)
+          test -n "$SUPABASE_DB_PASSWORD" || (echo 'SUPABASE_DB_PASSWORD is not configured' && exit 1)
+          test "$SUPABASE_PROJECT_REF" = "brqokxlmxwyxwwbtsltc" || (echo 'Unexpected Supabase project ref' && exit 1)
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Initialize ephemeral CLI config when absent
+        shell: bash
+        run: |
+          if [ ! -f supabase/config.toml ]; then
+            supabase init
+          fi
+      - name: Link dedicated remote project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Lint linked database
+        run: supabase db lint --linked --level warning
+      - name: Record non-secret readiness evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .supabase-evidence
+          printf '{"wave":"%s","sha":"%s","operation":"readiness-only","projectRef":"%s","ddlApplied":false}\n' "${{ inputs.wave }}" "${{ github.sha }}" "$SUPABASE_PROJECT_REF" > ".supabase-evidence/${{ inputs.wave }}.json"
+      - name: Upload readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-readiness-${{ inputs.wave }}-${{ github.sha }}
+          if-no-files-found: error
+          path: .supabase-evidence/**
