@@ -147,13 +147,20 @@ export class AgentProjectRuntime {
     const agent = this.registry.get(intent.agentId)
     const declaredByAgent = agent.effects.includes(intent.capability)
     const canonicalCapability = canonicalMutationCapabilities[intent.capability] ?? null
+    const resultBase = {
+      projectId: intent.projectId,
+      agentId: intent.agentId,
+      capability: intent.capability,
+      canonicalCapability
+    }
+
     if (!declaredByAgent) {
-      const denied = agentCapabilityGateResultSchema.parse({ ...intent, canonicalCapability, declaredByAgent: false, policyAllowed: false, requiresApproval: false, runtimeExecutionAuthorized: false, reason: 'Capability mutável não declarada pelo Agent.' })
+      const denied = agentCapabilityGateResultSchema.parse({ ...resultBase, declaredByAgent: false, policyAllowed: false, requiresApproval: false, runtimeExecutionAuthorized: false, reason: 'Capability mutável não declarada pelo Agent.' })
       await this.writeAudit('CAPABILITY_GATE', intent.projectId, intent.agentId, 'DENIED', denied.reason)
       return denied
     }
     if (canonicalCapability === null) {
-      const denied = agentCapabilityGateResultSchema.parse({ ...intent, canonicalCapability: null, declaredByAgent: true, policyAllowed: false, requiresApproval: false, runtimeExecutionAuthorized: false, reason: 'Capability declarada, mas sem materializador canônico aprovado na MW4; permanece metadata-only.' })
+      const denied = agentCapabilityGateResultSchema.parse({ ...resultBase, declaredByAgent: true, policyAllowed: false, requiresApproval: false, runtimeExecutionAuthorized: false, reason: 'Capability declarada, mas sem materializador canônico aprovado na MW4; permanece metadata-only.' })
       await this.writeAudit('CAPABILITY_GATE', intent.projectId, intent.agentId, 'DENIED', denied.reason)
       return denied
     }
@@ -165,8 +172,7 @@ export class AgentProjectRuntime {
       requiresNetwork: intent.requiresNetwork
     })
     const result = agentCapabilityGateResultSchema.parse({
-      ...intent,
-      canonicalCapability,
+      ...resultBase,
       declaredByAgent: true,
       policyAllowed: policy.allowed,
       requiresApproval: policy.allowed,
