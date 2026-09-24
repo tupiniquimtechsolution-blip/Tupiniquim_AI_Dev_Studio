@@ -9,6 +9,7 @@ import {
   type KnowledgeQueryInput,
   type KnowledgeQueryResult
 } from '@tupiniquim/contracts'
+import { assertKnowledgeIngestionPath } from './knowledge-ingestion-policy'
 
 const normalizeTerms = (value: string): string[] => [...new Set(value
   .normalize('NFKD')
@@ -43,6 +44,7 @@ export class KnowledgeRegistry {
 
   public ingest(input: KnowledgeIngestInput): KnowledgeDocument {
     const parsed = knowledgeIngestInputSchema.parse(input)
+    if (parsed.sourcePath !== undefined) assertKnowledgeIngestionPath(parsed.sourcePath)
     const documentId = randomUUID()
     const citation = {
       ...(parsed.sourceId === undefined ? {} : { sourceId: parsed.sourceId }),
