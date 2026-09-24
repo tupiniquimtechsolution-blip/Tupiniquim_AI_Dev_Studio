@@ -25,16 +25,16 @@ jobs:
     timeout-minutes: 15
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_PROJECT_REF: brqokxlmxwyxwwbtsltc
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
-      - name: Require explicit Supabase project configuration
+      - name: Require dedicated Supabase CI credentials
         shell: bash
         run: |
           test -n "$SUPABASE_ACCESS_TOKEN" || (echo 'SUPABASE_ACCESS_TOKEN is not configured' && exit 1)
-          test -n "$SUPABASE_PROJECT_REF" || (echo 'SUPABASE_PROJECT_REF is not configured' && exit 1)
           test -n "$SUPABASE_DB_PASSWORD" || (echo 'SUPABASE_DB_PASSWORD is not configured' && exit 1)
+          test "$SUPABASE_PROJECT_REF" = "brqokxlmxwyxwwbtsltc" || (echo 'Unexpected Supabase project ref' && exit 1)
       - uses: supabase/setup-cli@v1
         with:
           version: latest
@@ -44,7 +44,7 @@ jobs:
           if [ ! -f supabase/config.toml ]; then
             supabase init
           fi
-      - name: Link explicit remote project
+      - name: Link dedicated remote project
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
       - name: Lint linked database
         run: supabase db lint --linked --level warning
@@ -53,7 +53,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p .supabase-evidence
-          printf '{"wave":"%s","sha":"%s","operation":"readiness-only","ddlApplied":false}\n' "${{ inputs.wave }}" "${{ github.sha }}" > ".supabase-evidence/${{ inputs.wave }}.json"
+          printf '{"wave":"%s","sha":"%s","operation":"readiness-only","projectRef":"%s","ddlApplied":false}\n' "${{ inputs.wave }}" "${{ github.sha }}" "$SUPABASE_PROJECT_REF" > ".supabase-evidence/${{ inputs.wave }}.json"
       - name: Upload readiness evidence
         if: always()
         uses: actions/upload-artifact@v4
