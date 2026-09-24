@@ -2,19 +2,31 @@
 
 Supabase é uma plataforma opcional por projeto/wave. Não é dependência global automática do Tupiniquim AI Dev Studio.
 
-## Estado atual
+## Projeto dedicado
 
-Nenhum projeto Supabase remoto está vinculado a este repositório. Projetos Supabase existentes de outros produtos não podem ser reutilizados implicitamente.
+- nome: `Tupiniquim-AI-Dev-Studio`
+- project ref: `brqokxlmxwyxwwbtsltc`
+- URL: `https://brqokxlmxwyxwwbtsltc.supabase.co`
+- região: `sa-east-1`
+- estado inicial observado: `ACTIVE_HEALTHY`
+- advisors iniciais: segurança = 0 achados; performance = 0 achados
 
-## Quando habilitar
+Projetos Supabase existentes de outros produtos não podem ser reutilizados implicitamente.
 
-1. selecionar ou criar explicitamente um projeto Supabase próprio do Tupiniquim;
-2. configurar no GitHub Environment `supabase-dev`:
-   - `SUPABASE_ACCESS_TOKEN`
-   - `SUPABASE_PROJECT_REF`
-   - `SUPABASE_DB_PASSWORD`
-3. executar o workflow `Supabase Readiness` para a Master Wave desejada;
-4. somente após readiness e decisão arquitetural, inicializar e versionar migrations/schema reais.
+## Estado operacional
+
+O projeto remoto já está provisionado, porém nenhum schema de produto, migration ou Edge Function foi aplicado. O repositório mantém a autoridade sobre qualquer futura mudança de banco.
+
+## Habilitação no CI
+
+Configurar no GitHub Environment `supabase-dev` apenas os secrets:
+
+- `SUPABASE_ACCESS_TOKEN`
+- `SUPABASE_DB_PASSWORD`
+
+O `SUPABASE_PROJECT_REF` não é secret e está fixado no workflow para impedir link acidental a outro projeto.
+
+Depois executar o workflow `Supabase Readiness` para a Master Wave desejada. Somente após readiness e decisão arquitetural, inicializar e versionar migrations/schema reais.
 
 ## Regras de segurança
 
@@ -30,10 +42,11 @@ Nenhum projeto Supabase remoto está vinculado a este repositório. Projetos Sup
 
 `.github/workflows/supabase-readiness.yml` faz somente:
 
-- validação silenciosa da presença de credenciais;
+- validação da presença das credenciais privadas de CI;
+- verificação do project ref canônico `brqokxlmxwyxwwbtsltc`;
 - setup da CLI;
 - `supabase init` efêmero se `config.toml` ainda não existir;
-- link ao projeto explicitamente fornecido;
+- link ao projeto dedicado;
 - `supabase db lint --linked --level warning`;
 - evidence não sensível como artifact.
 
