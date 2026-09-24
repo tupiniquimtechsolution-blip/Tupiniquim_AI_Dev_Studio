@@ -61,7 +61,7 @@
         "DEPLOYMENT_MODE": "master-wave",
         "RELEASE_STATE": "WINDOWS_DEFERRED",
         "MASTER_WAVE": "MW5",
-        "WAVE_STATE": "PENDING"
+        "WAVE_STATE": "CLOUD_GREEN"
       }
     }
   },

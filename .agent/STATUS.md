@@ -6,96 +6,97 @@ Atualizado em: 2026-09-24
 
 - Estratégia operacional: **CLOUD-FIRST**.
 - GitHub: fonte de verdade e ambiente canônico de desenvolvimento/CI/checkpoints.
-- PR #32 / branch `arena/01a0c8ba-tupiniquim-ai-dev-studio`: trilha RC1 Windows, **DRAFT / NÃO MERGEADO / WINDOWS-DEFERRED**.
-- PR #33 / branch `cloud/master-wave-2-foundation`: fundação cloud-first **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
-- PR #36 / branch `cloud/mw2-research-knowledge-registries`: Master Wave 2 **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
-- PR #39 / branch `cloud/mw3-dev-studio-hardening-dogfood`: Master Wave 3 **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD / DRAFT / NÃO MERGEADO**; Issue #38 fechada `completed`.
-- PR #41 / branch `cloud/mw4-agent-registry-project-threads`: Master Wave 4 **CLOUD-GREEN FUNCIONAL / DRAFT / NÃO MERGEADO**; Issue #40 só fecha após o gate do HEAD documental final.
-- `package:win` chegou a PASS no Windows físico após instalação das bibliotecas Spectre; RC1 completa não foi declarada RELEASE-GREEN.
-- Cloudflare: preview + ambientes MW0–MW5 validados por dry-run; MW2–MW4 reconciliados como `WAVE_STATE=CLOUD_GREEN`, mantendo `RELEASE_STATE=WINDOWS_DEFERRED`.
-- Supabase: projeto dedicado `Tupiniquim-AI-Dev-Studio`, ref `brqokxlmxwyxwwbtsltc`, `ACTIVE_HEALTHY`; nenhum DDL remoto aplicado por MW2/MW3/MW4.
-- Google Drive: workspace MW0–MW5 preparado; uploads são acervo/inputs, nunca fonte de verdade.
+- PR #32 / branch `arena/01a0c8ba-tupiniquim-ai-dev-studio`: RC1 Windows **DRAFT / NÃO MERGEADO / WINDOWS-DEFERRED**.
+- PR #33 / `cloud/master-wave-2-foundation`: fundação cloud-first **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
+- PR #36 / `cloud/mw2-research-knowledge-registries`: MW2 **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
+- PR #39 / `cloud/mw3-dev-studio-hardening-dogfood`: MW3 **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD / DRAFT / NÃO MERGEADO**.
+- PR #41 / `cloud/mw4-agent-registry-project-threads`: MW4 **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD / DRAFT / NÃO MERGEADO**; Issue #40 fechada `completed`.
+- PR #43 / `cloud/mw5-multimodal-automation-voice`: MW5 **CLOUD-GREEN FUNCIONAL / DRAFT / NÃO MERGEADO**; fechamento formal depende do HEAD documental final.
+- `package:win` chegou a PASS no Windows físico, mas RC1 completa não foi declarada `RELEASE-GREEN`.
+- Cloudflare preview + MW0–MW5 passam dry-run; MW2–MW4 estão `WAVE_STATE=CLOUD_GREEN` e MW5 será promovida no checkpoint documental final; `RELEASE_STATE` permanece `WINDOWS_DEFERRED`.
+- Supabase dedicado permanece sem DDL remoto implícito pelas MW2–MW5.
+- Google Drive: upload completo recebido e organizado como acervo/snapshot; GitHub continua fonte de verdade.
 
 ## Estados formais
 
 - `CLOUD-GREEN`: gates cloud compatíveis passam no GitHub Actions.
-- `WINDOWS-DEFERRED`: certificação Windows real permanece pendente.
+- `WINDOWS-DEFERRED`: certificação/hardware Windows real permanece pendente quando aplicável.
+- `NOT_CONFIGURED`: provider/service externa ainda não recebeu configuração explícita.
 - `RELEASE-GREEN`: cloud + certificações obrigatórias de release comprovadas.
 
 ## Master Waves
 
-- Master Wave 0: CONCLUÍDA.
-- Master Wave 1: desenvolvimento cloud consolidado; RC1 Windows preservada como `WINDOWS-DEFERRED`.
-- Master Wave 2: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
-- Master Wave 3: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
-- Master Wave 4: **CLOUD-GREEN FUNCIONAL / CONCLUSÃO DOCUMENTAL EM CHECKPOINT FINAL**.
-- Master Wave 5: **AUTORIZADA COMO PRÓXIMA TRILHA CLOUD somente após GREEN do HEAD documental final MW4**.
+- MW0: CONCLUÍDA.
+- MW1: desenvolvimento cloud consolidado; RC1 física `WINDOWS-DEFERRED`.
+- MW2: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
+- MW3: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
+- MW4: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
+- MW5: **CLOUD-GREEN FUNCIONAL / CHECKPOINT DOCUMENTAL FINAL**.
 
-## Master Wave 4 — entregas
+## Master Wave 5 — entregas
 
-- `.agent/AGENT_REGISTRY.json` materializado por contrato Zod strict/runtime fail-closed;
-- Agent permanece separado de provider/model/tool/skill/source repository;
-- provider/model continuam inputs explícitos de thread/dispatch;
-- aprovação por projeto com `approvalRef`, loadouts e memory namespaces isolados;
-- project teams exigem Agents aprovados no mesmo projeto;
-- thread binding bloqueia reuse cross-project/cross-agent/provider e exige rebind para troca de model;
-- `effects` são metadata/intenção, não autoridade;
-- aliases MW4 mapeados para capabilities canônicas antes de PolicyEngine;
-- toda ação mutável originada do Agent Runtime continua com `runtimeExecutionAuthorized=false` nesta camada e exige ApprovalStore/PlanApprovalService para materialização;
-- effects sem materializador MW4, incluindo `asset:create`, permanecem metadata-only;
-- `AgentProjectJsonStore` persiste assignments/teams/thread bindings no data root e recupera após restart;
-- `AgentRuntimeAuditAdapter` integra eventos ao AuditLog existente;
-- security negatives e dogfood MW4 exercitam isolamento, injection, FULL_ACCESS sem autoridade, disable e restart.
+- contratos strict de sources, operations, intents, decisions, provenance e voice consent;
+- `Mw5CapabilityRuntime` provider-neutral e fail-closed;
+- Open-Generative-AI registrado como capability source do Illustrator sem seleção automática de provider/model;
+- Gemini `/reveal`, `/teardown`, `/explodedview` preservados como aliases internos, com `officialGeminiCommand=false`;
+- Pocket TTS registrado como source local; execução real continua `WINDOWS_DEFERRED` quando não reproduzível em CI;
+- voice cloning exige consentimento ativo no mesmo projeto + provenance da amostra;
+- OpenReply permanece `NOT_CONFIGURED` até setup explícito e external write exige API oficial + network + Policy + approval;
+- `kimi-k3-in-c` permanece experimental/research-only;
+- `asset:create`, `asset:edit` e `network:external-write` são mapeados para capabilities canônicas, mas a camada MW5 nunca concede execução direta;
+- `runtimeExecutionAuthorized=false` é invariável; materialização continua em ApprovalStore/PlanApprovalService + AuditLog;
+- `Mw5CapabilityJsonStore` persiste provenance/consent atomicamente no data root e preserva isolamento após restart;
+- security negatives e dogfood MW5 cobrem consentimento, provenance, API oficial, FULL_ACCESS, experimental source e restart.
 
-## Evidência MW4 funcional
+## Evidência MW5 funcional
 
-HEAD funcional: `0b1a64efe6f55ab890f2d30d5156b362f0f936aa`.
+HEAD funcional: `1db71a96e80b2bd1dfce693a78bfcfa605f3eb18`.
 
-Cloud Quality Gate run `36025944421`: **PASS**
-- install
-- lint
-- typecheck
-- unit — 33 arquivos / 259 testes
-- integration — 14 arquivos / 103 testes; 4 skips explícitos de ambiente/live
-- security — 7 arquivos / 48 testes
-- dogfood — 2 arquivos / 12 testes (MW3 A–K + MW4 Agent Studio)
-- build
-- Cloudflare preview dry-run
-- Cloudflare MW0–MW5 dry-runs
-- evidence step
+Cloud Quality Gate run `36042725979`: **PASS**
+- lint PASS;
+- typecheck PASS;
+- unit — 34 arquivos / 265 testes;
+- integration — 15 arquivos / 104 testes; 4 skips explícitos de ambiente/live;
+- security — 8 arquivos / 55 testes;
+- dogfood — 3 arquivos / 13 testes (MW3 A–K + MW4 + MW5);
+- build PASS;
+- Cloudflare preview + MW0–MW5 dry-runs PASS.
 
-O run não gerou artifact persistido porque os paths opcionais de artifact ficaram vazios; o próprio run/steps é a evidência operacional.
+Documentos MW5:
+- `.agent/MW5_EXECUTION_PLAN.md`
+- `.agent/MW5_SOURCE_REVIEW.md`
+- `.agent/MW5_TEST_RESULTS.md`
+- `.agent/MW5_HANDOFF.md`
 
-Documentos MW4:
-- `.agent/MW4_EXECUTION_PLAN.md`
-- `.agent/MW4_TEST_RESULTS.md`
-- `.agent/MW4_HANDOFF.md`
+## Google Drive
+
+O upload bruto foi classificado sem tornar Drive fonte de verdade:
+- source snapshot preservado em `07_ARCHIVE/2026-09-24_REPO_SOURCE_SNAPSHOT`;
+- `.env*` segregados em `EXCLUDED_SENSITIVE` sem leitura;
+- `node_modules`/`.cache` em `EXCLUDED_GENERATED`;
+- `test-results`/`playwright-report` em `03_EVIDENCE`;
+- `out`/`release` em `04_BUILDS_RELEASES`;
+- itens que o conector recusou mover permanecem exceções explícitas no inbox, sem tentativa de bypass.
 
 ## Segurança / autoridade
 
-- nenhum Agent recebe provider/model como propriedade de autoridade;
-- nenhum Registry/Skill/Tool/MCP/Agent concede runtime mutation authority por existência ou aprovação de metadata;
-- FULL_ACCESS preserva PolicyEngine/absolute blocks e não remove ApprovalStore/PlanApprovalService;
-- capability não declarada falha fechado;
-- effect futuro sem materializador aprovado falha fechado;
-- thread/project isolation é persistente e testado após restart.
+- `agent != provider != model != tool != skill != source_repository`;
+- source registrada != adotada != configurada != aprovada != executada;
+- nenhum Agent/Registry/Skill/Tool/MCP/source concede runtime authority por existência;
+- FULL_ACCESS não remove ApprovalStore/PlanApprovalService;
+- nenhum secret real ou DDL Supabase MW5 foi introduzido;
+- hardware/OAuth/provider externo real não recebe PASS por inferência.
 
-## Supabase / Drive
+## Pendências após MW5
 
-- nenhum secret real versionado;
-- nenhuma migration/DDL MW2/MW3/MW4 aplicada remotamente;
-- `.env*`, secrets/credentials/tokens, generated artifacts e VCS internals continuam fora da auto-ingestion de Knowledge;
-- Drive não substitui GitHub como fonte de verdade.
-
-## Pendências não bloqueantes
-
-- Issue #37 — sincronização autenticada dos Top 500 skills.sh quando Vercel OIDC estiver disponível; rankings não são fabricados.
-- classificação final do `01_INBOX_UPLOADS` quando o upload terminar.
-- certificação Windows física independente para promover futuramente a `RELEASE-GREEN`.
+- certificar RC1 Windows física para eventual `RELEASE-GREEN`;
+- configurar/testar serviços externos somente por fluxo explícito quando desejado;
+- Issue #37 de sincronização autenticada skills.sh permanece independente;
+- integração/merge dos PRs empilhados requer decisão explícita.
 
 ## Próximo passo
 
-1. Rodar Cloud Quality Gate do HEAD documental final MW4.
-2. Fechar Issue #40 como `completed` somente após esse GREEN.
-3. Manter PR #41 DRAFT/não mergeado até integração explícita.
-4. Após o checkpoint, liberar Master Wave 5 na trilha cloud sem alterar o estado `WINDOWS-DEFERRED` da RC1.
+1. Validar o HEAD documental final MW5 no Cloud Quality Gate.
+2. Fechar Issue #42 como `completed` somente após GREEN.
+3. Manter PR #43 DRAFT/não mergeado.
+4. Com MW5 concluída, considerar a sequência cloud Master Waves 0–5 encerrada; qualquer nova wave exige novo planejamento/versionamento explícito.
