@@ -9,12 +9,29 @@ Atualizado em: 2026-09-24
 - Branch de ambientação cloud: `cloud/master-wave-2-foundation`.
 - Base da branch cloud: `9e9840a38a05d1989effe91134f6329abae507aa`.
 - PR cloud foundation: #33 — **DRAFT / NÃO MERGEADO**.
+- Fundação cloud-first: **CLOUD-GREEN** comprovado pelo GitHub Actions run `36001845512` no HEAD `649d5ce102043ce84f98104782b903b67390d281`.
 - PR #32 / branch `arena/01a0c8ba-tupiniquim-ai-dev-studio`: preservado como trilha RC1 Windows, **DRAFT / NÃO MERGEADO / WINDOWS-DEFERRED**.
 - `package:win` chegou a PASS no Windows físico após instalação das bibliotecas Spectre; RC1 completa ainda não foi declarada GREEN.
-- Master Wave 2: **AUTORIZADA NA TRILHA CLOUD**, condicionada aos gates `CLOUD-GREEN` da fundação cloud-first.
-- Cloudflare: control-plane/preview e ambientes MW0–MW5 versionados; deploy direto pelo conector está aguardando autenticação válida, enquanto GitHub Actions está preparado para deploy por secrets.
+- Master Wave 2: **LIBERADA PARA EXECUÇÃO FUNCIONAL NA TRILHA CLOUD**; não implica fechamento da RC1 Windows.
+- Cloudflare: control-plane/preview e ambientes MW0–MW5 versionados e validados por dry-run no gate cloud; deploy real continua condicionado às credenciais Cloudflare.
 - Supabase: projeto dedicado `Tupiniquim-AI-Dev-Studio` provisionado em `sa-east-1`, ref `brqokxlmxwyxwwbtsltc`, estado `ACTIVE_HEALTHY`; advisors iniciais de segurança e performance sem achados; nenhum DDL remoto aplicado.
 - Google Drive: workspace real criado e verificado; funciona como acervo/evidência, não como fonte de verdade.
+
+## Evidência CLOUD-GREEN da fundação
+
+GitHub Actions run `36001845512`:
+- install: PASS
+- lint: PASS
+- typecheck: PASS
+- unit: PASS
+- integration: PASS
+- security: PASS
+- build: PASS
+- Cloudflare preview dry-run: PASS
+- Cloudflare MW0–MW5 dry-runs: PASS
+- evidence step: PASS
+
+O workflow não gerou artifact persistido porque os caminhos opcionais de evidence estavam vazios, mas o próprio run e seus steps constituem a evidência operacional do gate.
 
 ## Estados formais
 
@@ -25,8 +42,8 @@ Atualizado em: 2026-09-24
 ## Master Waves
 
 - Master Wave 0: CONCLUÍDA.
-- Master Wave 1: trilha cloud em consolidação; RC1 Windows preservada como `WINDOWS-DEFERRED`.
-- Master Wave 2: próxima trilha funcional, autorizada após ambientação cloud `CLOUD-GREEN`.
+- Master Wave 1: desenvolvimento cloud consolidado para continuidade; RC1 Windows preservada como `WINDOWS-DEFERRED`.
+- Master Wave 2: **LIBERADA / PRÓXIMA EXECUÇÃO FUNCIONAL CLOUD**.
 - Master Waves 3–5: seguem a ordem do `MASTER_PLAN.md` e só avançam após o gate cloud da anterior.
 
 ## Google Drive preparado
@@ -84,9 +101,8 @@ Nenhum secret real deve ser versionado.
 
 ## Próximo passo
 
-1. Concluir o `Cloud Quality Gate` do PR #33 e corrigir somente failures comprovados.
+1. Iniciar os incrementos funcionais da Master Wave 2 na trilha cloud, preservando PR #33 sem merge automático até review explícito.
 2. Classificar arquivos enviados para `01_INBOX_UPLOADS` e mover para a Master Wave correta sem alterar a fonte de verdade GitHub.
-3. Quando a fundação estiver `CLOUD-GREEN`, iniciar os incrementos funcionais da Master Wave 2.
-4. Reautenticar/configurar Cloudflare e executar o deploy explícito de `preview`/MW desejada sem uso do PC.
-5. Configurar os dois secrets de CI do ambiente `supabase-dev` e rodar `Supabase Readiness`; schema/migrations só entram depois, versionados e auditados.
-6. Manter a certificação Windows como gate independente de release, sem exigir uso contínuo do PC durante desenvolvimento.
+3. Reautenticar/configurar Cloudflare e executar o deploy explícito de `preview`/MW desejada sem uso do PC.
+4. Configurar os dois secrets de CI do ambiente `supabase-dev` e rodar `Supabase Readiness`; schema/migrations só entram depois, versionados e auditados.
+5. Manter a certificação Windows como gate independente de release, sem exigir uso contínuo do PC durante desenvolvimento.
