@@ -1,1 +1,0 @@
-# Tupiniquim AI Dev Studio
