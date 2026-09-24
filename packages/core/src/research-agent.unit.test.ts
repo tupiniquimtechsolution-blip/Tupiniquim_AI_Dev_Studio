@@ -47,7 +47,7 @@ describe('ResearchAgent', () => {
     }
     const agent = new ResearchAgent(provider)
 
-    const brief = await agent.run({ projectId: 'project-b', query: 'sem resultado' })
+    const brief = await agent.run({ projectId: 'project-b', query: 'sem resultado', maxResults: 8 })
 
     expect(brief.sources).toEqual([])
     expect(brief.citations).toEqual([])
