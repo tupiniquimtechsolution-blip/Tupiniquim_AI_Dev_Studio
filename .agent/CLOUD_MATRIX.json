@@ -30,12 +30,17 @@
   },
   "supabase": {
     "mode": "optional-project-platform",
-    "projectSelection": "explicit-required",
+    "projectSelection": "dedicated",
+    "projectName": "Tupiniquim-AI-Dev-Studio",
+    "projectRef": "brqokxlmxwyxwwbtsltc",
+    "projectUrl": "https://brqokxlmxwyxwwbtsltc.supabase.co",
+    "region": "sa-east-1",
+    "provisioned": true,
+    "health": "ACTIVE_HEALTHY",
     "reuseExistingProjectsImplicitly": false,
     "githubEnvironment": "supabase-dev",
     "requiredSecretsWhenEnabled": [
       "SUPABASE_ACCESS_TOKEN",
-      "SUPABASE_PROJECT_REF",
       "SUPABASE_DB_PASSWORD"
     ]
   },
