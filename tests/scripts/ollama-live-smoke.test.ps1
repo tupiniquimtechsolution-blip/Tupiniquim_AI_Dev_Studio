@@ -1,5 +1,18 @@
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\..\..\scripts\ollama-live-smoke.ps1"
+
+# Emit the timeout from compiled .NET code instead of PowerShell's `throw` statement.
+# This preserves the typed inner TimeoutException across the PowerShell 5.1 invocation
+# boundary and more closely exercises the .NET exception shape exposed by HTTP cmdlets.
+Add-Type -TypeDefinition @"
+using System;
+public static class TupiniquimTimeoutFixture {
+    public static void ThrowTimeout(string message) {
+        throw new TimeoutException(message);
+    }
+}
+"@
+
 $Root = Join-Path ([IO.Path]::GetTempPath()) ('rc1-ollama-test-' + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $Root | Out-Null
 $ManifestPath = Join-Path $Root 'models.json'
@@ -7,9 +20,8 @@ $script:Scenario = 'success'
 $script:CalledModel = $null
 $script:GenerateCalls = 0
 function Assert-True($Value, [string]$Message) { if (-not $Value) { throw $Message } }
+
 # Offline HTTP mock: deliberately returns recommended BEFORE required.
-# CmdletBinding + ThrowTerminatingError preserve the typed ErrorRecord shape expected from
-# Invoke-RestMethod -ErrorAction Stop more faithfully than PowerShell 5.1 `throw <exception>`.
 function Invoke-RestMethod {
   [CmdletBinding()]
   param($Uri, $TimeoutSec, $Method, $ContentType, $Body)
@@ -24,19 +36,13 @@ function Invoke-RestMethod {
   $script:GenerateCalls++
   $script:CalledModel = ($Body | ConvertFrom-Json).model
   if ($script:Scenario -eq 'timeout') {
-    $Exception = [TimeoutException]::new('secret=DO_NOT_LOG_ME')
-    $Record = New-Object System.Management.Automation.ErrorRecord(
-      $Exception,
-      'InvokeRestMethodTimeout',
-      [System.Management.Automation.ErrorCategory]::OperationTimeout,
-      $Uri
-    )
-    $PSCmdlet.ThrowTerminatingError($Record)
+    [TupiniquimTimeoutFixture]::ThrowTimeout('secret=DO_NOT_LOG_ME')
   }
   if ($script:Scenario -eq 'incomplete') { return @{done=$false;response='partial'} }
   if ($script:Scenario -eq 'empty') { return @{done=$true;response=' '} }
   return @{done=$true;response='OK'}
 }
+
 try {
   Copy-Item "$PSScriptRoot\..\..\config\local-models.json" $ManifestPath
   foreach ($Scenario in @('success','missing','timeout','incomplete','empty','connection','manifest')) {
