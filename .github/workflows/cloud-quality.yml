@@ -18,7 +18,7 @@ concurrency:
 jobs:
   cloud-quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -43,8 +43,15 @@ jobs:
         run: pnpm test:security
       - name: Build
         run: pnpm build
-      - name: Validate Cloudflare bundle without deploy
-        run: npx --yes wrangler@4 deploy --dry-run --config cloudflare/wrangler.jsonc --outdir .wrangler-dry-run
+      - name: Validate default Cloudflare bundle without deploy
+        run: npx --yes wrangler@4 deploy --dry-run --config cloudflare/wrangler.jsonc --outdir .wrangler-dry-run/preview
+      - name: Validate all Master Wave Cloudflare environments
+        shell: bash
+        run: |
+          set -euo pipefail
+          for wave in mw0 mw1 mw2 mw3 mw4 mw5; do
+            npx --yes wrangler@4 deploy --dry-run --config cloudflare/wrangler.jsonc --env "$wave" --outdir ".wrangler-dry-run/$wave"
+          done
       - name: Upload cloud evidence
         if: always()
         uses: actions/upload-artifact@v4
