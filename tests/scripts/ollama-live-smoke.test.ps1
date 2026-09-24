@@ -1,18 +1,6 @@
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\..\..\scripts\ollama-live-smoke.ps1"
 
-# Emit the timeout from compiled .NET code instead of PowerShell's `throw` statement.
-# This preserves the typed inner TimeoutException across the PowerShell 5.1 invocation
-# boundary and more closely exercises the .NET exception shape exposed by HTTP cmdlets.
-Add-Type -TypeDefinition @"
-using System;
-public static class TupiniquimTimeoutFixture {
-    public static void ThrowTimeout(string message) {
-        throw new TimeoutException(message);
-    }
-}
-"@
-
 $Root = Join-Path ([IO.Path]::GetTempPath()) ('rc1-ollama-test-' + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $Root | Out-Null
 $ManifestPath = Join-Path $Root 'models.json'
@@ -21,7 +9,28 @@ $script:CalledModel = $null
 $script:GenerateCalls = 0
 function Assert-True($Value, [string]$Message) { if (-not $Value) { throw $Message } }
 
-# Offline HTTP mock: deliberately returns recommended BEFORE required.
+# Test the timeout classifier at its real boundary. Windows PowerShell 5.1 rewraps any
+# exception thrown from a PowerShell mock function, so using such a mock to validate the
+# outer catch tests PowerShell's mocking semantics rather than Invoke-RestMethod metadata.
+# These cases cover the structured timeout shapes handled by production without inspecting
+# or emitting the secret-bearing exception message.
+$TimeoutException = [TimeoutException]::new('secret=DO_NOT_LOG_ME')
+$WebTimeout = [System.Net.WebException]::new('secret=DO_NOT_LOG_ME', [System.Net.WebExceptionStatus]::Timeout)
+$TaskCancelled = [System.Threading.Tasks.TaskCanceledException]::new('secret=DO_NOT_LOG_ME')
+$OperationTimeoutRecord = New-Object System.Management.Automation.ErrorRecord(
+  ([Exception]::new('secret=DO_NOT_LOG_ME')),
+  'InvokeRestMethodTimeout',
+  [System.Management.Automation.ErrorCategory]::OperationTimeout,
+  'http://127.0.0.1:11434/api/generate'
+)
+foreach ($TimeoutCase in @($TimeoutException, $WebTimeout, $TaskCancelled, $OperationTimeoutRecord)) {
+  Assert-True (Test-OllamaTimeoutError $TimeoutCase) 'structured timeout not diagnosed'
+}
+Write-Host 'PASS ollama-smoke timeout classifier fixtures'
+
+# Offline HTTP mock: deliberately returns recommended BEFORE required. It validates smoke
+# orchestration, bounded requests, exact required-model selection, failure handling and
+# redaction; timeout metadata itself is tested directly above.
 function Invoke-RestMethod {
   [CmdletBinding()]
   param($Uri, $TimeoutSec, $Method, $ContentType, $Body)
@@ -35,9 +44,6 @@ function Invoke-RestMethod {
   Assert-True ($TimeoutSec -eq 180) 'generation timeout changed'
   $script:GenerateCalls++
   $script:CalledModel = ($Body | ConvertFrom-Json).model
-  if ($script:Scenario -eq 'timeout') {
-    [TupiniquimTimeoutFixture]::ThrowTimeout('secret=DO_NOT_LOG_ME')
-  }
   if ($script:Scenario -eq 'incomplete') { return @{done=$false;response='partial'} }
   if ($script:Scenario -eq 'empty') { return @{done=$true;response=' '} }
   return @{done=$true;response='OK'}
@@ -45,7 +51,7 @@ function Invoke-RestMethod {
 
 try {
   Copy-Item "$PSScriptRoot\..\..\config\local-models.json" $ManifestPath
-  foreach ($Scenario in @('success','missing','timeout','incomplete','empty','connection','manifest')) {
+  foreach ($Scenario in @('success','missing','incomplete','empty','connection','manifest')) {
     $script:Scenario = $Scenario
     $script:GenerateCalls = 0
     $script:CalledModel = $null
@@ -60,7 +66,6 @@ try {
     } else {
       Assert-True ($Result.exitCode -eq 1 -and $Result.cause) 'failure hidden'
       if ($Scenario -in @('missing','manifest','connection')) { Assert-True ($script:GenerateCalls -eq 0) 'unexpected generation/fallback' }
-      if ($Scenario -eq 'timeout') { Assert-True ($Result.cause -match 'TIMEOUT') 'timeout not diagnosed' }
     }
     Write-Host "PASS ollama-smoke fixture: $Scenario"
   }
