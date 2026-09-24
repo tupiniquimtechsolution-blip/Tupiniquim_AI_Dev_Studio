@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentRuntimeAuditEvent, AgentRuntimeAuditSink } from '@tupiniquim/core'
-import { AuditLog } from './audit-log'
+import type { AuditLog } from './audit-log'
 
 export class AgentRuntimeAuditAdapter implements AgentRuntimeAuditSink {
   public constructor(private readonly audit: AuditLog) {}
