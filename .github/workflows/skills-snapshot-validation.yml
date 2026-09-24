@@ -1,0 +1,43 @@
+name: Skills Snapshot Validation
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'docs/AI_TOOLBOX/generated/skills-sh-top500-*.json'
+      - 'scripts/validate-skills-snapshot.mjs'
+  push:
+    branches:
+      - 'cloud/**'
+    paths:
+      - 'docs/AI_TOOLBOX/generated/skills-sh-top500-*.json'
+      - 'scripts/validate-skills-snapshot.mjs'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Locate snapshots
+        id: locate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find docs/AI_TOOLBOX/generated -maxdepth 1 -type f -name 'skills-sh-top500-*.json' -print 2>/dev/null | sort || true)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo 'found=false' >> "$GITHUB_OUTPUT"
+            echo 'No committed Top 500 snapshots found. This is not a synthetic-data failure; generate an authenticated snapshot first.'
+            exit 0
+          fi
+          printf '%s\n' "${files[@]}" > /tmp/skills-snapshots.txt
+          echo 'found=true' >> "$GITHUB_OUTPUT"
+      - name: Validate snapshots
+        if: steps.locate.outputs.found == 'true'
+        shell: bash
+        run: node scripts/validate-skills-snapshot.mjs $(cat /tmp/skills-snapshots.txt)
