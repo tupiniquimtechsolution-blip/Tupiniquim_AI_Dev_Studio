@@ -1737,9 +1737,14 @@ test('shutdown aguardável encerra o processo REAL e o restart recupera a mesma 
 
     // Segundo CHAT: o histórico cresce exatamente user+assistant; nenhum
     // system/workspace context é duplicado no histórico Ollama.
+    const requestCountBeforeSecondPostRestart = chatRequests.length
     await page2.getByLabel('Mensagem ao agente').fill(postRestartMessage2)
     await page2.getByRole('button', { name: 'Enviar', exact: true }).click()
     await expect(page2.locator('.agent-conversation')).toContainText(postRestartMessage2, { timeout: 30_000 })
+    // O renderer publica a mensagem do usuário de forma otimista antes de o
+    // request HTTP chegar ao fixture. Aguardar a contagem real do servidor
+    // elimina a corrida sem sleep/retry cego e prova que este é o NOVO send.
+    await expect.poll(() => chatRequests.length, { timeout: 30_000 }).toBe(requestCountBeforeSecondPostRestart + 1)
     const secondPostRestartRequest = chatRequests.at(-1)
     if (secondPostRestartRequest === undefined) throw new Error('Segundo request pós-restart não registrado.')
     expect(secondPostRestartRequest.messages.filter((message) => message.content.includes('CONTEXTO DO WORKSPACE'))).toHaveLength(1)
