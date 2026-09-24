@@ -2,9 +2,16 @@ name: Windows Release Certification
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - 'release/**'
 
 permissions:
   contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows-certification:
@@ -37,6 +44,8 @@ jobs:
       - name: Windows script fixtures
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File ./tests/scripts/ollama-live-smoke.test.ps1
+      - name: Electron E2E on hosted Windows
+        run: pnpm test:e2e
       - name: Package Windows
         run: pnpm package:win
       - name: Upload Windows artifacts
@@ -50,4 +59,5 @@ jobs:
             test-results/**
             playwright-report/**
 
-# This workflow is cloud-hosted evidence, not a substitute for final physical Windows/hardware certification when required.
+# Hosted Windows evidence is supplemental. It does not replace the final physical
+# F:\ certification for ConPTY/Ollama/local hardware/OAuth flows when those gates apply.
