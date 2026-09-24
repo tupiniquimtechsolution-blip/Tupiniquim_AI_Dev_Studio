@@ -1,29 +1,43 @@
 # Pure orchestration helper: bounded HTTP only; no pulls, model selection mutation or credentials.
 function Test-OllamaTimeoutError($ErrorRecord) {
-  $Candidates = @()
   if ($null -eq $ErrorRecord) { return $false }
 
-  # PowerShell 5.1 wraps objects passed to `throw` in an ErrorRecord/RuntimeException.
-  # Preserve the thrown object itself because typed exceptions can live in TargetObject
-  # instead of Exception.InnerException.
-  if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) {
-    if ($null -ne $ErrorRecord.TargetObject) { $Candidates += $ErrorRecord.TargetObject }
-    if ($null -ne $ErrorRecord.Exception) { $Candidates += $ErrorRecord.Exception }
-  } else {
-    $Candidates += $ErrorRecord
-  }
+  # PowerShell 5.1 can wrap objects passed to `throw` more than once:
+  # ErrorRecord -> RuntimeException -> ErrorRecord -> TargetObject/Exception.
+  # Traverse those metadata links without logging raw messages/details.
+  $Pending = New-Object System.Collections.Queue
+  $Seen = New-Object 'System.Collections.Generic.HashSet[int]'
+  $Pending.Enqueue($ErrorRecord)
 
-  foreach ($Candidate in @($Candidates)) {
-    if ($Candidate -isnot [Exception]) { continue }
-    $Current = $Candidate
-    while ($null -ne $Current) {
-      if ($Current -is [TimeoutException]) { return $true }
-      if ($Current -is [System.Net.WebException] -and $Current.Status -eq [System.Net.WebExceptionStatus]::Timeout) { return $true }
-      if ($Current -is [System.Threading.Tasks.TaskCanceledException]) { return $true }
+  while ($Pending.Count -gt 0) {
+    $Current = $Pending.Dequeue()
+    if ($null -eq $Current) { continue }
+
+    $Identity = [System.Runtime.CompilerServices.RuntimeHelpers]::GetHashCode($Current)
+    if (-not $Seen.Add($Identity)) { continue }
+
+    if ($Current -is [TimeoutException]) { return $true }
+    if ($Current -is [System.Net.WebException] -and $Current.Status -eq [System.Net.WebExceptionStatus]::Timeout) { return $true }
+    if ($Current -is [System.Threading.Tasks.TaskCanceledException]) { return $true }
+
+    if ($Current -is [System.Management.Automation.ErrorRecord]) {
+      if ($null -ne $Current.TargetObject) { $Pending.Enqueue($Current.TargetObject) }
+      if ($null -ne $Current.Exception) { $Pending.Enqueue($Current.Exception) }
+      continue
+    }
+
+    if ($Current -is [Exception]) {
       if ($Current.Message -match '(?i)timeout|timed out|tempo limite|cancel') { return $true }
-      $Current = $Current.InnerException
+      if ($null -ne $Current.InnerException) { $Pending.Enqueue($Current.InnerException) }
+
+      # RuntimeException exposes the nested ErrorRecord used by Windows PowerShell 5.1
+      # when a typed exception object is thrown from a function/mock.
+      if ($Current -is [System.Management.Automation.RuntimeException] -and $null -ne $Current.ErrorRecord) {
+        $Pending.Enqueue($Current.ErrorRecord)
+      }
     }
   }
+
   return $false
 }
 
