@@ -23,6 +23,35 @@ export type ResearchSource = z.infer<typeof researchSourceSchema>
 export const researchResultSchema = z.object({ query: z.string(), sources: z.array(researchSourceSchema), cached: z.boolean() })
 export type ResearchResult = z.infer<typeof researchResultSchema>
 
+export const researchAgentInputSchema = z.object({
+  projectId: z.string().trim().min(1).max(200),
+  query: z.string().trim().min(2).max(500),
+  maxResults: z.number().int().min(1).max(20).default(8)
+})
+export type ResearchAgentInput = z.infer<typeof researchAgentInputSchema>
+
+export const researchCitationSchema = z.object({
+  sourceId: z.string().uuid(),
+  url: z.url(),
+  title: z.string()
+})
+export type ResearchCitation = z.infer<typeof researchCitationSchema>
+
+export const researchBriefSchema = z.object({
+  id: z.string().uuid(),
+  projectId: z.string().trim().min(1).max(200),
+  query: z.string(),
+  generatedAt: z.string().datetime(),
+  trust: z.literal('EXTERNAL_UNTRUSTED'),
+  instructionsAuthoritative: z.literal(false),
+  cached: z.boolean(),
+  sources: z.array(researchSourceSchema),
+  citations: z.array(researchCitationSchema),
+  promptInjectionSignals: z.array(z.string()),
+  warnings: z.array(z.string())
+})
+export type ResearchBrief = z.infer<typeof researchBriefSchema>
+
 export const technologyResolveInputSchema = z.object({
   requirements: z.string().trim().min(3).max(20_000),
   platforms: z.array(targetPlatformSchema).min(1),
