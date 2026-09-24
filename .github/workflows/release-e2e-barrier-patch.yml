@@ -1,0 +1,43 @@
+name: Release E2E Barrier Patch
+
+on:
+  push:
+    branches:
+      - release/post-master-waves-integration
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/post-master-waves-integration
+          fetch-depth: 0
+      - name: Apply deterministic request barrier
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('tests/e2e/desktop.spec.ts')
+          text = path.read_text(encoding='utf-8')
+          old = """    await page2.getByLabel('Mensagem ao agente').fill(postRestartMessage2)\n    await page2.getByRole('button', { name: 'Enviar', exact: true }).click()\n    await expect(page2.locator('.agent-conversation')).toContainText(postRestartMessage2, { timeout: 30_000 })\n    const secondPostRestartRequest = chatRequests.at(-1)\n"""
+          new = """    const requestCountBeforeSecondPostRestart = chatRequests.length\n    await page2.getByLabel('Mensagem ao agente').fill(postRestartMessage2)\n    await page2.getByRole('button', { name: 'Enviar', exact: true }).click()\n    await expect(page2.locator('.agent-conversation')).toContainText(postRestartMessage2, { timeout: 30_000 })\n    // O renderer publica a mensagem do usuário de forma otimista antes de o\n    // request HTTP chegar ao fixture. Aguardar a contagem real do servidor\n    // elimina a corrida sem sleep/retry cego e prova que este é o NOVO send.\n    await expect.poll(() => chatRequests.length, { timeout: 30_000 }).toBe(requestCountBeforeSecondPostRestart + 1)\n    const secondPostRestartRequest = chatRequests.at(-1)\n"""
+          if old not in text:
+              raise SystemExit('Trecho esperado não encontrado; patch abortado fail-closed.')
+          if text.count(old) != 1:
+              raise SystemExit('Trecho esperado não é único; patch abortado fail-closed.')
+          path.write_text(text.replace(old, new), encoding='utf-8')
+      - name: Commit exact test harness fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff -- tests/e2e/desktop.spec.ts
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/e2e/desktop.spec.ts
+          git commit -m 'test(release): await second post-restart HTTP request'
+          git push origin HEAD:release/post-master-waves-integration
