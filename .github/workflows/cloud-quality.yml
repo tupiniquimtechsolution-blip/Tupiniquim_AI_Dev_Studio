@@ -45,6 +45,8 @@ jobs:
         run: pnpm test:integration
       - name: Security tests
         run: pnpm test:security
+      - name: Controlled dogfood A-K
+        run: pnpm test:dogfood
       - name: Build
         run: pnpm build
       - name: Validate default Cloudflare bundle without deploy

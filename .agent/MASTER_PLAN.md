@@ -18,8 +18,8 @@ Estados de gate:
 | 0 | Fundação confiável: isolamento local, AIProvider, persistência, IPC/PolicyEngine, E2E e redaction | CONCLUÍDA; checkpoint/wave-04 |
 | 1 | Dev AI local autônomo: runtime local, agente, workspace, memória, contexto e browser QA | desenvolvimento cloud consolidado / WINDOWS-DEFERRED para RC1 física; PR #32 permanece aberto |
 | 2 | Research, Knowledge, Technology/Tool/MCP/Skill Registries | **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**; PR #36 + Issue #35 |
-| 3 | Dev Studio completo, hardening e dogfood controlado | **AUTORIZADA COMO PRÓXIMA TRILHA CLOUD** após checkpoint MW2 |
-| 4 | Tupiniquim AI Studio: Agent Registry e Agents → Projects/Threads | PENDENTE |
+| 3 | Dev Studio completo, hardening e dogfood controlado | **CLOUD-GREEN FUNCIONAL / CONCLUSÃO DOCUMENTAL EM CHECKPOINT FINAL**; PR #39 + Issue #38 |
+| 4 | Tupiniquim AI Studio: Agent Registry e Agents → Projects/Threads | **AUTORIZADA COMO PRÓXIMA TRILHA CLOUD após confirmação GREEN do HEAD documental MW3** |
 | 5 | Multimodal, automação e voz, conforme hardware | PENDENTE |
 
 ## Política de avanço cloud-first
@@ -57,6 +57,7 @@ Estados de gate:
 - Avaliar seletivamente o Vibe Coding Toolkit como Engineering Playbook Source: brainstorm→plan, subagent waves, code review e quality gates.
 - Regras externas continuam referências. Limites rígidos como “350 linhas por arquivo” só viram requisito se compatíveis com a arquitetura real.
 - Hardening/dogfood permanece gate antes do Agent Runtime completo.
+- O detalhamento histórico original dos cenários A–K não foi localizado nas fontes canônicas versionadas. A MW3 usa uma matriz operacional A–K explicitamente reconstruída dos RF/RNF; qualquer divergência futura exige reconciliação documentada, nunca substituição silenciosa.
 
 ### Wave 4
 
@@ -105,6 +106,26 @@ A MW2 é considerada `CLOUD-GREEN` quando:
 9. Cloud Quality Gate e Skills Snapshot Validation ficam GREEN.
 
 Evidência operacional: `.agent/MW2_TEST_RESULTS.md` e `.agent/MW2_HANDOFF.md`.
+
+## Gate final da Master Wave 3
+
+A MW3 é `CLOUD-GREEN` quando:
+
+1. readiness separa `CLOUD_PASS`, `WINDOWS_DEFERRED`, `NOT_APPLICABLE` e `BLOCKED` e não promove deferência Windows a release;
+2. `pnpm test:dogfood` executa cenários reais e o conjunto operacional A–K fica GREEN;
+3. secrets/path/trust/policy têm testes negativos no projeto `security`;
+4. preview/log output é sanitizado antes de exposição e limitado em volume;
+5. FULL_ACCESS preserva absolute blocks destrutivos;
+6. Research/Knowledge/Registry continuam sem elevação automática de confiança ou runtime authority;
+7. Vibe Coding Toolkit permanece apenas `ENGINEERING_PLAYBOOK_SOURCE` não autoritativa, sem auto-install ou limite global rígido de linhas;
+8. nenhum secret é versionado e nenhum DDL Supabase é aplicado implicitamente;
+9. lint, typecheck, unit, integration, security, dogfood, build e Cloudflare preview/MW0–MW5 dry-runs ficam GREEN;
+10. o review do diff não encontra bypass de Policy/Approval/Skill Gate;
+11. requisitos reais de Electron/ConPTY/Ollama/hardware/OAuth permanecem `WINDOWS-DEFERRED`, impedindo declaração de `RELEASE-GREEN`.
+
+Evidência funcional auditada: Cloud Quality Gate run `36020705177`, HEAD `2a9be68cf17c6ac65101b499fd940b76acbd6e73`.
+
+Documentação canônica: `.agent/MW3_EXECUTION_PLAN.md`, `.agent/MW3_READINESS_MATRIX.md`, `.agent/MW3_TEST_RESULTS.md` e `.agent/MW3_HANDOFF.md`.
 
 ## Protocolo de execução
 
