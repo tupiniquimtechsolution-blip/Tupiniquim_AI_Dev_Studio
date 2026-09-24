@@ -2,9 +2,15 @@
 function Test-OllamaTimeoutError($ErrorRecord) {
   if ($null -eq $ErrorRecord) { return $false }
 
-  # PowerShell 5.1 can wrap objects passed to `throw` more than once:
-  # ErrorRecord -> RuntimeException -> ErrorRecord -> TargetObject/Exception.
-  # Traverse those metadata links without logging raw messages/details.
+  # Windows PowerShell 5.1 wraps values passed to `throw` in ErrorRecord/RuntimeException.
+  # For a thrown .NET exception, CategoryInfo.Reason preserves the original exception type
+  # even when TargetObject/InnerException no longer expose it. Match only a fixed type-name
+  # allowlist; never inspect/log ErrorDetails or the raw thrown message here.
+  if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) {
+    $Reason = [string]$ErrorRecord.CategoryInfo.Reason
+    if ($Reason -in @('TimeoutException', 'TaskCanceledException')) { return $true }
+  }
+
   $Pending = New-Object System.Collections.Queue
   $Seen = New-Object 'System.Collections.Generic.HashSet[int]'
   $Pending.Enqueue($ErrorRecord)
@@ -21,6 +27,8 @@ function Test-OllamaTimeoutError($ErrorRecord) {
     if ($Current -is [System.Threading.Tasks.TaskCanceledException]) { return $true }
 
     if ($Current -is [System.Management.Automation.ErrorRecord]) {
+      $Reason = [string]$Current.CategoryInfo.Reason
+      if ($Reason -in @('TimeoutException', 'TaskCanceledException')) { return $true }
       if ($null -ne $Current.TargetObject) { $Pending.Enqueue($Current.TargetObject) }
       if ($null -ne $Current.Exception) { $Pending.Enqueue($Current.Exception) }
       continue
@@ -29,9 +37,6 @@ function Test-OllamaTimeoutError($ErrorRecord) {
     if ($Current -is [Exception]) {
       if ($Current.Message -match '(?i)timeout|timed out|tempo limite|cancel') { return $true }
       if ($null -ne $Current.InnerException) { $Pending.Enqueue($Current.InnerException) }
-
-      # RuntimeException exposes the nested ErrorRecord used by Windows PowerShell 5.1
-      # when a typed exception object is thrown from a function/mock.
       if ($Current -is [System.Management.Automation.RuntimeException] -and $null -ne $Current.ErrorRecord) {
         $Pending.Enqueue($Current.ErrorRecord)
       }

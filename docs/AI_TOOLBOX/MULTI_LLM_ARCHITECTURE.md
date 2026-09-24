@@ -95,10 +95,15 @@ Isso não cria um `AGENTS.md` global, para evitar aplicar regras corporativas po
 | Pentest autorizado | Strix |
 | Interface agent-native via CLI | CLI-Anything |
 | Agentes, RAG e exemplos | Awesome LLM Apps |
+| Produtos Google / Gemini / Google Cloud / Google Ads | `google/skills`; resolver sob demanda com `skills/developers/finding-google-skills` e ainda passar pelo Skill Gate |
+| Arquitetura geral de agentes / MCP / sandbox | OpenManus como referência não autoritativa |
+| Multi-provider / harness / code sessions | Free Claude Code como referência, sem auto-fallback global |
 | Automação Instagram | OpenReply |
 | Voz/TTS local | Pocket TTS |
 | Mídia generativa | Open Generative AI |
 | Pesquisa de inferência Kimi | kimi-k3-in-c |
+
+A origem first-party de `google/skills` dá preferência de consulta para tarefas especificamente Google quando houver fit, mas não concede execução, não habilita credenciais/rede e não cria prioridade automática para Gemini como provider/modelo.
 
 ## Regras contra divergência
 

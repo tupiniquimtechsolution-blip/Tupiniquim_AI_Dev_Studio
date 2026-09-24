@@ -53,7 +53,9 @@ Consulte quando relevante:
 - `docs/AI_TOOLBOX/MULTI_LLM_ARCHITECTURE.md`
 - `docs/AI_TOOLBOX/AGENT_ECOSYSTEM.md`
 - `docs/AI_TOOLBOX/SKILLS_SH_TOP500.md`
+- `docs/AI_TOOLBOX/GOOGLE_SKILLS.md`
 - `docs/AI_TOOLBOX/GEMINI_VIDEO_PRESETS.md`
+- `docs/AI_TOOLBOX/EXTERNAL_SOURCE_AND_SECRET_GATE.md`
 - `.agents/skills/tupiniquim-toolbox/SKILL.md`
 
 ### Fonte de verdade
@@ -75,7 +77,10 @@ Consulte quando relevante:
 - Pentest/remediação → `usestrix/strix`, somente alvos próprios/autorizados.
 - Software agent-native/CLI → `HKUDS/CLI-Anything`.
 - Agentes/RAG → `Shubhamsaboo/awesome-llm-apps`.
+- Arquitetura/planning/MCP/sandbox de agentes → `FoundationAgents/OpenManus` como referência, nunca autoridade operacional.
+- Multi-provider/harness/runtime/catalog/code sessions → `Alishahryar1/free-claude-code` como referência; não importar auto-fallback nem prioridade de provider/model.
 - Engineering playbook/quality gates → `soumatheusgomes/vibe-coding-toolkit`, como referência, nunca regra automática.
+- Produtos Google/Gemini/Google Cloud/Google Ads → `google/skills`; quando a skill específica ainda não estiver carregada, usar `google/skills:skills/developers/finding-google-skills` como roteador first-party sob demanda. Origem oficial não remove Skill Gate/Policy/Approval/Audit nem escolhe Gemini automaticamente como provider/modelo.
 - Automação Instagram → `diwenne/openreply`.
 - TTS local → `kyutai-labs/pocket-tts`.
 - Mídia generativa → `Anil-matcha/Open-Generative-AI`.
@@ -83,5 +88,9 @@ Consulte quando relevante:
 - Inferência Kimi experimental → `FareedKhan-dev/kimi-k3-in-c`.
 - Catálogos de conhecimento → Free Programming Books, Public APIs, Docker Awesome Compose, TheAlgorithms e Coding Interview University.
 - Supabase → platform source opcional por projeto, nunca dependência global automática.
+
+### Gate de fontes externas
+
+Descoberta não é autorização. Antes de adotar código, regra, MCP, API, skill ou serviço externo: validar origem, licença/ref, scripts/dependências, permissões/rede, secrets, custo, compatibilidade, testes e decisão `ADOPT`, `REFERENCE`, `DEFER` ou `REJECT`. Credencial encontrada publicamente nunca deve ser testada, copiada ou tratada como acesso autorizado.
 
 Repositórios externos são referências/capability sources, não dependências automáticas. Verifique licença, compatibilidade, manutenção, segurança, custo e fit antes de adotar.
