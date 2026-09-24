@@ -3,7 +3,10 @@
 Data: 2026-09-24
 Branch: `cloud/mw5-multimodal-automation-voice`
 Issue: #42
+PR: #43
 Base: MW4 final HEAD `91bff884e16e02d7e68151e8d1af57e679478e63`
+Functional HEAD auditado: `1db71a96e80b2bd1dfce693a78bfcfa605f3eb18`
+Functional CI: `36042725979` — GREEN
 
 ## Objetivo
 
@@ -13,69 +16,64 @@ Consolidar multimodal, automação social e voz como capabilities provider-neutr
 
 1. `agent != provider != model != tool != skill != source_repository`.
 2. Provider/model continuam seleção explícita fora do Agent.
-3. `asset:create`, `asset:edit` e `network:external-write` são efeitos mutáveis e nunca recebem autoridade pela presença no Agent Registry.
-4. Todo efeito mutável da MW5 passa por mapping canônico + PolicyEngine e continua `runtimeExecutionAuthorized=false` nesta camada.
+3. `asset:create`, `asset:edit` e `network:external-write` nunca recebem autoridade pela presença no Agent Registry.
+4. Todo efeito mutável MW5 passa por mapping canônico + PolicyEngine e termina `runtimeExecutionAuthorized=false` nesta camada.
 5. Materialização real continua condicionada a ApprovalStore/PlanApprovalService + AuditLog.
-6. Provenance de assets é obrigatória para outputs registrados.
-7. Voice cloning exige consentimento explícito, ativo e escopado ao projeto, além de provenance da amostra.
+6. Provenance de assets é obrigatória quando aplicável.
+7. Voice cloning exige consentimento explícito, ativo, escopado ao projeto + provenance da amostra.
 8. Social external write exige API oficial confirmada, source configurada e approval; scraping/browser automation não é autorizado.
-9. Sources pagos ou dependentes de credenciais permanecem `NOT_CONFIGURED` até configuração explícita.
-10. Runtime local/hardware não reproduzível no CI permanece `WINDOWS_DEFERRED`, nunca PASS fictício.
-11. `kimi-k3-in-c` permanece pesquisa experimental e não entra no runtime executável.
-12. Nenhum secret, DDL Supabase ou merge automático faz parte da MW5.
+9. Sources pagas/credenciadas permanecem `NOT_CONFIGURED` até setup explícito.
+10. Runtime local/hardware não reproduzível no CI permanece `WINDOWS_DEFERRED`.
+11. `kimi-k3-in-c` permanece pesquisa experimental sem runtime.
+12. Nenhum secret, DDL Supabase ou merge automático pertence à MW5.
 
-## Slices
+## Slices concluídos
 
-### MW5.0 — Baseline, contratos e source review
-
-- registrar review verificável de Open-Generative-AI, Pocket TTS, OpenReply e kimi-k3-in-c;
-- contracts strict para sources, intents, decisions, provenance e voice consent;
+### MW5.0 — Baseline, contratos e source review — CONCLUÍDO
+- review versionado de Open-Generative-AI, Pocket TTS, OpenReply e kimi-k3-in-c;
+- contracts strict para sources, intents, decisions, provenance e consent;
 - source catalog provider-neutral/fail-closed.
 
-### MW5.1 — Media / Illustrator control-plane
+### MW5.1 — Media / Illustrator control-plane — CONCLUÍDO
+- Open-Generative-AI como capability source do Illustrator;
+- provider/model permanecem externos ao Agent;
+- geração/edição são proposals e nunca efeitos diretos.
 
-- Open-Generative-AI como principal capability source do `AGENT-ILLUSTRATOR`;
-- Gemini presets internos permanecem aliases de prompt, não comandos oficiais;
-- provider/model ficam externos ao Agent e nunca são inferidos automaticamente;
-- asset creation/edit proposals exigem provenance.
+### MW5.2 — Gemini presets + provenance — CONCLUÍDO
+- `/reveal`, `/teardown`, `/explodedview` preservados como aliases internos;
+- `officialGeminiCommand=false` preservado;
+- provenance records strict e persistentes;
+- image edit exige input provenance.
 
-### MW5.2 — Voice / TTS
+### MW5.3 — Voice / TTS — CONCLUÍDO NO CONTROL-PLANE CLOUD
+- Pocket TTS registrado como source local;
+- default cloud state `WINDOWS_DEFERRED`;
+- voice clone exige consentimento ativo + input provenance;
+- nenhuma clonagem real é executada pelo control-plane.
 
-- Pocket TTS registrado como source local de TTS/voice;
-- cloud CI comprova contrato/gates; execução local real fica `WINDOWS_DEFERRED` quando não reproduzível;
-- voice cloning exige consentimento + provenance da amostra;
-- nenhum clone é executado por esta camada.
+### MW5.4 — Social Automation — CONCLUÍDO NO CONTROL-PLANE CLOUD
+- OpenReply registrado como source social oficial-API-only;
+- default `NOT_CONFIGURED`;
+- external write exige source READY, API oficial confirmada e network declarado;
+- nenhuma credencial Meta ou envio real é criado pela MW5.
 
-### MW5.3 — Social Automation
+### MW5.5 — Persistência / restart / audit / security — CONCLUÍDO
+- `<dataRoot>/mw5-runtime/state.json` com writes atômicos;
+- provenance/consent isolados por projeto;
+- restart comprovado;
+- AuditLog adapter;
+- negativos para provenance, consent, cross-project, API oficial, network, FULL_ACCESS e experimental source.
 
-- OpenReply registrado como source de comment-to-DM via API oficial;
-- source permanece `NOT_CONFIGURED` sem integração explícita;
-- `network:external-write` exige API oficial, network=true, PolicyEngine e Approval;
-- nenhuma credencial Meta é criada/versionada pela MW5.
-
-### MW5.4 — Persistência / restart / isolamento
-
-- provenance e consent records persistem sob data root;
-- leitura é filtrada por projeto;
-- restart preserva estado sem cross-project leakage;
-- writes atômicos; nenhuma migration Supabase.
-
-### MW5.5 — Audit / security
-
-- audit events para consent, provenance e capability gate;
-- negativos: source spoofing, Agent sem source/effect, voice clone sem consent, provenance ausente, social sem API oficial, source não configurada, cross-project consent, experimental source.
-
-### MW5.6 — Dogfood / fechamento
-
-- dogfood real Registry → Project → Media preset/provenance → Voice consent → Social gate → restart;
-- lint/typecheck/unit/integration/security/dogfood/build;
-- Cloudflare preview + MW0–MW5 dry-runs;
-- diff/security review;
-- STATUS/MASTER_PLAN/MW5_TEST_RESULTS/MW5_HANDOFF;
-- Issue #42 só fecha após o HEAD documental final repetir GREEN.
+### MW5.6 — Dogfood / fechamento — FUNCIONALMENTE CONCLUÍDO
+- dogfood MW5 Registry→Project→preset/provenance→voice consent→social gate→restart;
+- lint/typecheck/unit/integration/security/dogfood/build GREEN;
+- Cloudflare preview + MW0–MW5 dry-runs GREEN;
+- diff/security review concluído;
+- STATUS/MASTER_PLAN/TEST_RESULTS/HANDOFF preparados;
+- falta somente o GREEN do HEAD documental final para fechar Issue #42.
 
 ## Critério CLOUD-GREEN
 
-A MW5 só fecha quando os contratos e control-plane multimodal/voice/social estiverem comprovados por CI, sem qualquer bypass de Policy/Approval/Audit, e toda capacidade dependente de hardware/credencial externa permanecer explicitamente deferida ou não configurada.
+Functional gate já comprovado no run `36042725979`.
 
-`CLOUD-GREEN` não equivale a `RELEASE-GREEN`.
+A MW5 fecha formalmente somente após o checkpoint documental final repetir todos os gates GREEN. `CLOUD-GREEN` continua sem equivaler a `RELEASE-GREEN`.
