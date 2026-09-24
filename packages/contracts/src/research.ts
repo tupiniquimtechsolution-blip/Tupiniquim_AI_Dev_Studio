@@ -28,7 +28,7 @@ export const researchAgentInputSchema = z.object({
   query: z.string().trim().min(2).max(500),
   maxResults: z.number().int().min(1).max(20).default(8)
 })
-export type ResearchAgentInput = z.infer<typeof researchAgentInputSchema>
+export type ResearchAgentInput = z.input<typeof researchAgentInputSchema>
 
 export const researchCitationSchema = z.object({
   sourceId: z.string().uuid(),
