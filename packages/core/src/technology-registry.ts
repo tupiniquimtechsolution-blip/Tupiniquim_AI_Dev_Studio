@@ -1,5 +1,5 @@
 import type { RegistryEntry, TechnologyResolution } from '@tupiniquim/contracts'
-import { RegistryCatalog } from './registry-catalog'
+import type { RegistryCatalog } from './registry-catalog'
 
 export const registerTechnologyResolution = (
   catalog: RegistryCatalog,
