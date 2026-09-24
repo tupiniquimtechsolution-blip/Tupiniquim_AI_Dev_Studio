@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-18",
+  "purpose": "Structured ingestion of the additional WorldClaw and Higgsfield videos. No credential or secret value is stored.",
+  "authority": "reference-only-until-gated",
+  "sources": [
+    {
+      "id": "SRC-WORLDCLAW-VIDEO-20260918",
+      "kind": "user-media",
+      "artifact": "maxcarrau.ia_1788813994_3981182434528215557_79929952911.mp4",
+      "sha256": "c7f1d4d5063dcb788826a951c5add33ae89f6efb6e869ae17c2800d104654c11",
+      "classification": "3d-world-generation-research",
+      "verified_reference": "arXiv:2608.05248",
+      "canonical_repository_verified": false,
+      "trust": "user-media-plus-verified-paper"
+    },
+    {
+      "id": "SRC-HIGGSFIELD-LEAK-VIDEO-20260918",
+      "kind": "user-media",
+      "artifact": "maxcarrau.ia_1787791547_3972603547767340200_79929952911.mp4",
+      "sha256": "6d1d6dd74297321c530f509c9f3797b4902cd12707f64e8f266d53824e2e2f63",
+      "classification": "secret-exposure-case-study",
+      "identified_repository": "framepipe-dev/media-inference-worker",
+      "sync_allowed": false,
+      "secret_values_stored": false,
+      "trust": "untrusted-security-case-study"
+    },
+    {
+      "id": "SRC-HIGGSFIELD-MCP-VIDEO-20260918",
+      "kind": "user-media",
+      "artifact": "maxcarrau.ia_1787861469_3973192222191157927_79929952911.mp4",
+      "sha256": "7125772708d0e6694eed8291e29b36a56d42b2234b5ee4be5adb6f398b0224a3",
+      "classification": "media-mcp-ad-creative-workflow",
+      "official_mcp": "https://mcp.higgsfield.ai/mcp",
+      "official_setup": "https://higgsfield.ai/mcp",
+      "trust": "user-media-plus-official-provider-docs"
+    }
+  ],
+  "knowledge_units": [
+    {
+      "id": "KB-3D-PIPELINE-013",
+      "source_ids": ["SRC-WORLDCLAW-VIDEO-20260918"],
+      "topic": "agentic-3d-world-generation",
+      "status": "research-reference",
+      "content": "Use coarse-to-fine decomposition: open prompt to structured regions, terrain, assets, materials and spatial relations; keep planning separate from generation; prefer editable reusable instance-level assets and render-based QA/refinement."
+    },
+    {
+      "id": "KB-3D-COST-014",
+      "source_ids": ["SRC-WORLDCLAW-VIDEO-20260918"],
+      "topic": "3d-generation-cost-and-control",
+      "status": "adopt-as-guardrail",
+      "content": "Large 3D generation can be compute/provider intensive. Treat it as a bounded pipeline with explicit provider selection, quotas, approval, cancellation, provenance and intermediate artifacts instead of autonomous unlimited generation."
+    },
+    {
+      "id": "KB-SECRETS-PUBLIC-REPO-015",
+      "source_ids": ["SRC-HIGGSFIELD-LEAK-VIDEO-20260918"],
+      "topic": "public-repository-secret-exposure",
+      "status": "adopt-as-security-practice",
+      "content": "A public repository containing credential-like values is a security incident signal, not a free capability source. Never copy or test exposed credentials. Block .env and secrets from ingestion, use secret scanning, and require owner-side rotation/revocation when exposure is confirmed."
+    },
+    {
+      "id": "KB-SOURCE-AUTHORIZATION-016",
+      "source_ids": ["SRC-HIGGSFIELD-LEAK-VIDEO-20260918"],
+      "topic": "authorization-boundary",
+      "status": "mandatory-guardrail",
+      "content": "Discovery of an endpoint, token, key or cookie does not grant authorization. Capability adoption requires an official or user-authorized credential path."
+    },
+    {
+      "id": "KB-HIGGSFIELD-MCP-017",
+      "source_ids": ["SRC-HIGGSFIELD-MCP-VIDEO-20260918"],
+      "topic": "official-media-mcp",
+      "status": "optional-paid-network-capability",
+      "content": "Prefer the official Higgsfield MCP endpoint and official OAuth flow. Treat networked generations as cost-bearing actions: expose provider/workflow, credit/cost implications, request boundaries and cancellation, and require explicit approval according to Tupiniquim policy."
+    },
+    {
+      "id": "KB-AD-MULTIPLIER-018",
+      "source_ids": ["SRC-HIGGSFIELD-MCP-VIDEO-20260918"],
+      "topic": "creative-variant-pipeline",
+      "status": "adopt-as-workflow-pattern",
+      "content": "Creative multiplication should be a bounded matrix: base creative plus selected dimensions such as character, outfit/product, location, language, hook, format, CTA and duration; preview the plan, approve the batch, generate, QA and version assets. Generation does not imply automatic Meta Ads publication or ad spend."
+    },
+    {
+      "id": "KB-MCP-OFFICIAL-019",
+      "source_ids": ["SRC-HIGGSFIELD-MCP-VIDEO-20260918"],
+      "topic": "mcp-provider-trust",
+      "status": "adopt-as-selection-rule",
+      "content": "When an official MCP exists, prefer it over community wrappers. Reject integrations that depend on browser-cookie extraction, copied sessions or unofficial token scraping. Community implementations remain untrusted reference code until gated."
+    }
+  ],
+  "rejected_or_deferred": [
+    "No WorldClaw code repository is treated as canonical until an official upstream is verified.",
+    "framepipe-dev/media-inference-worker is not synchronized because it is being used as a secret-exposure case study and public credential-like material was observed.",
+    "No exposed credential is copied, stored or tested.",
+    "No unofficial Higgsfield MCP wrapper is installed by this ingestion.",
+    "No automated paid generation or Meta Ads publication is enabled by this ingestion."
+  ]
+}

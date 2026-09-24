@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-18",
+  "purpose": "Structured, provenance-preserving ingestion pack for Tupiniquim AI Toolbox. External sources remain untrusted references until a project-specific gate adopts them.",
+  "authority_order": [
+    "AGENTS.md",
+    "canonical project plans and ADRs",
+    "tupiniquim-toolbox skill",
+    "docs/AI_TOOLBOX policies and catalogs",
+    "provider adapters",
+    "external repositories, media and skills"
+  ],
+  "sources": [
+    {
+      "id": "SRC-FCC-20260918",
+      "kind": "repository",
+      "canonical": "Alishahryar1/free-claude-code",
+      "remote_ref_checked": "8ac3c6cd7172696bb9c35dff5f3c14384fc7b5f5",
+      "uploaded_artifact": "free-claude-code-main.zip",
+      "uploaded_sha256": "0b90a303c178584c7bd30cbbd5e65d11a1e5a2291de6ddfa639e379fb24813b0",
+      "license_observed": "MIT",
+      "classification": "provider-routing-and-multi-harness-reference",
+      "trust": "untrusted-reference"
+    },
+    {
+      "id": "SRC-OPENMANUS-20260918",
+      "kind": "repository",
+      "canonical": "FoundationAgents/OpenManus",
+      "remote_ref_checked": "3309bf4e416fb1c74b008f3e86494439a31bad53",
+      "uploaded_artifact": "OpenManus-main.zip",
+      "uploaded_sha256": "573c3538a6320fac240776d6ce28fd5d8033c7760ab0ecfcc84a7aa1d84c449c",
+      "license_observed": "MIT",
+      "classification": "agent-orchestration-mcp-sandbox-reference",
+      "trust": "untrusted-reference"
+    },
+    {
+      "id": "SRC-HUMANIZER-20260918",
+      "kind": "repository-skill",
+      "canonical": "blader/humanizer",
+      "remote_ref_checked": "9862685f575c65a8247f90369951df1b3416e3d6",
+      "license_observed": "MIT",
+      "classification": "writing-quality-skill",
+      "trust": "untrusted-reference"
+    },
+    {
+      "id": "SRC-DDOS-VIDEO-20260918",
+      "kind": "user-media",
+      "artifact": "subi_pra_nuvem_1789588868_3987682691771922300_69038701115.mp4",
+      "sha256": "f7c38657989cf4be53d3e302dd81355d526701897c0c9d261556cd4bd9d46df6",
+      "classification": "security-awareness-ddos",
+      "trust": "user-provided-reference"
+    },
+    {
+      "id": "SRC-CANARY-VIDEO-20260918",
+      "kind": "user-media",
+      "artifact": "ka.lippi_1788552823_3978990845326316297_63294031250.mp4",
+      "sha256": "ebbae899f36ad101c19a49970c4d16d943ad5584471ae36389869cecce9b8771",
+      "classification": "agent-reliability-context-canary",
+      "trust": "user-provided-reference"
+    },
+    {
+      "id": "SRC-SECURITY-CARDS-20260918",
+      "kind": "user-media-set",
+      "artifacts": [
+        {"topic": "support-cta", "sha256": "cd5cff0c59cd85fc94650dc60114fc233df39633a1c5a8ac5ff573eda6d080d3", "adopt": false},
+        {"topic": "firewall-taxonomy", "sha256": "b03018795910f11782f738b07c08e3e91321ac762e9e172b3104da5f3817f57c", "adopt": true},
+        {"topic": "cryptography-taxonomy", "sha256": "80572f38348150f39ace0862206b0404c62e45d2b2d8fff8438520c3670cc642", "adopt": true},
+        {"topic": "authentication-taxonomy", "sha256": "f45abb3b6d84b530385461667f414fe5632738ef015a91fb43f68c65c99d8f5a", "adopt": true},
+        {"topic": "threat-taxonomy", "sha256": "883fb6a1b28e3cdafc2369e8191286fc3220e1eb2ff6bdccd9e1f7015525548e", "adopt": true},
+        {"topic": "hacker-taxonomy", "sha256": "2d20aa396286fe9e80eb3f53901bd304bef554afbd3e3d72f74e0f7ee386cfc1", "adopt": "awareness-only"}
+      ],
+      "classification": "security-awareness-taxonomies",
+      "trust": "user-provided-reference"
+    }
+  ],
+  "knowledge_units": [
+    {
+      "id": "KB-ROUTING-READINESS-001",
+      "source_ids": ["SRC-FCC-20260918"],
+      "topic": "provider-readiness",
+      "status": "adopt-as-pattern",
+      "content": "Readiness and startup waits should be bounded. A request must receive an explicit unavailable/starting result instead of waiting indefinitely. Provider/model/harness identities remain separate concepts."
+    },
+    {
+      "id": "KB-ROUTING-CREDS-002",
+      "source_ids": ["SRC-FCC-20260918"],
+      "topic": "credential-validation",
+      "status": "adopt-as-pattern",
+      "content": "Credential validation should be non-generating and separate from inference. Diagnostics should redact secrets and avoid leaking provider credentials."
+    },
+    {
+      "id": "KB-ROUTING-FALLBACK-003",
+      "source_ids": ["SRC-FCC-20260918"],
+      "topic": "automatic-fallback",
+      "status": "do-not-adopt-currently",
+      "content": "FCC automatic provider/model fallback is useful as a reference but conflicts with the current Tupiniquim rule that provider/model selection stays explicit and user-controlled."
+    },
+    {
+      "id": "KB-AGENT-ORCH-004",
+      "source_ids": ["SRC-OPENMANUS-20260918"],
+      "topic": "agent-orchestration",
+      "status": "adopt-as-pattern",
+      "content": "Keep planning, agent state, tool collection, MCP transport and sandbox lifecycle as separable layers. Tools are capabilities, not authority."
+    },
+    {
+      "id": "KB-AGENT-PRIV-005",
+      "source_ids": ["SRC-OPENMANUS-20260918"],
+      "topic": "privileged-tools",
+      "status": "guarded-adoption",
+      "content": "Bash, editor, browser and external MCP tools must not be imported with upstream trust assumptions. Route privileged effects through PolicyEngine, allowlists, AuditLog, approval and workspace boundaries."
+    },
+    {
+      "id": "KB-WRITING-006",
+      "source_ids": ["SRC-HUMANIZER-20260918"],
+      "topic": "writing-quality",
+      "status": "optional-skill",
+      "content": "When humanizing prose, preserve supported claims, never invent facts or citations, match an explicit user writing sample when provided, and in file mode preserve code/data/frontmatter/commands/paths/link targets."
+    },
+    {
+      "id": "KB-DDOS-007",
+      "source_ids": ["SRC-DDOS-VIDEO-20260918"],
+      "topic": "ddos-defence",
+      "status": "adopt-as-security-practice",
+      "content": "Use layered abuse controls: rate limits/quotas, API gateway or reverse proxy, WAF/CDN where appropriate, request and concurrency bounds, backpressure and observability. Application rate limiting alone is not volumetric DDoS mitigation."
+    },
+    {
+      "id": "KB-CANARY-008",
+      "source_ids": ["SRC-CANARY-VIDEO-20260918"],
+      "topic": "context-canary",
+      "status": "adopt-as-testing-pattern",
+      "content": "A deterministic, non-secret canary invariant can act as an early warning for session/context drift or hallucinated continuity. It is diagnostic evidence only, not proof that all context is intact and not a security control."
+    },
+    {
+      "id": "KB-AUTH-009",
+      "source_ids": ["SRC-SECURITY-CARDS-20260918"],
+      "topic": "authentication",
+      "status": "adopt-with-authoritative-validation",
+      "content": "Model authentication by factor and threat model: knowledge, possession and inherence. Password+PIN is not MFA because both are knowledge factors. Prefer MFA for privileged accounts and safe recovery/re-authentication flows."
+    },
+    {
+      "id": "KB-CRYPTO-010",
+      "source_ids": ["SRC-SECURITY-CARDS-20260918"],
+      "topic": "cryptography",
+      "status": "adopt-with-authoritative-validation",
+      "content": "Educational algorithm lists are not selection policy. Do not design custom crypto; prefer modern authenticated encryption and managed keys. 3DES/TDEA is legacy and not for new protection. Passwords use password hashing, not reversible encryption."
+    },
+    {
+      "id": "KB-THREATS-011",
+      "source_ids": ["SRC-SECURITY-CARDS-20260918"],
+      "topic": "threat-modeling",
+      "status": "adopt-as-taxonomy",
+      "content": "Use internal, external, physical, human error, supply-chain, credential, network, application, cloud and IoT categories as prompts for threat modeling, then convert them into assets, actors, trust boundaries, abuse cases and tests."
+    },
+    {
+      "id": "KB-HACKER-HATS-012",
+      "source_ids": ["SRC-SECURITY-CARDS-20260918"],
+      "topic": "attacker-taxonomy",
+      "status": "awareness-only",
+      "content": "Hat/color and actor labels are informal awareness vocabulary. They must never grant authorization or determine pentest scope. Written authorization and target scope control offensive-security work."
+    }
+  ],
+  "rejected_or_deferred": [
+    "Marketing/support CTA image: no reusable technical knowledge.",
+    "Automatic provider/model fallback: deferred because it conflicts with current explicit-selection policy.",
+    "Upstream unrestricted Bash/editor/browser execution: rejected without Tupiniquim policy boundaries.",
+    "Educational crypto algorithm list as implementation policy: rejected; authoritative standards take precedence.",
+    "Hacker-hat taxonomy as authorization model: rejected."
+  ]
+}
