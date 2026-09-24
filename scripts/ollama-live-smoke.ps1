@@ -2,11 +2,12 @@
 function Test-OllamaTimeoutError($ErrorRecord) {
   if ($null -eq $ErrorRecord) { return $false }
 
-  # Windows PowerShell 5.1 wraps values passed to `throw` in ErrorRecord/RuntimeException.
-  # For a thrown .NET exception, CategoryInfo.Reason preserves the original exception type
-  # even when TargetObject/InnerException no longer expose it. Match only a fixed type-name
-  # allowlist; never inspect/log ErrorDetails or the raw thrown message here.
+  # Windows PowerShell 5.1 can rewrap terminating errors and discard the original .NET
+  # exception type. Treat the explicit OperationTimeout category as authoritative timeout
+  # metadata; otherwise traverse only structured exception/error metadata. Never inspect
+  # ErrorDetails or log raw exception messages because they can contain secrets.
   if ($ErrorRecord -is [System.Management.Automation.ErrorRecord]) {
+    if ($ErrorRecord.CategoryInfo.Category -eq [System.Management.Automation.ErrorCategory]::OperationTimeout) { return $true }
     $Reason = [string]$ErrorRecord.CategoryInfo.Reason
     if ($Reason -in @('TimeoutException', 'TaskCanceledException')) { return $true }
   }
@@ -27,6 +28,7 @@ function Test-OllamaTimeoutError($ErrorRecord) {
     if ($Current -is [System.Threading.Tasks.TaskCanceledException]) { return $true }
 
     if ($Current -is [System.Management.Automation.ErrorRecord]) {
+      if ($Current.CategoryInfo.Category -eq [System.Management.Automation.ErrorCategory]::OperationTimeout) { return $true }
       $Reason = [string]$Current.CategoryInfo.Reason
       if ($Reason -in @('TimeoutException', 'TaskCanceledException')) { return $true }
       if ($null -ne $Current.TargetObject) { $Pending.Enqueue($Current.TargetObject) }
