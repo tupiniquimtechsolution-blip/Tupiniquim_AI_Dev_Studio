@@ -16,9 +16,9 @@ Estados de gate:
 | Wave Mestre | Escopo | Estado |
 |---:|---|---|
 | 0 | Fundação confiável: isolamento local, AIProvider, persistência, IPC/PolicyEngine, E2E e redaction | CONCLUÍDA; checkpoint/wave-04 |
-| 1 | Dev AI local autônomo: runtime local, agente, workspace, memória, contexto e browser QA | CLOUD-GREEN PENDENTE / WINDOWS-DEFERRED; Wave 17/RC1 permanece aberta no PR #32 e não é declarada V1 GREEN |
-| 2 | Research, Knowledge, Technology/Tool/MCP/Skill Registries | AUTORIZADA EM TRILHA CLOUD após fundação cloud-first; não implica fechamento da RC1 Windows |
-| 3 | Dev Studio completo, hardening e dogfood controlado | PENDENTE; poderá iniciar após Master Wave 2 `CLOUD-GREEN` |
+| 1 | Dev AI local autônomo: runtime local, agente, workspace, memória, contexto e browser QA | desenvolvimento cloud consolidado / WINDOWS-DEFERRED para RC1 física; PR #32 permanece aberto |
+| 2 | Research, Knowledge, Technology/Tool/MCP/Skill Registries | **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**; PR #36 + Issue #35 |
+| 3 | Dev Studio completo, hardening e dogfood controlado | **AUTORIZADA COMO PRÓXIMA TRILHA CLOUD** após checkpoint MW2 |
 | 4 | Tupiniquim AI Studio: Agent Registry e Agents → Projects/Threads | PENDENTE |
 | 5 | Multimodal, automação e voz, conforme hardware | PENDENTE |
 
@@ -35,7 +35,7 @@ Estados de gate:
 ## Mapeamento de legado
 
 - Antiga Wave 4 = Wave Mestre 0.
-- Plan/Approval/Execute, Research/Resolver, Prompt, Visual, Preferences e Preview presentes no WIP são candidatos às Waves 2–3; não constituem aceite até terem fronteiras, testes e integração confirmados.
+- Plan/Approval/Execute, Research/Resolver, Prompt, Visual, Preferences e Preview presentes no WIP foram reconciliados gradualmente nas waves correspondentes; aceite só ocorre quando fronteiras, testes e integração são comprovados.
 - Não será adicionado um provider local antes de estabilizar o contrato `AIProvider`.
 
 ## Extensões aprovadas sem alterar a ordem das Waves
@@ -87,8 +87,24 @@ A Wave 17 continua sendo o gate de dogfood/QA da RC1 Windows. Ela não é apagad
 
 No estado cloud-first:
 - a trilha RC1 Windows permanece `WINDOWS-DEFERRED` até evidência própria;
-- a trilha de desenvolvimento pode prosseguir para Master Wave 2 sem declarar a Wave 17 `RELEASE-GREEN`;
+- a trilha de desenvolvimento prosseguiu para Master Wave 2 sem declarar a Wave 17 `RELEASE-GREEN`;
 - qualquer release Windows futura continua exigindo os gates reais de startup, sessão, conversa, multi-provider, restart/recovery, isolamento A→B→A, proposal/EXPIRED, privacidade, persistência, UX/estado, pacote, E2E/ConPTY e provider local aplicável.
+
+## Gate final da Master Wave 2
+
+A MW2 é considerada `CLOUD-GREEN` quando:
+
+1. registries/contracts são provider-neutral e validados em runtime;
+2. isolamento por projeto é comprovado por testes;
+3. Research e Knowledge preservam provenance/citations;
+4. conteúdo externo continua não confiável e não ganha autoridade de instrução;
+5. Public API, Tool, MCP, Platform e Skill descobertos não são adotados automaticamente;
+6. Skill Gate exige metadados de risco/licença/custo/dependências/permissões/provenance/aprovação;
+7. nenhum registry concede autorização de runtime;
+8. nenhuma credencial é versionada e nenhum DDL Supabase é aplicado implicitamente;
+9. Cloud Quality Gate e Skills Snapshot Validation ficam GREEN.
+
+Evidência operacional: `.agent/MW2_TEST_RESULTS.md` e `.agent/MW2_HANDOFF.md`.
 
 ## Protocolo de execução
 
