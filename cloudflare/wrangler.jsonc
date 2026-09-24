@@ -1,0 +1,12 @@
+{
+  "name": "tupiniquim-ai-dev-studio-cloud",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-24",
+  "vars": {
+    "DEPLOYMENT_MODE": "cloud-preview",
+    "RELEASE_STATE": "WINDOWS_DEFERRED"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
