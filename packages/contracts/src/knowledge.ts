@@ -9,6 +9,7 @@ export const knowledgeIngestInputSchema = z.object({
   title: z.string().trim().min(1).max(500),
   sourceUrl: z.url().max(4096),
   sourceId: z.string().uuid().optional(),
+  sourcePath: z.string().trim().min(1).max(4_096).optional(),
   text: z.string().trim().min(1).max(200_000),
   trust: knowledgeTrustStateSchema.default('EXTERNAL_UNTRUSTED')
 })
