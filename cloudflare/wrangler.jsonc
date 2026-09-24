@@ -34,7 +34,7 @@
         "DEPLOYMENT_MODE": "master-wave",
         "RELEASE_STATE": "WINDOWS_DEFERRED",
         "MASTER_WAVE": "MW2",
-        "WAVE_STATE": "AUTHORIZED_CLOUD"
+        "WAVE_STATE": "CLOUD_GREEN"
       }
     },
     "mw3": {
@@ -43,7 +43,7 @@
         "DEPLOYMENT_MODE": "master-wave",
         "RELEASE_STATE": "WINDOWS_DEFERRED",
         "MASTER_WAVE": "MW3",
-        "WAVE_STATE": "PENDING"
+        "WAVE_STATE": "CLOUD_GREEN"
       }
     },
     "mw4": {
@@ -52,7 +52,7 @@
         "DEPLOYMENT_MODE": "master-wave",
         "RELEASE_STATE": "WINDOWS_DEFERRED",
         "MASTER_WAVE": "MW4",
-        "WAVE_STATE": "PENDING"
+        "WAVE_STATE": "CLOUD_GREEN"
       }
     },
     "mw5": {

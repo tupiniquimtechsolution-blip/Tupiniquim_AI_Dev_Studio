@@ -9,11 +9,12 @@ Atualizado em: 2026-09-24
 - PR #32 / branch `arena/01a0c8ba-tupiniquim-ai-dev-studio`: trilha RC1 Windows, **DRAFT / NÃO MERGEADO / WINDOWS-DEFERRED**.
 - PR #33 / branch `cloud/master-wave-2-foundation`: fundação cloud-first **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
 - PR #36 / branch `cloud/mw2-research-knowledge-registries`: Master Wave 2 **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
-- PR #39 / branch `cloud/mw3-dev-studio-hardening-dogfood`: Master Wave 3 **CLOUD-GREEN funcional / DRAFT / NÃO MERGEADO**; Issue #38 só é fechada após o gate do HEAD documental final.
+- PR #39 / branch `cloud/mw3-dev-studio-hardening-dogfood`: Master Wave 3 **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD / DRAFT / NÃO MERGEADO**; Issue #38 fechada `completed`.
+- PR #41 / branch `cloud/mw4-agent-registry-project-threads`: Master Wave 4 **CLOUD-GREEN FUNCIONAL / DRAFT / NÃO MERGEADO**; Issue #40 só fecha após o gate do HEAD documental final.
 - `package:win` chegou a PASS no Windows físico após instalação das bibliotecas Spectre; RC1 completa não foi declarada RELEASE-GREEN.
-- Cloudflare: preview + ambientes MW0–MW5 validados por dry-run; deploy real segue condicionado a credenciais válidas.
-- Supabase: projeto dedicado `Tupiniquim-AI-Dev-Studio`, ref `brqokxlmxwyxwwbtsltc`, `ACTIVE_HEALTHY`; nenhum DDL remoto aplicado por MW2/MW3.
-- Google Drive: workspace MW0–MW5 preparado; uploads ainda podem chegar e são acervo/inputs, nunca fonte de verdade.
+- Cloudflare: preview + ambientes MW0–MW5 validados por dry-run; MW2–MW4 reconciliados como `WAVE_STATE=CLOUD_GREEN`, mantendo `RELEASE_STATE=WINDOWS_DEFERRED`.
+- Supabase: projeto dedicado `Tupiniquim-AI-Dev-Studio`, ref `brqokxlmxwyxwwbtsltc`, `ACTIVE_HEALTHY`; nenhum DDL remoto aplicado por MW2/MW3/MW4.
+- Google Drive: workspace MW0–MW5 preparado; uploads são acervo/inputs, nunca fonte de verdade.
 
 ## Estados formais
 
@@ -26,34 +27,38 @@ Atualizado em: 2026-09-24
 - Master Wave 0: CONCLUÍDA.
 - Master Wave 1: desenvolvimento cloud consolidado; RC1 Windows preservada como `WINDOWS-DEFERRED`.
 - Master Wave 2: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
-- Master Wave 3: **CLOUD-GREEN FUNCIONAL / CONCLUSÃO DOCUMENTAL EM CHECKPOINT FINAL**.
-- Master Wave 4: **AUTORIZADA COMO PRÓXIMA TRILHA CLOUD após confirmação GREEN do HEAD documental MW3**.
-- Master Wave 5: PENDENTE após gate da MW4.
+- Master Wave 3: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
+- Master Wave 4: **CLOUD-GREEN FUNCIONAL / CONCLUSÃO DOCUMENTAL EM CHECKPOINT FINAL**.
+- Master Wave 5: **AUTORIZADA COMO PRÓXIMA TRILHA CLOUD somente após GREEN do HEAD documental final MW4**.
 
-## Master Wave 3 — entregas
+## Master Wave 4 — entregas
 
-- contratos/readiness distinguem `CLOUD_PASS`, `WINDOWS_DEFERRED`, `NOT_APPLICABLE` e `BLOCKED`;
-- `CLOUD-GREEN` pode existir com deferências Windows, mas `RELEASE-GREEN` não;
-- dogfood A–K real materializado em `tests/dogfood/mw3-a-k.test.ts`;
-- A–K operacional foi reconstruído dos RF/RNF versionados porque o detalhamento histórico original não foi localizado; reconciliação futura deve ser explícita;
-- hardening de redaction provider-neutral para preview/log output;
-- security gates negativos para secrets, path traversal, FULL_ACCESS absolute blocks e Skill Gate;
-- Vibe Coding Toolkit pinado como Engineering Playbook Source não autoritativa, sem auto-install e sem regra global rígida de 350 linhas;
-- Cloud Quality Gate agora executa `pnpm test:dogfood` antes do build;
-- readiness matrix RF/RNF separa prova cloud de certificação Windows.
+- `.agent/AGENT_REGISTRY.json` materializado por contrato Zod strict/runtime fail-closed;
+- Agent permanece separado de provider/model/tool/skill/source repository;
+- provider/model continuam inputs explícitos de thread/dispatch;
+- aprovação por projeto com `approvalRef`, loadouts e memory namespaces isolados;
+- project teams exigem Agents aprovados no mesmo projeto;
+- thread binding bloqueia reuse cross-project/cross-agent/provider e exige rebind para troca de model;
+- `effects` são metadata/intenção, não autoridade;
+- aliases MW4 mapeados para capabilities canônicas antes de PolicyEngine;
+- toda ação mutável originada do Agent Runtime continua com `runtimeExecutionAuthorized=false` nesta camada e exige ApprovalStore/PlanApprovalService para materialização;
+- effects sem materializador MW4, incluindo `asset:create`, permanecem metadata-only;
+- `AgentProjectJsonStore` persiste assignments/teams/thread bindings no data root e recupera após restart;
+- `AgentRuntimeAuditAdapter` integra eventos ao AuditLog existente;
+- security negatives e dogfood MW4 exercitam isolamento, injection, FULL_ACCESS sem autoridade, disable e restart.
 
-## Evidência MW3 funcional
+## Evidência MW4 funcional
 
-HEAD funcional: `2a9be68cf17c6ac65101b499fd940b76acbd6e73`.
+HEAD funcional: `0b1a64efe6f55ab890f2d30d5156b362f0f936aa`.
 
-Cloud Quality Gate run `36020705177`: **PASS**
+Cloud Quality Gate run `36025944421`: **PASS**
 - install
 - lint
 - typecheck
-- unit — 31 arquivos / 250 testes
-- integration — 13 arquivos / 102 testes; 4 skips explícitos de ambiente/live
-- security — 6 arquivos / 42 testes
-- controlled dogfood A–K — 11/11
+- unit — 33 arquivos / 259 testes
+- integration — 14 arquivos / 103 testes; 4 skips explícitos de ambiente/live
+- security — 7 arquivos / 48 testes
+- dogfood — 2 arquivos / 12 testes (MW3 A–K + MW4 Agent Studio)
 - build
 - Cloudflare preview dry-run
 - Cloudflare MW0–MW5 dry-runs
@@ -61,37 +66,26 @@ Cloud Quality Gate run `36020705177`: **PASS**
 
 O run não gerou artifact persistido porque os paths opcionais de artifact ficaram vazios; o próprio run/steps é a evidência operacional.
 
-Documentos MW3:
-- `.agent/MW3_EXECUTION_PLAN.md`
-- `.agent/MW3_READINESS_MATRIX.md`
-- `.agent/MW3_TEST_RESULTS.md`
-- `.agent/MW3_HANDOFF.md`
-- `docs/AI_TOOLBOX/MW3_ENGINEERING_PLAYBOOK.md`
+Documentos MW4:
+- `.agent/MW4_EXECUTION_PLAN.md`
+- `.agent/MW4_TEST_RESULTS.md`
+- `.agent/MW4_HANDOFF.md`
 
-## Segurança / Drive
+## Segurança / autoridade
 
-A policy de Knowledge impede ingestão automática de:
-- `.env` / `.env.*` — incluindo `.env.local` detectado no upload;
-- secrets/credentials/tokens;
-- `node_modules`;
-- `.cache`;
-- `out`;
-- `release`;
-- `playwright-report`;
-- `test-results`;
-- `.wrangler*`;
-- `.git`.
+- nenhum Agent recebe provider/model como propriedade de autoridade;
+- nenhum Registry/Skill/Tool/MCP/Agent concede runtime mutation authority por existência ou aprovação de metadata;
+- FULL_ACCESS preserva PolicyEngine/absolute blocks e não remove ApprovalStore/PlanApprovalService;
+- capability não declarada falha fechado;
+- effect futuro sem materializador aprovado falha fechado;
+- thread/project isolation é persistente e testado após restart.
 
-Não abrir nem indexar arquivos sensíveis apenas porque foram enviados ao Drive.
+## Supabase / Drive
 
-## Supabase dedicado
-
-- projeto: `Tupiniquim-AI-Dev-Studio`
-- ref: `brqokxlmxwyxwwbtsltc`
-- URL: `https://brqokxlmxwyxwwbtsltc.supabase.co`
-- região: `sa-east-1`
-- nenhum secret real versionado
-- nenhuma migration/DDL MW2/MW3 aplicada remotamente
+- nenhum secret real versionado;
+- nenhuma migration/DDL MW2/MW3/MW4 aplicada remotamente;
+- `.env*`, secrets/credentials/tokens, generated artifacts e VCS internals continuam fora da auto-ingestion de Knowledge;
+- Drive não substitui GitHub como fonte de verdade.
 
 ## Pendências não bloqueantes
 
@@ -101,7 +95,7 @@ Não abrir nem indexar arquivos sensíveis apenas porque foram enviados ao Drive
 
 ## Próximo passo
 
-1. Confirmar Cloud Quality Gate do HEAD documental final da MW3.
-2. Fechar Issue #38 como `completed` somente após esse GREEN.
-3. Manter PR #39 DRAFT/não mergeado até integração explícita.
-4. Liberar Master Wave 4 na trilha cloud, sem alterar o estado `WINDOWS-DEFERRED` da RC1.
+1. Rodar Cloud Quality Gate do HEAD documental final MW4.
+2. Fechar Issue #40 como `completed` somente após esse GREEN.
+3. Manter PR #41 DRAFT/não mergeado até integração explícita.
+4. Após o checkpoint, liberar Master Wave 5 na trilha cloud sem alterar o estado `WINDOWS-DEFERRED` da RC1.

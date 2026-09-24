@@ -45,7 +45,7 @@ jobs:
         run: pnpm test:integration
       - name: Security tests
         run: pnpm test:security
-      - name: Controlled dogfood A-K
+      - name: Controlled dogfood MW3 A-K + MW4 Agent Studio
         run: pnpm test:dogfood
       - name: Build
         run: pnpm build
