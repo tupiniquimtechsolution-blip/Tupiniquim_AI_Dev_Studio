@@ -1,0 +1,77 @@
+name: Master Wave Cloud Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      wave:
+        description: Master Wave target
+        required: true
+        type: choice
+        options:
+          - mw0
+          - mw1
+          - mw2
+          - mw3
+          - mw4
+          - mw5
+  workflow_call:
+    inputs:
+      wave:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: master-wave-${{ inputs.wave }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cloud-gate:
+    name: ${{ inputs.wave }}-cloud-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test:unit
+      - name: Integration tests
+        run: pnpm test:integration
+      - name: Security tests
+        run: pnpm test:security
+      - name: Build
+        run: pnpm build
+      - name: Validate Cloudflare environment
+        run: npx --yes wrangler@4 deploy --dry-run --config cloudflare/wrangler.jsonc --env "${{ inputs.wave }}" --outdir ".wrangler-dry-run/${{ inputs.wave }}"
+      - name: Write gate evidence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p .cloud-evidence
+          printf '{"wave":"%s","sha":"%s","runner":"github-hosted","windowsCertified":false}\n' "${{ inputs.wave }}" "${{ github.sha }}" > ".cloud-evidence/${{ inputs.wave }}.json"
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: master-wave-${{ inputs.wave }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            .cloud-evidence/**
+            .wrangler-dry-run/${{ inputs.wave }}/**
+            test-results/**
+            playwright-report/**
