@@ -8,8 +8,11 @@ $script:CalledModel = $null
 $script:GenerateCalls = 0
 function Assert-True($Value, [string]$Message) { if (-not $Value) { throw $Message } }
 # Offline HTTP mock: deliberately returns recommended BEFORE required.
+# CmdletBinding + ThrowTerminatingError preserve the typed ErrorRecord shape expected from
+# Invoke-RestMethod -ErrorAction Stop more faithfully than PowerShell 5.1 `throw <exception>`.
 function Invoke-RestMethod {
-  param($Uri, $TimeoutSec, $ErrorAction, $Method, $ContentType, $Body)
+  [CmdletBinding()]
+  param($Uri, $TimeoutSec, $Method, $ContentType, $Body)
   if ($Uri.EndsWith('/api/tags')) {
     Assert-True ($TimeoutSec -eq 5) 'tags must be bounded'
     if ($script:Scenario -eq 'connection') { throw 'secret=DO_NOT_LOG_ME' }
@@ -20,7 +23,16 @@ function Invoke-RestMethod {
   Assert-True ($TimeoutSec -eq 180) 'generation timeout changed'
   $script:GenerateCalls++
   $script:CalledModel = ($Body | ConvertFrom-Json).model
-  if ($script:Scenario -eq 'timeout') { throw [TimeoutException]::new('secret=DO_NOT_LOG_ME') }
+  if ($script:Scenario -eq 'timeout') {
+    $Exception = [TimeoutException]::new('secret=DO_NOT_LOG_ME')
+    $Record = New-Object System.Management.Automation.ErrorRecord(
+      $Exception,
+      'InvokeRestMethodTimeout',
+      [System.Management.Automation.ErrorCategory]::OperationTimeout,
+      $Uri
+    )
+    $PSCmdlet.ThrowTerminatingError($Record)
+  }
   if ($script:Scenario -eq 'incomplete') { return @{done=$false;response='partial'} }
   if ($script:Scenario -eq 'empty') { return @{done=$true;response=' '} }
   return @{done=$true;response='OK'}
