@@ -12,7 +12,7 @@ export const knowledgeIngestInputSchema = z.object({
   text: z.string().trim().min(1).max(200_000),
   trust: knowledgeTrustStateSchema.default('EXTERNAL_UNTRUSTED')
 })
-export type KnowledgeIngestInput = z.infer<typeof knowledgeIngestInputSchema>
+export type KnowledgeIngestInput = z.input<typeof knowledgeIngestInputSchema>
 
 export const knowledgeCitationSchema = z.object({
   sourceId: z.string().uuid().optional(),
@@ -49,7 +49,7 @@ export const knowledgeQueryInputSchema = z.object({
   query: z.string().trim().min(2).max(2_000),
   limit: z.number().int().min(1).max(20).default(5)
 })
-export type KnowledgeQueryInput = z.infer<typeof knowledgeQueryInputSchema>
+export type KnowledgeQueryInput = z.input<typeof knowledgeQueryInputSchema>
 
 export const knowledgeHitSchema = z.object({
   chunk: knowledgeChunkSchema,
