@@ -19,6 +19,10 @@ jobs:
   cloud-quality:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      TEMP: /tmp
+      TMP: /tmp
+      TMPDIR: /tmp
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
