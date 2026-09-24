@@ -1,4 +1,4 @@
-import { type RegistryEntry, type TechnologyResolution } from '@tupiniquim/contracts'
+import type { RegistryEntry, TechnologyResolution } from '@tupiniquim/contracts'
 import { RegistryCatalog } from './registry-catalog'
 
 export const registerTechnologyResolution = (
