@@ -18,7 +18,7 @@ import {
   type ResolvedAgentDispatch
 } from '@tupiniquim/contracts'
 import { PolicyEngine } from './policy'
-import { AgentRegistryRuntime } from './agent-registry-runtime'
+import type { AgentRegistryRuntime } from './agent-registry-runtime'
 
 export interface AgentProjectRepository {
   putAssignment(assignment: ProjectAgentAssignment): Promise<void>
@@ -45,6 +45,11 @@ export interface AgentRuntimeAuditSink {
 }
 
 const memoryNamespaceFor = (projectId: string, agentId: AgentId): string => `project:${encodeURIComponent(projectId)}:agent:${agentId}`
+
+const canonicalMutationCapabilities: Readonly<Record<string, string>> = {
+  'workspace:write': 'workspace.write',
+  'process:execute': 'terminal.command'
+}
 
 export class AgentProjectRuntime {
   public constructor(
@@ -141,13 +146,19 @@ export class AgentProjectRuntime {
     await this.requireApprovedAssignment(intent.projectId, intent.agentId)
     const agent = this.registry.get(intent.agentId)
     const declaredByAgent = agent.effects.includes(intent.capability)
+    const canonicalCapability = canonicalMutationCapabilities[intent.capability] ?? null
     if (!declaredByAgent) {
-      const denied = agentCapabilityGateResultSchema.parse({ ...intent, declaredByAgent: false, policyAllowed: false, requiresApproval: false, runtimeExecutionAuthorized: false, reason: 'Capability mutável não declarada pelo Agent.' })
+      const denied = agentCapabilityGateResultSchema.parse({ ...intent, canonicalCapability, declaredByAgent: false, policyAllowed: false, requiresApproval: false, runtimeExecutionAuthorized: false, reason: 'Capability mutável não declarada pelo Agent.' })
+      await this.writeAudit('CAPABILITY_GATE', intent.projectId, intent.agentId, 'DENIED', denied.reason)
+      return denied
+    }
+    if (canonicalCapability === null) {
+      const denied = agentCapabilityGateResultSchema.parse({ ...intent, canonicalCapability: null, declaredByAgent: true, policyAllowed: false, requiresApproval: false, runtimeExecutionAuthorized: false, reason: 'Capability declarada, mas sem materializador canônico aprovado na MW4; permanece metadata-only.' })
       await this.writeAudit('CAPABILITY_GATE', intent.projectId, intent.agentId, 'DENIED', denied.reason)
       return denied
     }
     const policy = new PolicyEngine(intent.permissionProfile).evaluate({
-      capability: intent.capability,
+      capability: canonicalCapability,
       target: intent.target,
       risk: intent.risk,
       destructive: intent.destructive,
@@ -155,6 +166,7 @@ export class AgentProjectRuntime {
     })
     const result = agentCapabilityGateResultSchema.parse({
       ...intent,
+      canonicalCapability,
       declaredByAgent: true,
       policyAllowed: policy.allowed,
       requiresApproval: policy.allowed,

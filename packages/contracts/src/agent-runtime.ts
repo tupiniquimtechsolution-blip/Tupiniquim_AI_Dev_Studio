@@ -143,6 +143,7 @@ export const agentCapabilityGateResultSchema = z.object({
   projectId: z.string().trim().min(1).max(200),
   agentId: agentIdSchema,
   capability: z.string().trim().min(1).max(200),
+  canonicalCapability: z.string().trim().min(1).max(200).nullable(),
   declaredByAgent: z.boolean(),
   policyAllowed: z.boolean(),
   requiresApproval: z.boolean(),

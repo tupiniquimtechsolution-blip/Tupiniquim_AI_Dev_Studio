@@ -54,8 +54,8 @@ describe('AgentRegistryRuntime', () => {
   })
 
   it('rejeita provider/model injetados dentro da definição do Agent', () => {
-    const registry = baseRegistry() as ReturnType<typeof baseRegistry> & { agents: Array<Record<string, unknown>> }
-    registry.agents[0] = { ...registry.agents[0], provider: 'ollama', model: 'qwen' }
-    expect(() => new AgentRegistryRuntime(registry)).toThrow()
+    const registry = baseRegistry()
+    const first = registry.agents[0]!
+    expect(() => new AgentRegistryRuntime({ ...registry, agents: [{ ...first, provider: 'ollama', model: 'qwen' }] })).toThrow()
   })
 })
