@@ -28,23 +28,32 @@ const pass = (id: string, title: string) => dogfoodScenarioResultSchema.parse({ 
 
 class MemoryPromptRepository implements PromptRepository {
   public readonly prompts = new Map<string, PromptTemplate>()
-  public async putPrompt(template: PromptTemplate): Promise<void> { this.prompts.set(template.id, template) }
-  public async getPrompt(id: string): Promise<PromptTemplate | null> { return this.prompts.get(id) ?? null }
-  public async listPrompts(): Promise<PromptTemplate[]> { return [...this.prompts.values()] }
-  public async recordPromptUsage(): Promise<void> {}
+  public putPrompt(template: PromptTemplate): Promise<void> {
+    this.prompts.set(template.id, template)
+    return Promise.resolve()
+  }
+  public getPrompt(id: string): Promise<PromptTemplate | null> { return Promise.resolve(this.prompts.get(id) ?? null) }
+  public listPrompts(): Promise<PromptTemplate[]> { return Promise.resolve([...this.prompts.values()]) }
+  public recordPromptUsage(): Promise<void> { return Promise.resolve() }
 }
 
 class MemoryPreferenceRepository implements PreferenceRepository {
   private profile: UIProfile | null = null
-  public async putPreference(_key: string, profile: UIProfile): Promise<void> { this.profile = profile }
-  public async getPreference(): Promise<UIProfile | null> { return this.profile }
+  public putPreference(_key: string, profile: UIProfile): Promise<void> {
+    this.profile = profile
+    return Promise.resolve()
+  }
+  public getPreference(): Promise<UIProfile | null> { return Promise.resolve(this.profile) }
 }
 
 class MemoryVisualRepository implements VisualRepository {
   private readonly assets = new Map<string, VisualAsset>()
-  public async putVisualAsset(asset: VisualAsset): Promise<void> { this.assets.set(asset.id, asset) }
-  public async getVisualAsset(id: string): Promise<VisualAsset | null> { return this.assets.get(id) ?? null }
-  public async listVisualAssets(): Promise<VisualAsset[]> { return [...this.assets.values()] }
+  public putVisualAsset(asset: VisualAsset): Promise<void> {
+    this.assets.set(asset.id, asset)
+    return Promise.resolve()
+  }
+  public getVisualAsset(id: string): Promise<VisualAsset | null> { return Promise.resolve(this.assets.get(id) ?? null) }
+  public listVisualAssets(): Promise<VisualAsset[]> { return Promise.resolve([...this.assets.values()]) }
 }
 
 describe('MW3 controlled dogfood A-K', () => {
