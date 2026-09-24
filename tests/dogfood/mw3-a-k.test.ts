@@ -21,7 +21,7 @@ import {
   type ResearchSearchProvider,
   type VisualRepository
 } from '@tupiniquim/core'
-import { redactUntrustedOutput, resolveLexicalPath } from '@tupiniquim/adapters'
+import { PathSecurityError, redactUntrustedOutput, resolveLexicalPath } from '@tupiniquim/adapters'
 
 const evidence = (ref: string) => [{ kind: 'DOGFOOD' as const, ref, detail: 'MW3 controlled dogfood evidence.' }]
 const pass = (id: string, title: string) => dogfoodScenarioResultSchema.parse({ id, title, status: 'CLOUD_PASS', evidence: evidence(`MW3-${id}`), windowsDependencies: [] })
@@ -59,7 +59,7 @@ class MemoryVisualRepository implements VisualRepository {
 describe('MW3 controlled dogfood A-K', () => {
   it('A — bloqueia traversal lexical fora do workspace', () => {
     const root = path.join(tmpdir(), 'mw3-workspace')
-    expect(() => resolveLexicalPath(root, '../outside.txt')).toThrow('workspace')
+    expect(() => resolveLexicalPath(root, '../outside.txt')).toThrow(PathSecurityError)
     expect(pass('A', 'Workspace/path boundary').status).toBe('CLOUD_PASS')
   })
 
