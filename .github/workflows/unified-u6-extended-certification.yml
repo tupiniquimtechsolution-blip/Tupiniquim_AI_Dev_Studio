@@ -1,0 +1,189 @@
+name: Unified U6 Extended Certification
+
+on:
+  push:
+    branches:
+      - ci/unified-u6-extended-certification
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: unified-u6-extended-certification
+  cancel-in-progress: false
+
+env:
+  TARGET_SHA: c8e2b2326faff71cda3ac9e3eb9d5b62eceef516
+  CERTIFIED_RUN_ID: '36254666257'
+  CERTIFIED_ARTIFACT_ID: '10910720391'
+  CERTIFIED_ARTIFACT_NAME: windows-certification-c8e2b2326faff71cda3ac9e3eb9d5b62eceef516
+  CERTIFIED_ARTIFACT_DIGEST: sha256:e992275fe9905ca1bae863696e6f480f4a8bc061e8bca4b908c6feb304688502
+
+jobs:
+  extended-windows-cloud:
+    name: exact-F-real-ollama-package-smoke
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - name: Checkout immutable unified candidate source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+          path: source
+          persist-credentials: false
+
+      - name: Provision exact F drive and exact project path
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $backing = Join-Path $env:RUNNER_TEMP 'tupiniquim-unified-f-drive'
+          New-Item -ItemType Directory -Path $backing -Force | Out-Null
+          if (-not (Test-Path 'F:\')) {
+            subst F: $backing
+            if ($LASTEXITCODE -ne 0) { throw "Falha ao provisionar F: via subst (exit=$LASTEXITCODE)." }
+          }
+          New-Item -ItemType Directory -Path 'F:\CODEX' -Force | Out-Null
+          $source = Join-Path $env:GITHUB_WORKSPACE 'source'
+          $target = 'F:\CODEX\Tupiniquim-AI-Dev-Studio'
+          New-Item -ItemType Directory -Path $target -Force | Out-Null
+          robocopy $source $target /MIR /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NP
+          if ($LASTEXITCODE -gt 7) { throw "robocopy falhou: $LASTEXITCODE" }
+          git config --global --add safe.directory $target
+          $actual = (git -C $target rev-parse HEAD).Trim()
+          if ($actual -ne $env:TARGET_SHA) { throw "SHA incorreto no F: esperado=$env:TARGET_SHA atual=$actual" }
+          Write-Host "Exact unified SHA materialized at $target"
+
+      - name: Bootstrap portable RC1 toolchain and real required Ollama model
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location 'F:\CODEX\Tupiniquim-AI-Dev-Studio'
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-rc1-windows.ps1 -AcceptDownloads
+
+      - name: Prove exact F-drive contract independently
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location 'F:\CODEX\Tupiniquim-AI-Dev-Studio'
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\validate-f-drive.ps1
+
+      - name: Run complete RC1 verification with real Ollama smoke
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location 'F:\CODEX\Tupiniquim-AI-Dev-Studio'
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-rc1-windows.ps1
+
+      - name: Validate certified artifact provenance metadata
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $uri = "https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$env:CERTIFIED_ARTIFACT_ID"
+          $meta = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get
+          if ($meta.expired -eq $true) { throw 'Certified artifact is expired.' }
+          if ($meta.name -ne $env:CERTIFIED_ARTIFACT_NAME) { throw "Artifact name mismatch: $($meta.name)" }
+          if ($meta.digest -ne $env:CERTIFIED_ARTIFACT_DIGEST) { throw "Artifact digest mismatch: $($meta.digest)" }
+          if ([string]$meta.workflow_run.head_sha -ne $env:TARGET_SHA) { throw "Artifact SHA mismatch: $($meta.workflow_run.head_sha)" }
+          Write-Host "Certified artifact metadata PASS: $($meta.name) $($meta.digest)"
+
+      - name: Download already-certified Windows artifact from exact SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CERTIFIED_ARTIFACT_NAME }}
+          path: certified-artifact
+          github-token: ${{ github.token }}
+          run-id: ${{ env.CERTIFIED_RUN_ID }}
+
+      - name: Smoke unpacked and portable executables from certified artifact
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $target = 'F:\CODEX\Tupiniquim-AI-Dev-Studio'
+          . "$target\scripts\rc1-environment.ps1"
+
+          $node = 'F:\CODEX\programas\nodejs\node.exe'
+          $fixture = Get-Content "$target\tests\fixtures\fake-codex-app-server.mjs" -Raw
+          $fixture = $fixture.Replace("'codex-test'", "'0.0.0'")
+          Set-Content -Path "$target\app-server" -Value $fixture -Encoding utf8
+          $env:TUPINIQUIM_CODEX_PATH = $node
+
+          $artifactRoot = Join-Path $env:GITHUB_WORKSPACE 'certified-artifact\release'
+          $unpacked = Join-Path $artifactRoot 'win-unpacked\Tupiniquim AI Dev Studio.exe'
+          $portable = Get-ChildItem -LiteralPath $artifactRoot -Filter 'Tupiniquim-AI-Dev-Studio-*-x64.exe' | Select-Object -First 1
+          if (-not (Test-Path -LiteralPath $unpacked -PathType Leaf)) { throw "Unpacked executable ausente: $unpacked" }
+          if ($null -eq $portable) { throw 'Portable executable ausente no artifact certificado.' }
+
+          function Stop-TupiniquimProcesses {
+            Get-Process -ErrorAction SilentlyContinue | Where-Object {
+              try { $_.ProcessName -like 'Tupiniquim*' -or ($_.Path -and $_.Path -like '*Tupiniquim*') } catch { $false }
+            } | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+          function Assert-DirectExecutableStaysAlive([string]$Path, [string]$Label) {
+            Stop-TupiniquimProcesses
+            $p = Start-Process -FilePath $Path -WorkingDirectory $target -PassThru
+            Start-Sleep -Seconds 10
+            $p.Refresh()
+            if ($p.HasExited) { throw "$Label encerrou prematuramente (exit=$($p.ExitCode))." }
+            Write-Host "$Label process smoke PASS pid=$($p.Id)"
+            Stop-TupiniquimProcesses
+          }
+
+          Assert-DirectExecutableStaysAlive -Path $unpacked -Label 'win-unpacked'
+
+          Stop-TupiniquimProcesses
+          $started = Get-Date
+          $launcher = Start-Process -FilePath $portable.FullName -WorkingDirectory $target -PassThru
+          $detected = @()
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 1
+            $detected = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+              try {
+                $_.StartTime -ge $started -and ($_.ProcessName -like 'Tupiniquim*' -or ($_.Path -and $_.Path -like '*Tupiniquim*'))
+              } catch { $false }
+            })
+            if ($detected.Count -gt 0) { break }
+          }
+          if ($detected.Count -eq 0) {
+            if ($launcher.HasExited) { throw "Portable launcher encerrou sem processo do app (exit=$($launcher.ExitCode))." }
+            throw 'Portable launcher permaneceu ativo, mas nenhum processo Tupiniquim foi detectado.'
+          }
+          Start-Sleep -Seconds 5
+          $alive = @($detected | Where-Object { -not $_.HasExited })
+          if ($alive.Count -eq 0) { throw 'Portable app não permaneceu ativo durante o smoke window.' }
+          Write-Host "Portable artifact process smoke PASS; detected=$($alive.Count)"
+
+          $evidenceDir = 'F:\CODEX\Tupiniquim-AI-Dev-Studio.data\unified-u6-extended-evidence'
+          New-Item -ItemType Directory -Path $evidenceDir -Force | Out-Null
+          [pscustomobject]@{
+            targetSha = $env:TARGET_SHA
+            certifiedRunId = $env:CERTIFIED_RUN_ID
+            artifactId = $env:CERTIFIED_ARTIFACT_ID
+            artifactDigest = $env:CERTIFIED_ARTIFACT_DIGEST
+            unpackedExeSha256 = (Get-FileHash -LiteralPath $unpacked -Algorithm SHA256).Hash.ToLowerInvariant()
+            portableExeSha256 = (Get-FileHash -LiteralPath $portable.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            unpackedSmoke = 'PASS'
+            portableSmoke = 'PASS'
+            timestampUtc = [DateTime]::UtcNow.ToString('o')
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidenceDir 'certified-package-smoke.json') -Encoding UTF8
+          Stop-TupiniquimProcesses
+
+      - name: Upload extended U6 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-u6-extended-${{ env.TARGET_SHA }}
+          if-no-files-found: warn
+          path: |
+            F:/CODEX/Tupiniquim-AI-Dev-Studio.data/rc1-evidence/**
+            F:/CODEX/Tupiniquim-AI-Dev-Studio.data/unified-u6-extended-evidence/**
+          retention-days: 90
