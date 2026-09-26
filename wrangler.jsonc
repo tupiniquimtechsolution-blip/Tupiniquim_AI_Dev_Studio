@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tupiniquim-dev-ai-web",
-  "main": "apps/web-runtime/src/worker-full.ts",
+  "main": "apps/web-runtime/src/worker-secure.ts",
   "compatibility_date": "2026-09-26",
   "compatibility_flags": ["nodejs_compat"],
   "ai": {
@@ -46,7 +46,7 @@
   "vars": {
     "SANDBOX_TRANSPORT": "rpc",
     "WEB_ALLOW_ANONYMOUS": "true",
-    "WEB_RUNTIME_VERSION": "web-full-0.2.0",
+    "WEB_RUNTIME_VERSION": "web-full-0.2.1",
     "WEB_BOOTSTRAP_REPO": "https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio.git",
     "WEB_BOOTSTRAP_REF": "integration/ai-lab-toolbox-unified"
   }
