@@ -1,8 +1,8 @@
 {
   "name": "tupiniquim-ai-dev-studio",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.1",
   "private": true,
-  "description": "Plataforma privada local-first de engenharia de software agêntica.",
+  "description": "Plataforma privada local-first de engenharia de software ag\u00eantica.",
   "type": "module",
   "main": "out/main/index.js",
   "packageManager": "pnpm@11.16.0",
@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "package:win": "pnpm build && electron-builder --win portable dir",
+    "package:win": "node scripts/check-windows-toolchain.ts && pnpm build && electron-builder --win portable dir",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -20,6 +20,7 @@
     "test:integration": "vitest run --project integration",
     "test:security": "vitest run --project security",
     "test:e2e": "playwright test",
+    "test:rc1-windows-scripts": "powershell -NoProfile -ExecutionPolicy Bypass -File ./tests/scripts/ollama-live-smoke.test.ps1",
     "test:dogfood": "vitest run --project dogfood",
     "validate:f-drive": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/validate-f-drive.ps1",
     "validate": "pnpm validate:f-drive && pnpm lint && pnpm typecheck && pnpm test:unit && pnpm test:integration && pnpm test:security && pnpm build"
@@ -29,7 +30,7 @@
     "productName": "Tupiniquim AI Dev Studio",
     "asar": true,
     "directories": {
-      "output": "dist"
+      "output": "release"
     },
     "files": [
       "out/**/*",

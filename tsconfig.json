@@ -33,6 +33,7 @@
     "packages/**/*.ts",
     "packages/**/*.tsx",
     "tests/**/*.ts",
+    "cloudflare/**/*.ts",
     "*.ts"
   ]
 }

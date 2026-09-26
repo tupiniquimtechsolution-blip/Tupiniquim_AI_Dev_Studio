@@ -24,7 +24,7 @@ afterAll(async () => {
 }, 30_000)
 
 describe('CodexAppServerAdapter', () => {
-  it('negocia o protocolo estável por stdio e detecta autenticação sem expor credenciais', async () => {
+  it.runIf(process.platform === 'win32' || process.env.TUPINIQUIM_CODEX_PATH !== undefined)('negocia o protocolo estável por stdio e detecta autenticação sem expor credenciais', async () => {
     await mkdir(dataRoot, { recursive: true })
     adapter = new CodexAppServerAdapter({
       dataRoot,

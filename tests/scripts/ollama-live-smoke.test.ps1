@@ -1,0 +1,72 @@
+$ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\..\..\scripts\ollama-live-smoke.ps1"
+
+$Root = Join-Path ([IO.Path]::GetTempPath()) ('rc1-ollama-test-' + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $Root | Out-Null
+$ManifestPath = Join-Path $Root 'models.json'
+$script:Scenario = 'success'
+$script:CalledModel = $null
+$script:GenerateCalls = 0
+function Assert-True($Value, [string]$Message) { if (-not $Value) { throw $Message } }
+
+# Test the timeout classifier at its real boundary. Windows PowerShell 5.1 rewraps any
+# exception thrown from a PowerShell mock function, so using such a mock to validate the
+# outer catch tests PowerShell's mocking semantics rather than Invoke-RestMethod metadata.
+# These cases cover the structured timeout shapes handled by production without inspecting
+# or emitting the secret-bearing exception message.
+$TimeoutException = [TimeoutException]::new('secret=DO_NOT_LOG_ME')
+$WebTimeout = [System.Net.WebException]::new('secret=DO_NOT_LOG_ME', [System.Net.WebExceptionStatus]::Timeout)
+$TaskCancelled = [System.Threading.Tasks.TaskCanceledException]::new('secret=DO_NOT_LOG_ME')
+$OperationTimeoutRecord = New-Object System.Management.Automation.ErrorRecord(
+  ([Exception]::new('secret=DO_NOT_LOG_ME')),
+  'InvokeRestMethodTimeout',
+  [System.Management.Automation.ErrorCategory]::OperationTimeout,
+  'http://127.0.0.1:11434/api/generate'
+)
+foreach ($TimeoutCase in @($TimeoutException, $WebTimeout, $TaskCancelled, $OperationTimeoutRecord)) {
+  Assert-True (Test-OllamaTimeoutError $TimeoutCase) 'structured timeout not diagnosed'
+}
+Write-Host 'PASS ollama-smoke timeout classifier fixtures'
+
+# Offline HTTP mock: deliberately returns recommended BEFORE required. It validates smoke
+# orchestration, bounded requests, exact required-model selection, failure handling and
+# redaction; timeout metadata itself is tested directly above.
+function Invoke-RestMethod {
+  [CmdletBinding()]
+  param($Uri, $TimeoutSec, $Method, $ContentType, $Body)
+  if ($Uri.EndsWith('/api/tags')) {
+    Assert-True ($TimeoutSec -eq 5) 'tags must be bounded'
+    if ($script:Scenario -eq 'connection') { throw 'secret=DO_NOT_LOG_ME' }
+    if ($script:Scenario -eq 'missing') { return @{models=@(@{name='qwen3:8b'})} }
+    return @{models=@(@{name='qwen3:8b'}, @{name='qwen2.5-coder:3b'})}
+  }
+  Assert-True ($Uri -eq 'http://127.0.0.1:11434/api/generate') 'wrong endpoint'
+  Assert-True ($TimeoutSec -eq 180) 'generation timeout changed'
+  $script:GenerateCalls++
+  $script:CalledModel = ($Body | ConvertFrom-Json).model
+  if ($script:Scenario -eq 'incomplete') { return @{done=$false;response='partial'} }
+  if ($script:Scenario -eq 'empty') { return @{done=$true;response=' '} }
+  return @{done=$true;response='OK'}
+}
+
+try {
+  Copy-Item "$PSScriptRoot\..\..\config\local-models.json" $ManifestPath
+  foreach ($Scenario in @('success','missing','incomplete','empty','connection','manifest')) {
+    $script:Scenario = $Scenario
+    $script:GenerateCalls = 0
+    $script:CalledModel = $null
+    if ($Scenario -eq 'manifest') { '{"models":[]}' | Set-Content $ManifestPath }
+    $Result = Invoke-OllamaLiveSmoke $ManifestPath $Root
+    $Logged = Get-Content (Join-Path $Root 'ollama-live.log') -Raw
+    Assert-True (-not $Logged.Contains('DO_NOT_LOG_ME')) 'raw exception leaked'
+    Assert-True ($Result.durationMs -ge 0) 'duration missing'
+    if ($Scenario -eq 'success') {
+      Assert-True ($Result.exitCode -eq 0 -and $Result.done -eq $true) 'smoke should succeed'
+      Assert-True ($script:CalledModel -ceq 'qwen2.5-coder:3b') 'tags ordering chose wrong model'
+    } else {
+      Assert-True ($Result.exitCode -eq 1 -and $Result.cause) 'failure hidden'
+      if ($Scenario -in @('missing','manifest','connection')) { Assert-True ($script:GenerateCalls -eq 0) 'unexpected generation/fallback' }
+    }
+    Write-Host "PASS ollama-smoke fixture: $Scenario"
+  }
+} finally { Remove-Item $Root -Recurse -Force }

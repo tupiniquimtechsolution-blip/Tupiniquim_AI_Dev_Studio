@@ -15,6 +15,7 @@ export type AIAccountKind = z.infer<typeof aiAccountKindSchema>
 
 export const aiStatusSchema = z.object({
   provider: aiProviderKindSchema,
+  selectedModel: z.string().nullable().optional(),
   state: aiProviderStateSchema,
   account: aiAccountKindSchema,
   version: z.string().nullable(),
@@ -80,7 +81,16 @@ export const agentThreadIdInputSchema = z.object({ threadId: z.string().min(1).m
 
 export const agentTurnReferenceSchema = z.object({
   threadId: z.string().min(1).max(200),
-  turnId: z.string().min(1).max(200)
+  turnId: z.string().min(1).max(200),
+  /**
+   * Wave 16 — Incremento 3/4 (MODEL PROVENANCE REAL): model EFETIVO do request
+   * que criou este turn, reportado pelo adapter no momento exato do dispatch
+   * (ex.: o modelo Ollama selecionado para este request). Derivado pelo runtime
+   * privilegiado, nunca escolhido pelo renderer. Ausente quando o adapter não
+   * conhece o model no momento do send (ex.: Codex retomando thread existente);
+   * nesses casos o runtime mantém o fallback para a AIThread persistida.
+   */
+  model: z.string().min(1).max(300).nullable().optional()
 })
 export type AgentTurnReference = z.infer<typeof agentTurnReferenceSchema>
 

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "runtime": "ollama",
+  "models": [
+    { "name": "qwen2.5-coder:3b", "tier": "required", "estimatedDownloadGB": 1.9, "purpose": "Chat e codigo local em hardware modesto; tool calling nao garantido." },
+    { "name": "qwen3:8b", "tier": "recommended", "estimatedDownloadGB": 5.2, "purpose": "Codigo e propostas com ferramentas; validar capacidade no hardware local." },
+    { "name": "qwen2.5-coder:14b", "tier": "optional", "estimatedDownloadGB": 9.0, "purpose": "Codigo em maquinas com memoria suficiente." }
+  ]
+}

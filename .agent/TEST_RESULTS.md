@@ -1,5 +1,59 @@
 # Resultados de testes
 
+## 2026-09-12 — Wave 16 — Gate Windows F: AUTORITATIVO
+
+Máquina Windows real (`F:`); branch `arena/wave-16-inc4-shutdown-restart`;
+PR #23; Issue #18; HEAD técnico `eba4dcc0f428c68ba086a7251375ef9f13b4c94f`.
+
+| Comando | Resultado |
+|---|---|
+| `pnpm-f.ps1 validate` | PASS integral |
+| F:\CODEX-only | PASS |
+| lint | PASS |
+| typecheck | PASS |
+| `pnpm test:unit` | 194/194 PASS |
+| `pnpm test:integration` | 99 passed / 2 skipped |
+| `tests/integration/tupiniquim-shutdown-restart.test.ts` | 4/4 PASS |
+| `pnpm test:security` | 34/34 PASS |
+| `pnpm build` | PASS |
+| `pnpm-f.ps1 test:e2e` | 4/4 PASS · 0 failed · 0 skipped · 39.8s |
+
+### Electron E2E real
+
+1. `inicia o Electron seguro e carrega um workspace real` — PASS — 9.7s
+2. `proposta substituída fica EXPIRED e aplicação da antiga é recusada` — PASS — 5.7s
+3. `sessão Tupiniquim sobrevive à troca de provider fake e isola workspace` — PASS — 7.5s
+4. `shutdown aguardável encerra o processo REAL e o restart recupera a mesma Tupiniquim Session` — PASS — 13.0s
+
+### Histórico do gate Windows F:
+
+- Execução inicial do Inc4: 1/4 E2E PASS; três cenários expiravam na espera implícita de ~5s por `Workspace autorizado` com dataRoot SQLite fresco/isolado.
+- Correção `7c9c01d`: helper bounded de workspace readiness; somente `tests/e2e/desktop.spec.ts`, sem mudança de produção.
+- Execução seguinte: 3/4 E2E PASS; o restart falhava ao trocar Codex → Ollama porque `CONTEXTO_TUPINIQUIM_OK` chegava em `MESSAGE_DELTA` antes de `TURN_COMPLETED`.
+- Correção `eba4dcc`: helpers bounded de provider/model readiness, aguardando `READY` + controle habilitado; somente harness E2E, sem mudança de produção.
+- Execução final autoritativa: **4/4 PASS, 0 FAIL, 0 SKIPPED**.
+
+### Invariantes comprovados nesta onda
+
+- Tupiniquim Session ≠ Provider Thread
+- snapshot SQLite v5 atômico e recovery fail-closed
+- provider bindings/model provenance revalidados
+- seen-by-provider durável e contexto incremental sem retransmissão já ACKada
+- retenção durável de 200 turns públicos com poda coerente de seen
+- proposal privada/authority não persistem nem ressuscitam
+- workspace A → B → A isolado antes e depois do restart
+- write-through serializado e rollback/crash consistency cobertos
+- runtime quiescence + barreira global IPC antes do fechamento
+- providers fechados antes do database; database close crítico
+- processo 1 encerra realmente com exit code 0 e processo 2 usa o mesmo dataRoot E2E isolado
+- marcador privado ausente de DOM, conversation, snapshot, AI history, Flight Recorder, AuditLog, logs e SQLite/WAL nos cenários cobertos
+
+### Sandbox Linux / Arena
+
+Resultados anteriores do sandbox Linux permanecem válidos apenas como contexto de ambiente. As falhas por ausência de `F:\CODEX`, `TEMP` em F: e `LOCALAPPDATA` não substituem o gate autoritativo Windows F:. O fechamento técnico usa exclusivamente os resultados reais acima.
+
+Nenhuma alteração de código/runtime/teste nesta etapa documental.
+
 ## 2026-09-06 — Wave 15 — Gate Windows F: (gates técnicos aprovados)
 
 Máquina Windows real (`F:`); branch `arena/01a0776a-tupiniquim-ai-dev-studio`;

@@ -7,6 +7,7 @@ import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, type IpcMainIn
 import { z } from 'zod'
 import {
   GOOGLE_TASKS_SCOPE,
+  googleTasksConnectionState,
   err,
   googleTaskCompleteInputSchema,
   googleTaskCreateInputSchema,
@@ -120,9 +121,11 @@ const connectionStatus = async (): Promise<GoogleTasksConnectionStatus> => {
   } catch {
     configured = false
   }
+  const authenticated = configured && (await loadToken()) !== null
   return {
+    state: googleTasksConnectionState(configured, authenticated),
     configured,
-    authenticated: (await loadToken()) !== null,
+    authenticated,
     secureStorageAvailable: safeStorage.isEncryptionAvailable(),
     scope: GOOGLE_TASKS_SCOPE
   }

@@ -2,44 +2,57 @@
 
 ## Objetivo
 
-Fechamento documental do checkpoint wave-15 (Master Wave 1 em andamento; gates
-técnicos **APROVADOS**; fechamento formal após merge do PR #17). Nenhuma mudança
-de código, runtime ou teste. Nenhum merge.
+Executar a **Wave 17 — dogfood/QA final e gate de fechamento da Master Wave 1**.
+
+A Wave 16 está formalmente encerrada e marcada por `checkpoint/wave-16`. Esta etapa NÃO adiciona novas features; ela valida o produto integrado em uso real antes de permitir o fechamento da Master Wave 1.
 
 ## Identificação
 
-- Branch: `arena/01a0776a-tupiniquim-ai-dev-studio`
-- PR: #17
-- Issue: #16
-- HEAD de runtime validado no Windows F: `787bd304ce99c5916ba870870d2b5c2b6600e166`
+- Branch: `wave-17/master-wave-1-dogfood-qa`
+- Issue: #24 — `[MASTER WAVE 1] wave-17 — dogfood/QA final e gate de fechamento`
+- Baseline do checkpoint: `checkpoint/wave-16`
+- Commit do checkpoint: `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`
+- Master Wave 1: EM ANDAMENTO
+- Master Wave 2: NÃO INICIADA
 
-## Estado
+## Escopo
 
-- Master Wave 1: **EM ANDAMENTO** (ver `.agent/MASTER_PLAN.md`).
-- Checkpoint wave-15: gates técnicos **APROVADOS**; merge/tag ainda pendentes de
-  auditoria externa.
-- Terminal mutável: **indisponível**.
-- Git mutável: **indisponível**.
-- Restart/recovery: **GAP WAVE 16** — não iniciar.
-- Nenhuma atividade de runtime pendente na Wave 15.
+Dogfood/QA real obrigatório:
 
-## Evidência real — Windows F:
+1. startup e workspace real;
+2. Tupiniquim Session e conversa integrada;
+3. troca explícita de providers/modelos;
+4. restart real e recovery;
+5. isolamento workspace A → B → A;
+6. proposal/approval/EXPIRED;
+7. persistência, privacidade e ausência de payload privado/secrets;
+8. UX/estado BUSY/READY/provider/model;
+9. regressão automatizada Windows F: `validate` + `test:e2e`.
 
-| Gate | Resultado |
-|---|---|
-| `pnpm-f.ps1 validate` | PASS integral |
-| F:\CODEX-only | PASS |
-| lint / typecheck / build | PASS |
-| `pnpm test:unit` | 82/82 PASS |
-| `pnpm test:integration` | 49 passed / 2 skipped |
-| `tests/integration/persistence.test.ts` | 22/22 PASS |
-| `pnpm test:security` | 34/34 PASS |
-| `pnpm-f.ps1 test:e2e` | 3/3 PASS |
+## Regra de execução
 
-CI remoto do runtime: run #34 `34067158283` SUCCESS.
+Primeiro coletar evidência. Não corrigir silenciosamente.
 
-## Próxima ação
+Cada achado deve ser classificado como:
 
-Auditoria externa do diff documental. Depois: merge controlado PR #17, fechar
-Issue #16, tag `checkpoint/wave-15`. Somente então preparar Wave 16.
-Não avançar escopo nesta alteração; não fazer merge do PR #17.
+- PRODUCTION BUG
+- E2E/HARNESS BUG
+- UX BUG
+- DOCUMENTATION GAP
+- ENVIRONMENT
+- OUT OF SCOPE
+
+Correções só são autorizadas se houver reprodução concreta e devem ser mínimas, delimitadas e seguidas de nova auditoria/gates.
+
+## Critério de conclusão
+
+A Wave 17 só pode ser fechada quando:
+
+- todos os cenários de dogfood forem executados;
+- `validate` Windows F: estiver GREEN;
+- Electron E2E estiver GREEN;
+- nenhum bloqueio crítico/alto permanecer aberto;
+- documentação final estiver atualizada;
+- auditoria externa final aprovar o estado.
+
+Somente depois disso a Master Wave 1 poderá ser declarada concluída. Master Wave 2 continua bloqueada até lá.

@@ -5,6 +5,7 @@ import net from 'node:net'
 import path from 'node:path'
 import type { PreviewEvent, PreviewSession } from '@tupiniquim/contracts'
 import { resolveExistingInside } from './path-security'
+import { redactUntrustedOutput } from './redaction'
 import { createRestrictedEnvironment } from './secret-environment'
 
 interface ActivePreview { session: PreviewSession; child: ChildProcessWithoutNullStreams }
@@ -14,8 +15,6 @@ export interface PreviewAdapterOptions {
   getWorkspaceRoot: () => string
   onEvent: (event: PreviewEvent) => void
 }
-
-const sanitizeOutput = (value: string): string => value.replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gu, '[REDACTED]').slice(0, 4_000)
 
 const reservePort = async (): Promise<number> => await new Promise((resolve, reject) => {
   const server = net.createServer()
@@ -57,9 +56,9 @@ export class PreviewAdapter {
     const child = spawn(process.execPath, [viteCli, '--host', '127.0.0.1', '--port', String(port), '--strictPort'], { cwd, env: environment, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     const session: PreviewSession = { id, kind: 'VITE', url: `http://127.0.0.1:${port}/`, cwd, pid: child.pid ?? -1, startedAt: new Date().toISOString(), width, height }
     this.sessions.set(id, { session, child })
-    child.stdout.on('data', (chunk: Buffer) => this.emit(id, 'OUTPUT', sanitizeOutput(chunk.toString('utf8'))))
-    child.stderr.on('data', (chunk: Buffer) => this.emit(id, 'OUTPUT', sanitizeOutput(chunk.toString('utf8'))))
-    child.once('error', (cause) => this.emit(id, 'ERROR', cause.message))
+    child.stdout.on('data', (chunk: Buffer) => this.emit(id, 'OUTPUT', redactUntrustedOutput(chunk.toString('utf8'))))
+    child.stderr.on('data', (chunk: Buffer) => this.emit(id, 'OUTPUT', redactUntrustedOutput(chunk.toString('utf8'))))
+    child.once('error', (cause) => this.emit(id, 'ERROR', redactUntrustedOutput(cause.message)))
     child.once('exit', (code) => { this.sessions.delete(id); this.emit(id, 'EXIT', `Processo encerrado com código ${String(code)}.`) })
     try {
       await waitForPort(port, 30_000)

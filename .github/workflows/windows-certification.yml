@@ -1,0 +1,89 @@
+name: Windows Release Certification
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 'release/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-certification:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Provision hosted F drive contract
+        shell: powershell
+        run: |
+          $backing = Join-Path $env:RUNNER_TEMP 'tupiniquim-f-drive'
+          New-Item -ItemType Directory -Path $backing -Force | Out-Null
+          if (-not (Test-Path 'F:\')) {
+            subst F: $backing
+            if ($LASTEXITCODE -ne 0) { throw "Falha ao provisionar F: via subst (exit=$LASTEXITCODE)." }
+          }
+          New-Item -ItemType Directory -Path 'F:\CODEX\ci-temp' -Force | Out-Null
+          New-Item -ItemType Directory -Path 'F:\CODEX\Tupiniquim-AI-Dev-Studio.data' -Force | Out-Null
+          "TEMP=F:\CODEX\ci-temp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TMP=F:\CODEX\ci-temp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Hosted F: ready at $backing"
+      - name: Provision controlled Codex boundary for hosted CI
+        shell: powershell
+        run: |
+          $node = (Get-Command node.exe -ErrorAction Stop).Source
+          $fixture = Get-Content './tests/fixtures/fake-codex-app-server.mjs' -Raw
+          $fixture = $fixture.Replace("'codex-test'", "'0.0.0'")
+          Set-Content -Path './app-server' -Value $fixture -Encoding utf8
+          "TUPINIQUIM_CODEX_PATH=$node" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host 'Hosted Codex boundary uses the controlled JSONL fixture; no real Codex credential/provider is implied.'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test:unit
+      - name: Integration tests
+        run: pnpm test:integration
+      - name: Security tests
+        run: pnpm test:security
+      - name: Build
+        run: pnpm build
+      - name: Windows script fixtures
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File ./tests/scripts/ollama-live-smoke.test.ps1
+      - name: Electron E2E on hosted Windows
+        run: pnpm test:e2e
+      - name: Package Windows
+        run: pnpm package:win
+      - name: Upload Windows artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-certification-${{ github.sha }}
+          if-no-files-found: ignore
+          path: |
+            release/**
+            test-results/**
+            playwright-report/**
+
+# Hosted Windows evidence is supplemental. The workflow provisions an ephemeral F:
+# to preserve the project's Windows path contract and a controlled Codex JSONL boundary
+# because GitHub-hosted Windows does not include the Codex desktop runtime. These do not
+# replace final physical F:\ certification with the real Codex/Ollama/ConPTY/hardware/OAuth
+# environment when those gates apply.

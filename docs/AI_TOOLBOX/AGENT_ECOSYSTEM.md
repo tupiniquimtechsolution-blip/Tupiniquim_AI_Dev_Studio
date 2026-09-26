@@ -1,82 +1,88 @@
 # Tupiniquim AI Dev Studio — Agent Ecosystem
 
-Atualizado em 2026-09-04.
+Atualizado em 2026-09-24 — reconciliação pós-Master-Waves.
 
 ## Regra central
 
 `Agent != Model != Provider != Tool != Skill != Source Repository`.
 
-O Dev Studio é multi-LLM. Um agente tem papel, capacidades, permissões e loadout; o modelo/provider é selecionado separadamente e permanece sob controle do usuário. Repositórios externos fornecem padrões e capacidades, nunca autoridade operacional.
+O Dev Studio é multi-LLM. Um agente tem papel, capacidades, permissões e loadout; modelo/provider são selecionados separadamente e permanecem sob controle do usuário. Repositórios externos fornecem padrões/capacidades, nunca autoridade operacional.
 
 ## Camadas
 
 1. **Contrato universal** — `AGENTS.md` e `.agents/skills/tupiniquim-toolbox/SKILL.md`.
 2. **Agent Registry** — `.agent/AGENT_REGISTRY.json`.
-3. **Capability sources** — repositórios, skills, providers e referências auditadas.
-4. **Policy layer** — PolicyEngine, ApprovalStore, AuditLog, isolamento por projeto e redaction.
-5. **Runtime** — só entra na Wave correspondente do Plano Mestre.
+3. **Capability/Skill sources** — repositórios, skills, providers e referências auditadas.
+4. **Policy layer** — PolicyEngine, ApprovalStore/PlanApprovalService, AuditLog, isolamento por projeto e redaction.
+5. **Runtime** — somente materializadores aprovados; metadata/registry nunca concede execução por si só.
 
 ## Fontes de agentes/capacidades
 
-- Awesome LLM Apps → biblioteca de padrões para Planner, Research, RAG, Trust/QA e equipes.
-- Open Generative AI → principal fonte de arquitetura/capacidade do Illustrator / Media Agent.
+- Awesome LLM Apps → padrões para Planner, Research, RAG, Trust/QA e equipes.
+- Open Generative AI → principal source do Illustrator / Media Agent.
 - Agent Reach → pesquisa e alcance web/social.
 - UI UX Pro Max → UI/UX, design system e revisão visual.
-- Emil Kowalski Skills → design engineering, motion, animation review e UI polish.
-- Taste Skill → anti-slop para landing pages, portfólios e redesigns; não usar como padrão para dashboards/data-heavy UI.
+- Emil Kowalski Skills → design engineering, motion e animation review.
+- Taste Skill → landing/portfolio/redesign anti-template; não default para dashboards densos.
 - Prompt Master → engenharia de prompts.
 - CLI-Anything → integração agent-native via CLI.
 - Pocket TTS → voz/TTS local.
 - OpenReply → automação social por APIs oficiais.
 - Strix → pentest/remediação somente em alvos próprios/autorizados.
-- Vibe Coding Toolkit → **Engineering Playbook Source**, não runtime: brainstorm→plan, orquestração de subagentes, revisão multiagente, quality gates e memória.
+- Vibe Coding Toolkit → Engineering Playbook Source, não runtime.
+- Google Skills → **First-Party Skill Source** para Google Cloud, Gemini, Agent Platform, Google Ads e demais produtos Google, resolvida sob demanda.
+- Free Claude Code → referência de provider routing/multi-harness, sem auto-fallback como política Tupiniquim.
+- OpenManus → referência de agent/planning/MCP/sandbox, mantendo privileged tools atrás de policy/approval.
+- Humanizer → skill opcional de revisão de prosa, sem autoridade sobre código/dados/fatos.
+
+## Google skill routing
+
+Para tarefas especificamente Google, consultar primeiro `google/skills:skills/developers/finding-google-skills` quando a skill adequada ainda não estiver carregada.
+
+Referências atuais documentadas:
+- Gemini API/multimodal/function calling → `skills/cloud/gemini-api`;
+- streaming/voz → `skills/cloud/gemini-live-api`;
+- Skill Registry Google → `skills/cloud/agent-platform-skill-registry`;
+- segurança multi-agent Google Cloud → `skills/cloud/google-cloud-solution-multi-agent-security`;
+- Google Ads MCP → `skills/ads/google-ads-api-mcp-setup`.
+
+Origem first-party não remove Skill Gate, PolicyEngine, Approval, AuditLog, least privilege, custo ou consentimento. Não há prioridade automática de Gemini como provider/modelo.
 
 ## Design routing
 
-Não carregar as três fontes de design ao mesmo tempo por padrão.
-
 - Sistema/heurísticas/consistência → UI UX Pro Max.
-- Motion, microinterações, animação e design engineering → `emilkowalski/skills`.
-- Landing page, portfólio, página editorial ou redesign anti-template → `Leonxlnx/taste-skill`.
-- Dashboard, admin, tabelas ou fluxo de produto denso → evitar Taste Skill salvo instrução explícita; priorizar design system/acessibilidade.
+- Motion/microinterações/design engineering → `emilkowalski/skills`.
+- Landing/portfolio/editorial/redesign anti-template → `Leonxlnx/taste-skill`.
+- Dashboard/admin/tabelas/fluxos densos → priorizar design system/acessibilidade; Taste somente quando solicitado.
 
-## Reference Libraries identificadas no vídeo Dev Arthur
+## Reference Libraries
 
-Estas fontes alimentam Research/Knowledge/Technology Resolver; não são agentes e não entram automaticamente no contexto:
+Estas fontes alimentam Research/Knowledge/Technology Resolver e não entram automaticamente no contexto:
+- `EbookFoundation/free-programming-books`;
+- `public-apis/public-apis`;
+- `docker/awesome-compose`;
+- `TheAlgorithms/Python`;
+- `jwasham/coding-interview-university`;
+- `supabase/supabase` como platform source opcional por projeto.
 
-- `EbookFoundation/free-programming-books` — fonte canônica de livros/recursos gratuitos.
-- `public-apis/public-apis` — catálogo de APIs; qualquer API descoberta ainda exige validação de ToS, auth, custo e segurança.
-- `docker/awesome-compose` — padrões oficiais de Docker Compose.
-- `TheAlgorithms/Python` — representante ativo do ecossistema TheAlgorithms para algoritmos/estruturas; selecionar outro idioma quando o projeto exigir.
-- `jwasham/coding-interview-university` — currículo/referência de fundamentos de CS; não é dependência de produção.
-- `supabase/supabase` — platform source opcional; só integrar a um projeto quando houver decisão arquitetural explícita.
-
-### Links corrigidos/descartados
-
-- `aluismoya/EbookFoundation-free-programming-books` não é a fonte canônica atual; usar `EbookFoundation/free-programming-books`.
-- `TheAlgorithms/TheAlgorithms.github.io` está arquivado/depreciado; não usar como fonte principal.
-- `GabrielCee27/coding-interview-university`, `kevingo/coding-interview-university-zh-tw` e `tlapinsk/coding-interview-university` são cópias/derivações/localizações; registrar somente quando uma tradução específica for necessária.
+Forks/cópias/traduções só são registradas quando há necessidade específica; upstream canônico tem preferência.
 
 ## Gemini video presets
 
-O vídeo enviado mostrou `/reveal`, `/teardown` e `/explodedview`. No Tupiniquim eles são **aliases internos de prompt**, não “comandos secretos oficiais do Gemini”.
+`/reveal`, `/teardown` e `/explodedview` são **aliases internos de prompt**, não comandos oficiais secretos do Gemini.
 
 Implementação:
-- catálogo/documentação em `docs/AI_TOOLBOX/GEMINI_VIDEO_PRESETS.md`;
-- resolver puro em `packages/core/src/gemini-video-presets.ts`;
-- nenhum acesso de rede ou credencial;
-- provider Gemini real continua sujeito ao AIProvider/MediaProvider e à Wave adequada.
+- documentação em `docs/AI_TOOLBOX/GEMINI_VIDEO_PRESETS.md`;
+- resolver em `packages/core/src/gemini-video-presets.ts`;
+- nenhum acesso de rede/credencial por resolver alias;
+- provider real continua sujeito ao contrato e gates MW5/release.
 
-## Ordem do Plano Mestre
+## Estado pós-Master-Waves
 
-Esta integração não muda a Wave atual.
-
-- Wave 1: concluir runtime local/propostas/browser QA.
-- Wave 2: Research, Knowledge, Technology/Tool/MCP/Skill Registries + catálogos de referência.
-- Wave 3: hardening/dogfood + adoção seletiva de engineering playbooks/quality gates.
-- Wave 4: Agent Registry runtime e equipes por projeto.
-- Wave 5: multimodal/voz/social, incluindo Media Agent e provider Gemini quando aprovado.
+- MW0–MW5: concluídas na trilha cloud conforme `.agent/MASTER_PLAN.md` e handoffs correspondentes.
+- Release & Integration: em andamento no PR/Issue de release; `CLOUD-GREEN` não equivale a `RELEASE-GREEN`.
+- Certificações Windows/hardware/OAuth permanecem gates separados quando aplicáveis.
 
 ## Gate de adoção
 
-Antes de ativar fonte externa: origem/licença/ref → dependências → threat review → custo → permissões → compatibilidade → testes → PolicyEngine/AuditLog → aprovação → versão/hash → ativação.
+Antes de ativar source externa: origem/licença/ref → dependências → threat review → custo → permissões → compatibilidade → testes → PolicyEngine/Approval/Audit → versão/hash/provenance → ativação.

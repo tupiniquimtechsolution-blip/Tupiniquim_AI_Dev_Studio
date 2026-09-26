@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GOOGLE_TASKS_SCOPE } from '@tupiniquim/contracts'
+import { GOOGLE_TASKS_SCOPE, googleTasksConnectionState } from '@tupiniquim/contracts'
 import { GoogleTasksApiClient, GoogleTasksHttpError, GoogleTasksOAuthClient } from '@tupiniquim/adapters'
 
 const jsonResponse = (value: unknown, status = 200): Response => new Response(JSON.stringify(value), {
@@ -164,4 +164,11 @@ describe('GoogleTasksApiClient', () => {
     await expect(attempt).rejects.toBeInstanceOf(GoogleTasksHttpError)
     await expect(attempt).rejects.not.toThrow(/private-access-token/u)
   })
+})
+
+it('reports NOT_CONFIGURED without credentials even when a stale token exists', () => {
+  expect(googleTasksConnectionState(false, false)).toBe('NOT_CONFIGURED')
+  expect(googleTasksConnectionState(false, true)).toBe('NOT_CONFIGURED')
+  expect(googleTasksConnectionState(true, false)).toBe('AUTH_REQUIRED')
+  expect(googleTasksConnectionState(true, true)).toBe('READY')
 })

@@ -18,6 +18,7 @@ $Repositories = @(
     @{ Name = "nidhinjs__prompt-master"; Url = "https://github.com/nidhinjs/prompt-master.git"; Large = $false },
     @{ Name = "Shubhamsaboo__awesome-llm-apps"; Url = "https://github.com/Shubhamsaboo/awesome-llm-apps.git"; Large = $false },
     @{ Name = "usestrix__strix"; Url = "https://github.com/usestrix/strix.git"; Large = $false },
+    @{ Name = "google__skills"; Url = "https://github.com/google/skills.git"; Large = $false },
 
     @{ Name = "soumatheusgomes__vibe-coding-toolkit"; Url = "https://github.com/soumatheusgomes/vibe-coding-toolkit.git"; Large = $false },
     @{ Name = "emilkowalski__skills"; Url = "https://github.com/emilkowalski/skills.git"; Large = $false },
@@ -146,6 +147,9 @@ if ($InstallRecommendedClaudeSkills) {
     }
 }
 
+Write-Host ""
+Write-Host "Google Skills registrada como fonte oficial sob demanda: google/skills"
+Write-Host "Nenhuma skill Google e instalada automaticamente; use o Skill Gate e finding-google-skills quando aplicavel."
 Write-Host ""
 Write-Host "Design skills registradas para uso sob demanda:"
 Write-Host "  emilkowalski/skills (emil-design-eng e skills de animation)"

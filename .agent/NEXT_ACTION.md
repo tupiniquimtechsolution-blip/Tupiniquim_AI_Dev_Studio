@@ -2,34 +2,60 @@
 
 Master Wave: **1 (EM ANDAMENTO)**.
 
-Checkpoint wave-15: gates técnicos **APROVADOS**. Fechamento formal (merge/tag
-`checkpoint/wave-15`) após auditoria externa. NÃO é uma nova Master Wave e NÃO
-encerra a Master Wave 1.
+Wave 16: **FECHADA** com `checkpoint/wave-16` confirmado no commit `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`.
+
+Wave 17: **DOGFOOD/QA FINAL ATIVO** — Issue #24.
 
 ## Agora
 
-1. Auditoria externa do diff documental desta etapa.
-2. NÃO mergear o PR #17 nesta etapa.
-3. NÃO iniciar Wave 16.
+Na máquina Windows F:, sincronizar a branch:
 
-## Depois da auditoria / merge controlado
+`wave-17/master-wave-1-dogfood-qa`
 
-1. Merge controlado do PR #17.
-2. Fechar Issue #16.
-3. Tag anotada `checkpoint/wave-15`.
-4. Somente então preparar **wave-16 — restart/recovery da memória/sessão Tupiniquim**.
+Registrar antes de qualquer execução:
 
-## Regras mantidas
+```powershell
+git status --short
+git branch --show-current
+git rev-parse HEAD
+git rev-parse origin/wave-17/master-wave-1-dogfood-qa
+```
 
-- NÃO avançar escopo nesta alteração.
-- Terminal mutável: **indisponível**.
-- Git mutável: **indisponível**.
-- Restart/recovery permanece **GAP WAVE 16**.
+Depois executar os gates automatizados no mesmo HEAD:
 
-## Estado do checkpoint wave-15 (referência)
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\pnpm-f.ps1" validate
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\pnpm-f.ps1" test:e2e
+```
 
-- Branch: `arena/01a0776a-tupiniquim-ai-dev-studio`
-- PR: #17
-- Issue: #16
-- HEAD de runtime validado no Windows F: `787bd304ce99c5916ba870870d2b5c2b6600e166`
-- CI remoto do runtime: run #34 `34067158283` SUCCESS
+Se ambos estiverem GREEN, executar o dogfood manual integrado definido na Issue #24:
+
+1. startup/workspace real;
+2. conversa/sessão;
+3. multi-provider explícito;
+4. restart/recovery;
+5. workspace A → B → A;
+6. proposal/EXPIRED;
+7. privacidade/persistência;
+8. UX/estado.
+
+## Regra de achados
+
+Não corrigir silenciosamente durante a coleta.
+
+Classificar cada achado como:
+
+- PRODUCTION BUG
+- E2E/HARNESS BUG
+- UX BUG
+- DOCUMENTATION GAP
+- ENVIRONMENT
+- OUT OF SCOPE
+
+Para bloqueios reais, registrar reprodução e somente depois criar correção mínima com testes e nova auditoria.
+
+## Condição de fechamento
+
+A Master Wave 1 só pode ser encerrada depois que a Issue #24 estiver GREEN, sem bloqueios críticos/altos abertos, com gates Windows F: aprovados e documentação final auditada.
+
+Master Wave 2 permanece **NÃO INICIADA** até esse fechamento.

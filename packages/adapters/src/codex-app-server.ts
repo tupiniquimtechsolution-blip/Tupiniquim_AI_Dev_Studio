@@ -21,6 +21,18 @@ import {
 } from '@tupiniquim/contracts'
 import { loadPrivateEnvironment } from './secret-environment'
 
+/**
+ * Wave 16 — Incremento 4/4: lifecycle efêmero BOUNDED do adapter.
+ *
+ * `terminalTurns` cresce um id por turn concluído; sem teto, um processo
+ * longevo acumula memória indefinidamente. O teto 64 preserva as conclusões
+ * mais recentes (a janela relevante para o guard de BUSY tardio após
+ * completion). Ao adicionar a 65ª entrada, a mais antiga sai — eviction
+ * oldest-first determinística (ordem de inserção do Set). O set é efêmero por
+ * contrato: não é persistido e um novo adapter (pós-restart) começa vazio.
+ */
+export const maxCodexTerminalTurns = 64
+
 const responseEnvelopeSchema = z.object({ id: z.union([z.number(), z.string()]), result: z.unknown().optional(), error: z.object({ code: z.number(), message: z.string() }).optional() })
 const notificationEnvelopeSchema = z.object({ method: z.string(), params: z.unknown().optional() })
 const initializeResponseSchema = z.object({ userAgent: z.string() })
@@ -115,6 +127,25 @@ export class CodexAppServerAdapter implements AIProvider {
   public constructor(private readonly options: CodexAppServerOptions) {}
 
   public status(): AIStatus { return this.currentStatus }
+
+  /**
+   * Wave 16 — Incremento 4/4: sonda read-only de auditoria — ids de turns
+   * terminais retidos, em ordem de inserção (mais antigo primeiro). Cópia
+   * estável; o set interno nunca é exposto por referência.
+   */
+  public terminalTurnIds(): string[] {
+    return [...this.terminalTurns]
+  }
+
+  /** Adição bounded: preserva as 64 mais recentes, evicta a mais antiga. */
+  private noteTerminalTurn(turnId: string): void {
+    this.terminalTurns.add(turnId)
+    if (this.terminalTurns.size > maxCodexTerminalTurns) {
+      const oldest = this.terminalTurns.values().next().value
+      if (oldest !== undefined) this.terminalTurns.delete(oldest)
+    }
+  }
+
 
   public connect(): Promise<AIStatus> {
     if (this.currentStatus.state === 'READY' || this.currentStatus.state === 'BUSY' || this.currentStatus.state === 'AUTH_REQUIRED') return Promise.resolve(this.currentStatus)
@@ -291,7 +322,7 @@ export class CodexAppServerAdapter implements AIProvider {
     } else if (method === 'turn/completed') {
       const event = turnCompletedSchema.safeParse(params)
       if (event.success) {
-        this.terminalTurns.add(event.data.turn.id)
+        this.noteTerminalTurn(event.data.turn.id)
         this.emit({ kind: 'TURN_COMPLETED', threadId: event.data.threadId, turnId: event.data.turn.id, status: event.data.turn.status })
         this.updateStatus({ state: 'READY', activeTurnId: null, detail: null })
       }

@@ -1,112 +1,102 @@
 # Status
 
-Atualizado em: 2026-09-06
+Atualizado em: 2026-09-24
 
 ## Estado atual
 
-- Master Wave: 1 — Dev AI local autônomo (**EM ANDAMENTO**, ver `.agent/MASTER_PLAN.md`)
-- Checkpoint: wave-15 — Tupiniquim-owned conversation continuity
-- **wave-15: gates técnicos APROVADOS**; fechamento formal (merge/tag `checkpoint/wave-15`) após auditoria externa e merge controlado do PR #17
-- Current branch: `arena/01a0776a-tupiniquim-ai-dev-studio`
-- PR atual: #17
-- Issue referenciada: #16
-- HEAD de runtime validado no Windows F: `787bd304ce99c5916ba870870d2b5c2b6600e166`
-- Repositório operacional (máquina real): `F:\CODEX\Tupiniquim-AI-Dev-Studio`
-- Dados: `F:\CODEX\Tupiniquim-AI-Dev-Studio.data`
+- Estratégia operacional: **CLOUD-FIRST**.
+- GitHub: fonte de verdade e ambiente canônico de desenvolvimento/CI/checkpoints.
+- PR #32 / branch `arena/01a0c8ba-tupiniquim-ai-dev-studio`: RC1 Windows **DRAFT / NÃO MERGEADO / WINDOWS-DEFERRED**.
+- PR #33 / `cloud/master-wave-2-foundation`: fundação cloud-first **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
+- PR #36 / `cloud/mw2-research-knowledge-registries`: MW2 **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
+- PR #39 / `cloud/mw3-dev-studio-hardening-dogfood`: MW3 **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD / DRAFT / NÃO MERGEADO**.
+- PR #41 / `cloud/mw4-agent-registry-project-threads`: MW4 **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD / DRAFT / NÃO MERGEADO**; Issue #40 fechada `completed`.
+- PR #43 / `cloud/mw5-multimodal-automation-voice`: MW5 **CLOUD-GREEN FUNCIONAL / DRAFT / NÃO MERGEADO**; fechamento formal depende do HEAD documental final.
+- `package:win` chegou a PASS no Windows físico, mas RC1 completa não foi declarada `RELEASE-GREEN`.
+- Cloudflare preview + MW0–MW5 passam dry-run; MW2–MW4 estão `WAVE_STATE=CLOUD_GREEN` e MW5 será promovida no checkpoint documental final; `RELEASE_STATE` permanece `WINDOWS_DEFERRED`.
+- Supabase dedicado permanece sem DDL remoto implícito pelas MW2–MW5.
+- Google Drive: upload completo recebido e organizado como acervo/snapshot; GitHub continua fonte de verdade.
 
-## Contexto de onda
+## Estados formais
 
-- O `MASTER_PLAN` mantém a **Master Wave 1 em andamento**. `wave-15` é um checkpoint
-  interno dessa Master Wave 1, NÃO uma nova wave mestre e NÃO o encerramento da
-  Master Wave 1.
-- Checkpoints anteriores: wave-13 (ciclo de propostas), wave-14 (protocolo
-  provider-neutral + provenance + expiration).
-- Próxima unidade prevista: **wave-16 — restart/recovery da memória/sessão Tupiniquim**.
-  Não iniciar Wave 16 nesta etapa.
-- Terminal mutável e Git mutável continuam **INDISPONÍVEIS**.
+- `CLOUD-GREEN`: gates cloud compatíveis passam no GitHub Actions.
+- `WINDOWS-DEFERRED`: certificação/hardware Windows real permanece pendente quando aplicável.
+- `NOT_CONFIGURED`: provider/service externa ainda não recebeu configuração explícita.
+- `RELEASE-GREEN`: cloud + certificações obrigatórias de release comprovadas.
 
-## Gates Windows F: — evidência real (runtime HEAD `787bd30`)
+## Master Waves
 
-Na máquina Windows real (`F:`), com o wrapper de validação oficial:
+- MW0: CONCLUÍDA.
+- MW1: desenvolvimento cloud consolidado; RC1 física `WINDOWS-DEFERRED`.
+- MW2: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
+- MW3: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
+- MW4: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
+- MW5: **CLOUD-GREEN FUNCIONAL / CHECKPOINT DOCUMENTAL FINAL**.
 
-| Gate | Resultado |
-|---|---|
-| `pnpm-f.ps1 validate` | PASS integral |
-| F:\CODEX-only | PASS |
-| lint | PASS |
-| typecheck | PASS |
-| `pnpm test:unit` | 82/82 PASS |
-| `pnpm test:integration` | 49 passed / 2 skipped |
-| `tests/integration/persistence.test.ts` | 22/22 PASS |
-| `pnpm test:security` | 34/34 PASS |
-| `pnpm build` | PASS |
-| `pnpm-f.ps1 test:e2e` | 3/3 PASS |
+## Master Wave 5 — entregas
 
-CI remoto do runtime: run #34 `34067158283` SUCCESS.
+- contratos strict de sources, operations, intents, decisions, provenance e voice consent;
+- `Mw5CapabilityRuntime` provider-neutral e fail-closed;
+- Open-Generative-AI registrado como capability source do Illustrator sem seleção automática de provider/model;
+- Gemini `/reveal`, `/teardown`, `/explodedview` preservados como aliases internos, com `officialGeminiCommand=false`;
+- Pocket TTS registrado como source local; execução real continua `WINDOWS_DEFERRED` quando não reproduzível em CI;
+- voice cloning exige consentimento ativo no mesmo projeto + provenance da amostra;
+- OpenReply permanece `NOT_CONFIGURED` até setup explícito e external write exige API oficial + network + Policy + approval;
+- `kimi-k3-in-c` permanece experimental/research-only;
+- `asset:create`, `asset:edit` e `network:external-write` são mapeados para capabilities canônicas, mas a camada MW5 nunca concede execução direta;
+- `runtimeExecutionAuthorized=false` é invariável; materialização continua em ApprovalStore/PlanApprovalService + AuditLog;
+- `Mw5CapabilityJsonStore` persiste provenance/consent atomicamente no data root e preserva isolamento após restart;
+- security negatives e dogfood MW5 cobrem consentimento, provenance, API oficial, FULL_ACCESS, experimental source e restart.
 
-## E2E Electron (Windows F:)
+## Evidência MW5 funcional
 
-1. inicia o Electron seguro e carrega um workspace real — PASS
-2. proposta substituída fica EXPIRED e aplicação da antiga é recusada — PASS
-3. sessão Tupiniquim sobrevive à troca de provider fake e isola workspace — PASS
+HEAD funcional: `1db71a96e80b2bd1dfce693a78bfcfa605f3eb18`.
 
-## Invariantes Wave 15 comprovados
+Cloud Quality Gate run `36042725979`: **PASS**
+- lint PASS;
+- typecheck PASS;
+- unit — 34 arquivos / 265 testes;
+- integration — 15 arquivos / 104 testes; 4 skips explícitos de ambiente/live;
+- security — 8 arquivos / 55 testes;
+- dogfood — 3 arquivos / 13 testes (MW3 A–K + MW4 + MW5);
+- build PASS;
+- Cloudflare preview + MW0–MW5 dry-runs PASS.
 
-- Tupiniquim Session ≠ Provider Thread
-- troca de provider preserva a sessão Tupiniquim
-- threads continuam provider-specific; sem reutilização cross-provider
-- workspace A → B → A isolado; thread/status scoped por workspace/session
-- workspace switch bloqueado enquanto o runtime está ocupado
-- transição de workspace protegida antes do primeiro await
-- contexto público incremental entre providers
-- ACK apenas após sucesso terminal (`TURN_COMPLETED` / SUCCESS)
-- Codex ERROR/RETRYING não consome contexto
-- ERROR/CANCELLED/FAILED não ACKam contexto incorretamente
-- race completion-before-pending tratada
-- race completion-before-send-return tratada
-- ordem user → assistant preservada
-- proveniência do modelo preservada
-- proposal authority não transfere de provider
-- proposal EXPIRED ao trocar provider/workspace quando aplicável
-- payload privado ausente de DOM, conversation, SQLite, AuditLog e history coberto
-- renderer não escolhe provenance privilegiada
-- primeira PLAN reutiliza thread confiável da sessão quando apropriado
-- `execution.threadId` tem precedência
-- sem chat anterior, o provider pode criar a primeira thread
+Documentos MW5:
+- `.agent/MW5_EXECUTION_PLAN.md`
+- `.agent/MW5_SOURCE_REVIEW.md`
+- `.agent/MW5_TEST_RESULTS.md`
+- `.agent/MW5_HANDOFF.md`
 
-## Bugs reais descobertos pelo Windows F: (corrigidos no runtime)
+## Google Drive
 
-1. CHAT Ollama criava T1 e a primeira PLAN tentava criar T2.
-   Correção: `execution.threadId ?? session.threadFor(provider) ?? undefined`.
-2. Codex fake podia emitir `turn/completed` antes do retorno de `send()`, e BUSY
-   tardio sobrescrevia READY. Correção: `terminalTurns` / monotonicidade de status.
+O upload bruto foi classificado sem tornar Drive fonte de verdade:
+- source snapshot preservado em `07_ARCHIVE/2026-09-24_REPO_SOURCE_SNAPSHOT`;
+- `.env*` segregados em `EXCLUDED_SENSITIVE` sem leitura;
+- `node_modules`/`.cache` em `EXCLUDED_GENERATED`;
+- `test-results`/`playwright-report` em `03_EVIDENCE`;
+- `out`/`release` em `04_BUILDS_RELEASES`;
+- itens que o conector recusou mover permanecem exceções explícitas no inbox, sem tentativa de bypass.
 
-## GAP explícito — Wave 16
+## Segurança / autoridade
 
-Restart/recovery permanece **GAP WAVE 16**. Ainda NÃO persistimos completamente:
+- `agent != provider != model != tool != skill != source_repository`;
+- source registrada != adotada != configurada != aprovada != executada;
+- nenhum Agent/Registry/Skill/Tool/MCP/source concede runtime authority por existência;
+- FULL_ACCESS não remove ApprovalStore/PlanApprovalService;
+- nenhum secret real ou DDL Supabase MW5 foi introduzido;
+- hardware/OAuth/provider externo real não recebe PASS por inferência.
 
-- Tupiniquim Session
-- provider bindings
-- seen-by-provider cursors
-- lifecycle necessário para recuperação
+## Pendências após MW5
 
-Observação para Wave 16 (não bloqueia o fechamento da Wave 15): `terminalTurns` e
-`finalizedTurns` são estruturas in-memory e precisarão de bounded cleanup / recovery.
-
-## Preservado
-
-PolicyEngine; ApprovalStore/PlanApprovalService; AuditLog; payload privado só em
-memória; schema público `agentSendInputSchema` sem `proposalContext + threadId`;
-Terminal mutável indisponível; Git mutável indisponível.
+- certificar RC1 Windows física para eventual `RELEASE-GREEN`;
+- configurar/testar serviços externos somente por fluxo explícito quando desejado;
+- Issue #37 de sincronização autenticada skills.sh permanece independente;
+- integração/merge dos PRs empilhados requer decisão explícita.
 
 ## Próximo passo
 
-1. Auditoria externa do diff documental.
-2. Depois: merge controlado do PR #17, fechar Issue #16, tag `checkpoint/wave-15`.
-3. Somente então preparar Wave 16.
-4. NÃO mergear o PR #17 nesta etapa. NÃO iniciar Wave 16.
-
-## Bloqueios externos
-
-- OPENAI_API_NO_CREDITS bloqueia somente inferência live paga; não invalida o transporte controlado.
-- Provedores visuais pagos permanecem NOT_CONFIGURED.
+1. Validar o HEAD documental final MW5 no Cloud Quality Gate.
+2. Fechar Issue #42 como `completed` somente após GREEN.
+3. Manter PR #43 DRAFT/não mergeado.
+4. Com MW5 concluída, considerar a sequência cloud Master Waves 0–5 encerrada; qualquer nova wave exige novo planejamento/versionamento explícito.

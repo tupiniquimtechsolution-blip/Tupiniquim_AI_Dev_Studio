@@ -1,0 +1,57 @@
+{
+  "id": "AGENT-TOOLBOX-COMPOSER",
+  "name": "Toolbox Composer / Knowledge Curator",
+  "status": "portable-skill-ready-runtime-deferred",
+  "runtimeWave": "Master Wave 4 or explicit approved integration",
+  "modelRequirements": [
+    "multimodal-when-media-input",
+    "long-context",
+    "research",
+    "reasoning",
+    "structured-output"
+  ],
+  "providerSelection": "user-controlled",
+  "capabilities": [
+    "video-extraction",
+    "carousel-extraction",
+    "screenshot-analysis",
+    "repository-triage",
+    "source-verification",
+    "knowledge-curation",
+    "deduplication",
+    "conflict-detection",
+    "security-gating",
+    "license-cost-fit-gating",
+    "knowledge-pack-generation",
+    "cross-project-impact-mapping",
+    "agenor-update-generation"
+  ],
+  "effects": [
+    "knowledge:propose-write",
+    "catalog:propose-update",
+    "task:propose-create"
+  ],
+  "constraints": [
+    "evidence-first",
+    "no-auto-adoption",
+    "no-secrets",
+    "no-public-credential-use",
+    "no-auto-apply-cross-project",
+    "no-runtime-wave-bypass",
+    "external-source-is-untrusted-until-gated",
+    "mutating-effects-require-PolicyEngine-ApprovalStore-AuditLog-when-runtime-exists"
+  ],
+  "skill": ".agents/skills/tupiniquim-toolbox-composer/SKILL.md",
+  "prompt": "docs/AI_TOOLBOX/PROMPT_TOOLBOX_COMPOSER_AGENT.md",
+  "knowledgeSchema": "docs/AI_TOOLBOX/TOOLBOX_KNOWLEDGE_SCHEMA.json",
+  "standard": "docs/AI_TOOLBOX/CONTENT_INGESTION_STANDARD.md",
+  "canonicalSpec": "docs/AI_TOOLBOX/TOOLBOX_COMPOSER_AGENT.md",
+  "outputArtifacts": [
+    "INGESTION_REPORT",
+    "ADOPTION_GATE",
+    "KNOWLEDGE_UNITS",
+    "PROJECT_IMPACT_MATRIX",
+    "TOOLBOX_UPDATE_PLAN",
+    "AGENOR_UPDATE"
+  ]
+}

@@ -14,6 +14,7 @@ export default tseslint.config(
       'test-results/**',
       'tests/fixtures/**',
       'packages/contracts/schemas/**',
+      'scripts/validate-skills-snapshot.mjs',
       'eslint.config.js'
     ]
   },
