@@ -91,7 +91,10 @@ const controlCenter: ControlCenterDesktopApi = {
   inspectPortable: (input) => ipcRenderer.invoke(controlCenterIpcChannels.portableInspect, input),
   runToolboxGate: (input) => ipcRenderer.invoke(controlCenterIpcChannels.toolboxRun, input),
   listSkills: (input) => ipcRenderer.invoke(controlCenterIpcChannels.skills, input),
-  setSkillEnabled: (input) => ipcRenderer.invoke(controlCenterIpcChannels.skillSetEnabled, input)
+  setSkillEnabled: (input) => ipcRenderer.invoke(controlCenterIpcChannels.skillSetEnabled, input),
+  listAgents: () => ipcRenderer.invoke(controlCenterIpcChannels.agentCatalog),
+  listAgentLoadouts: (input) => ipcRenderer.invoke(controlCenterIpcChannels.agentLoadouts, input),
+  putAgentLoadout: (input) => ipcRenderer.invoke(controlCenterIpcChannels.agentLoadoutPut, input)
 }
 
 contextBridge.exposeInMainWorld('studio', api)
