@@ -37,6 +37,7 @@
   ],
   "vars": {
     "SANDBOX_TRANSPORT": "rpc",
-    "WEB_ALLOW_ANONYMOUS": "true"
+    "WEB_ALLOW_ANONYMOUS": "true",
+    "WEB_RUNTIME_VERSION": "web-full-0.1.0"
   }
 }
