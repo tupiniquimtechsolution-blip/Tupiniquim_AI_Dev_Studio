@@ -14,6 +14,15 @@ const toolboxGates: Array<{ id: ToolboxGateId; label: string }> = [
   { id: 'release-checklist', label: 'Release checklist' }
 ]
 
+const controlCenterSections: Array<{ id: string; label: string }> = [
+  { id: 'models-providers', label: 'Modelos & Providers' },
+  { id: 'skills', label: 'Skills' },
+  { id: 'toolbox', label: 'Toolbox' },
+  { id: 'ai-lab', label: 'AI Lab' },
+  { id: 'agents', label: 'Agentes' },
+  { id: 'security-quality', label: 'Segurança & Qualidade' }
+]
+
 interface ControlCenterProps {
   open: boolean
   onClose: () => void
@@ -74,9 +83,7 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
     <section className="control-center" role="dialog" aria-modal="true" aria-label="Tupiniquim Control Center">
       <header><div><strong>Tupiniquim Control Center</strong><small>AI Lab + Toolbox + Dev AI</small></div><button onClick={() => props.onClose()}>×</button></header>
       <div className="control-center-body">
-        <nav>{[
-          ['models-providers', 'Modelos & Providers'], ['skills', 'Skills'], ['toolbox', 'Toolbox'], ['ai-lab', 'AI Lab'], ['agents', 'Agentes'], ['security-quality', 'Segurança & Qualidade']
-        ].map(([id, label]) => <button key={id} className={section === id ? 'active' : ''} onClick={() => setSection(id)}>{label}</button>)}</nav>
+        <nav>{controlCenterSections.map(({ id, label }) => <button key={id} className={section === id ? 'active' : ''} onClick={() => setSection(id)}>{label}</button>)}</nav>
         <main>
           {section === 'models-providers' && <div className="cc-stack"><h2>Modelos & Providers</h2><p>Seleção explícita. Nenhum fallback automático.</p><label>Provider<select value={props.aiStatus?.provider ?? 'codex-app-server'} disabled={busy || props.aiStatus?.state === 'BUSY'} onChange={(event) => void props.onSelectProvider(event.target.value as AIProviderKind)}><option value="codex-app-server">Codex App Server</option><option value="ollama">Ollama local</option></select></label>{props.aiStatus?.provider === 'ollama' && <><label>Modelo<select value={props.selectedLocalModel} onChange={(event) => void props.onSelectModel(event.target.value)}><option value="">Selecionar modelo</option>{props.localModels.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select></label><button onClick={() => void props.onRefreshModels()}>Atualizar modelos</button></>}</div>}
           {section === 'skills' && <div className="cc-stack"><h2>Skills</h2><p>Descoberta não equivale a aprovação. Somente skills auditadas podem ser habilitadas.</p>{projectId === '' ? <div className="cc-note">Abra um workspace para gerenciar skills por projeto.</div> : skills.map((skill) => <div className="cc-card" key={skill.id}><div><strong>{skill.name}</strong><small>{skill.status} · execução automática: NÃO</small></div><button onClick={() => void toggleToolbox(!skill.enabled)}>{skill.enabled ? 'Desabilitar' : 'Habilitar'}</button></div>)}</div>}
