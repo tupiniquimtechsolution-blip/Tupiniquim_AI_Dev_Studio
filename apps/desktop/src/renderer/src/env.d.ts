@@ -7,6 +7,7 @@ declare global {
     studio: StudioApi
     controlCenter: ControlCenterDesktopApi
     googleTasks: GoogleTasksDesktopApi
+    __TUPINIQUIM_WEB__?: boolean
   }
 }
 
