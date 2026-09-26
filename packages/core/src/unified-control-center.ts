@@ -62,8 +62,8 @@ export const parseUnifiedControlCenterManifest = (input: unknown): UnifiedContro
     if (!isRecord(section) || typeof section.id !== 'string' || typeof section.label !== 'string' || !Array.isArray(section.items)) {
       throw new Error('Unified Control Center section is invalid.')
     }
-    const sectionId = section.id
-    const sectionLabel = section.label
+    const sectionId = String(section.id)
+    const sectionLabel = String(section.label)
     return {
       id: sectionId,
       label: sectionLabel,
