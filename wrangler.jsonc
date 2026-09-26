@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tupiniquim-dev-ai-web",
+  "compatibility_date": "2026-09-26",
+  "assets": {
+    "directory": "./out/renderer",
+    "not_found_handling": "single-page-application"
+  }
+}
