@@ -62,14 +62,16 @@ export const parseUnifiedControlCenterManifest = (input: unknown): UnifiedContro
     if (!isRecord(section) || typeof section.id !== 'string' || typeof section.label !== 'string' || !Array.isArray(section.items)) {
       throw new Error('Unified Control Center section is invalid.')
     }
+    const sectionId = section.id
+    const sectionLabel = section.label
     return {
-      id: section.id,
-      label: section.label,
+      id: sectionId,
+      label: sectionLabel,
       items: section.items.map((item): UnifiedControlItem => {
-        if (!isRecord(item) || typeof item.id !== 'string' || typeof item.label !== 'string') throw new Error(`Invalid item in section ${section.id}.`)
+        if (!isRecord(item) || typeof item.id !== 'string' || typeof item.label !== 'string') throw new Error(`Invalid item in section ${sectionId}.`)
         const mode = item.mode
         if (!['read', 'read-network', 'explicit-action', 'controlled-action', 'approval-required'].includes(String(mode))) {
-          throw new Error(`Invalid action mode in section ${section.id}.`)
+          throw new Error(`Invalid action mode in section ${sectionId}.`)
         }
         return { id: item.id, label: item.label, mode: mode as UnifiedControlActionMode }
       })
