@@ -189,7 +189,7 @@ export const installWebBridge = (): void => {
       diff: (relativePath) => rpc('git.diff', { relativePath })
     },
     terminal: {
-      create: async (input) => success({ terminalId: createTerminal(input.cols, input.rows) }),
+      create: async (input) => success({ terminalId: createTerminal(input.cols ?? 100, input.rows ?? 30) }),
       write: async (input) => {
         const socket = terminalSockets.get(input.terminalId)
         if (socket === undefined) return appError('TERMINAL_NOT_FOUND', 'Terminal Web não encontrado.')
@@ -253,9 +253,10 @@ export const installWebBridge = (): void => {
       update: async (input) => {
         const current = plans.get(input.executionId)
         if (current === undefined) return appError('PLAN_NOT_FOUND', 'Plano Web não encontrado.')
-        current.plan = input.plan
+        const normalizedPlan = { ...input.plan, steps: input.plan.steps.map((step) => ({ ...step, effects: step.effects ?? [] })) }
+        current.plan = normalizedPlan
         plans.set(input.executionId, current)
-        return success(input.plan)
+        return success(normalizedPlan)
       },
       read: async (input) => {
         const value = plans.get(input.executionId)
@@ -287,7 +288,7 @@ export const installWebBridge = (): void => {
         const existing = getPrompts()
         const prior = existing.find((item) => item.name === input.name)
         const now = new Date().toISOString()
-        const template: PromptTemplate = { id: prior?.id ?? crypto.randomUUID(), name: input.name, version: (prior?.version ?? 0) + 1, content: input.content, variables: input.variables, createdAt: prior?.createdAt ?? now, updatedAt: now }
+        const template: PromptTemplate = { id: prior?.id ?? crypto.randomUUID(), name: input.name, version: (prior?.version ?? 0) + 1, content: input.content, variables: input.variables ?? [], createdAt: prior?.createdAt ?? now, updatedAt: now }
         putPrompts([...existing.filter((item) => item.id !== template.id), template])
         return success(template)
       },

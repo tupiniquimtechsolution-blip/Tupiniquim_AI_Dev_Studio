@@ -169,7 +169,7 @@ const handleResearchSearch = async (env: Env, input: JsonRecord): Promise<Respon
 
 const handleStudioRpc = async (request: Request, env: Env, workspaceId: string): Promise<Response> => {
   let body: RpcRequest
-  try { body = await request.json<RpcRequest>() } catch { return fail('INVALID_JSON', 'Corpo JSON inválido.') }
+  try { body = await request.json() as RpcRequest } catch { return fail('INVALID_JSON', 'Corpo JSON inválido.') }
   const action = body.action ?? ''
   const input = body.input !== null && typeof body.input === 'object' ? body.input as JsonRecord : {}
   const sandbox = sandboxFor(env, workspaceId)
@@ -306,7 +306,7 @@ export default {
         if (request.headers.get('Upgrade')?.toLowerCase() !== 'websocket') return fail('WEBSOCKET_REQUIRED', 'Upgrade WebSocket obrigatório.', 426)
         const cols = Math.max(20, Math.min(500, Number(url.searchParams.get('cols') ?? 100)))
         const rows = Math.max(5, Math.min(200, Number(url.searchParams.get('rows') ?? 30)))
-        return sandbox.terminal(request, { cols, rows })
+        return await (sandbox as unknown as { terminal(request: Request, options?: { cols?: number; rows?: number }): Promise<Response> }).terminal(request, { cols, rows })
       }
 
       if (url.pathname === '/api/studio' && request.method === 'POST') return handleStudioRpc(request, env, id)
