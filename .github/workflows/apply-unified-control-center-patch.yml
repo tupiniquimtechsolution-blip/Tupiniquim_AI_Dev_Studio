@@ -1,0 +1,65 @@
+name: Apply Unified Control Center Patch
+
+on:
+  push:
+    branches: [integration/ai-lab-toolbox-unified]
+    paths: [.github/workflows/apply-unified-control-center-patch.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/ai-lab-toolbox-unified
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Apply exact source insertions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs')
+          const replaceOnce = (file, from, to) => {
+            const source = fs.readFileSync(file, 'utf8')
+            const count = source.split(from).length - 1
+            if (count !== 1) throw new Error(`${file}: expected one exact match, got ${count}`)
+            fs.writeFileSync(file, source.replace(from, to))
+          }
+
+          const main = 'apps/desktop/src/main/index.ts'
+          replaceOnce(main,
+            "import { ProviderPreferenceStore } from '../../../../packages/adapters/src/provider-preferences'\n",
+            "import { ProviderPreferenceStore } from '../../../../packages/adapters/src/provider-preferences'\nimport { registerControlCenterIpc } from './control-center-ipc'\n")
+          replaceOnce(main,
+            "const registerIpc = (): void => {\n",
+            "const registerIpc = (): void => {\n  registerControlCenterIpc({\n    dataRoot,\n    getWorkspaceRoot: () => { try { return workspace.getRoot() } catch { return null } }\n  })\n")
+
+          const app = 'apps/desktop/src/renderer/src/App.tsx'
+          replaceOnce(app,
+            "import { GitReviewPane } from './components/GitReviewPane'\n",
+            "import { GitReviewPane } from './components/GitReviewPane'\nimport { ControlCenter } from './components/ControlCenter'\n")
+          replaceOnce(app,
+            "  const [showSettings, setShowSettings] = useState(false)\n",
+            "  const [showSettings, setShowSettings] = useState(false)\n  const [showControlCenter, setShowControlCenter] = useState(false)\n")
+          replaceOnce(app,
+            "          <div className=\"spacer\" /><button title=\"Layout\"",
+            "          <button title=\"Control Center\" onClick={() => setShowControlCenter(true)}><ShieldCheck /></button><div className=\"spacer\" /><button title=\"Layout\"")
+          replaceOnce(app,
+            "      {showSettings && profile !== null",
+            "      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectOllamaModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} />\n      {showSettings && profile !== null")
+          NODE
+          git diff --check
+      - name: Commit exact patch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/desktop/src/main/index.ts apps/desktop/src/renderer/src/App.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(unified): wire Control Center into Electron UI"
+          git push origin HEAD:integration/ai-lab-toolbox-unified
