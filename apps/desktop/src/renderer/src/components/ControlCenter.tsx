@@ -53,27 +53,23 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
   const projectId = useMemo(() => props.workspaceRoot ?? '', [props.workspaceRoot])
   const toolboxEnabled = skills.some((skill) => skill.id === 'tupiniquim-toolbox' && skill.enabled)
 
-  const refreshProjectControls = async (): Promise<void> => {
-    const [agentResult, skillResult, loadoutResult] = await Promise.all([
-      window.controlCenter.listAgents(),
-      projectId === '' ? Promise.resolve(null) : window.controlCenter.listSkills({ projectId }),
-      projectId === '' ? Promise.resolve(null) : window.controlCenter.listAgentLoadouts({ projectId })
-    ])
-    if (agentResult.ok) {
-      setAgents(agentResult.value)
-      setSelectedAgentId((current) => current === '' ? (agentResult.value[0]?.id ?? '') : current)
-    }
-    if (skillResult?.ok) setSkills(skillResult.value)
-    if (loadoutResult?.ok) setLoadouts(loadoutResult.value)
-  }
-
   useEffect(() => {
     if (!props.open) return
     let active = true
-    void refreshProjectControls().then(() => { if (!active) return })
+    void window.controlCenter.listAgents().then((result) => {
+      if (!active || !result.ok) return
+      setAgents(result.value)
+      setSelectedAgentId((current) => current === '' ? (result.value[0]?.id ?? '') : current)
+    })
+    if (projectId !== '') {
+      void window.controlCenter.listSkills({ projectId }).then((result) => {
+        if (active && result.ok) setSkills(result.value)
+      })
+      void window.controlCenter.listAgentLoadouts({ projectId }).then((result) => {
+        if (active && result.ok) setLoadouts(result.value)
+      })
+    }
     return () => { active = false }
-  // refreshProjectControls intentionally depends on project/open state only.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.open, projectId])
 
   if (!props.open) return null
