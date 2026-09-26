@@ -16,14 +16,14 @@ const toolboxGates: Array<{ id: ToolboxGateId; label: string }> = [
 
 interface ControlCenterProps {
   open: boolean
-  onClose(): void
+  onClose: () => void
   workspaceRoot: string | null
   aiStatus: AIStatus | null
   localModels: LocalModel[]
   selectedLocalModel: string
-  onSelectProvider(provider: AIProviderKind): Promise<void>
-  onSelectModel(model: string): Promise<void>
-  onRefreshModels(): Promise<void>
+  onSelectProvider: (provider: AIProviderKind) => Promise<void>
+  onSelectModel: (model: string) => Promise<void>
+  onRefreshModels: () => Promise<void>
 }
 
 export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | null => {
@@ -36,10 +36,12 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
   const projectId = useMemo(() => props.workspaceRoot ?? '', [props.workspaceRoot])
 
   useEffect(() => {
-    if (!props.open || projectId === '') { setSkills([]); return }
+    if (!props.open || projectId === '') return
+    let active = true
     void window.controlCenter.listSkills({ projectId }).then((result) => {
-      if (result.ok) setSkills(result.value)
+      if (active && result.ok) setSkills(result.value)
     })
+    return () => { active = false }
   }, [props.open, projectId])
 
   if (!props.open) return null
@@ -70,7 +72,7 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
 
   return <div className="control-center-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose() }}>
     <section className="control-center" role="dialog" aria-modal="true" aria-label="Tupiniquim Control Center">
-      <header><div><strong>Tupiniquim Control Center</strong><small>AI Lab + Toolbox + Dev AI</small></div><button onClick={props.onClose}>×</button></header>
+      <header><div><strong>Tupiniquim Control Center</strong><small>AI Lab + Toolbox + Dev AI</small></div><button onClick={() => props.onClose()}>×</button></header>
       <div className="control-center-body">
         <nav>{[
           ['models-providers', 'Modelos & Providers'], ['skills', 'Skills'], ['toolbox', 'Toolbox'], ['ai-lab', 'AI Lab'], ['agents', 'Agentes'], ['security-quality', 'Segurança & Qualidade']
