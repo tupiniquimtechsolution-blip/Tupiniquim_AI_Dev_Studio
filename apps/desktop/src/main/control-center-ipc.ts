@@ -58,7 +58,7 @@ export const registerControlCenterIpc = (input: {
 }): void => {
   const skillStatePath = path.join(input.dataRoot, 'control-center', 'project-skills.json')
 
-  ipcMain.handle(controlCenterIpcChannels.status, async () => ok({
+  ipcMain.handle(controlCenterIpcChannels.status, () => ok({
     product: 'Tupiniquim Dev AI' as const,
     sections: [
       { id: 'models-providers', label: 'Modelos & Providers' },
@@ -76,7 +76,7 @@ export const registerControlCenterIpc = (input: {
     }
   }))
 
-  ipcMain.handle(controlCenterIpcChannels.portableInspect, async (_event, raw: unknown) => {
+  ipcMain.handle(controlCenterIpcChannels.portableInspect, (_event, raw: unknown) => {
     try {
       const { root } = portableInspectInputSchema.parse(raw)
       const layout = inspectPortableLayout(root)
