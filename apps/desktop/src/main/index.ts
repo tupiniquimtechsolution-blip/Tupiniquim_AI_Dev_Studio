@@ -1,4 +1,5 @@
 import { ProviderPreferenceStore } from '../../../../packages/adapters/src/provider-preferences'
+import { registerControlCenterIpc } from './control-center-ipc'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
@@ -575,6 +576,10 @@ const registerApprovedProposedWorkspaceWrite = (): void => {
 }
 
 const registerIpc = (): void => {
+  registerControlCenterIpc({
+    dataRoot,
+    getWorkspaceRoot: () => { try { return workspace.getRoot() } catch { return null } }
+  })
   register(ipcChannels.systemInfo, z.undefined(), 'system.info', () => ({
     platform: process.platform,
     arch: process.arch,

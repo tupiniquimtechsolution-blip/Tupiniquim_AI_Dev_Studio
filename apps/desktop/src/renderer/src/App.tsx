@@ -1,4 +1,5 @@
 import { GitReviewPane } from './components/GitReviewPane'
+import { ControlCenter } from './components/ControlCenter'
 import Editor from '@monaco-editor/react'
 import { Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, Eye, FileSearch, GitBranch, History, LayoutDashboard, Palette, PanelBottom, Save, Search, Settings2, ShieldCheck, Sparkles, TerminalSquare } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -140,6 +141,7 @@ export const App = (): React.JSX.Element => {
   const [expiredProposals, setExpiredProposals] = useState<Array<{ proposal: WorkspaceWriteProposal; status: ProposalStatus }>>([])
   const [profile, setProfile] = useState<UIProfile | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [showControlCenter, setShowControlCenter] = useState(false)
   const profileRef = useRef<UIProfile | null>(null)
   const providerRef = useRef<AIProviderKind | null>(null)
   const dirty = document !== null && content !== document.content
@@ -520,7 +522,7 @@ export const App = (): React.JSX.Element => {
         <nav className="activity-rail" aria-label="Navegação principal">
           <button className="active" title="Explorer" onClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, explorerWidth: 230 } }))}><Code2 /></button><button title="Pesquisa" onClick={() => setMode('RESEARCH')}><Search /></button><button title="Agentes" onClick={() => setMode('CHAT')}><Bot /></button>
           <button title="Research" onClick={() => setMode('RESEARCH')}><FileSearch /></button><button title="Prompt Architect" onClick={() => setMode('PROMPT')}><Sparkles /></button><button title="Visual Lab" onClick={() => setMode('VISUAL')}><Palette /></button>
-          <div className="spacer" /><button title="Layout" onClick={() => updateProfile((current) => ({ ...current, layout: { explorerWidth: 230, agentWidth: 340, deckHeight: 220 } }))}><LayoutDashboard /></button><button title="Configurações" onClick={() => setShowSettings((current) => !current)}><Settings2 /></button>
+          <button title="Control Center" onClick={() => setShowControlCenter(true)}><ShieldCheck /></button><div className="spacer" /><button title="Layout" onClick={() => updateProfile((current) => ({ ...current, layout: { explorerWidth: 230, agentWidth: 340, deckHeight: 220 } }))}><LayoutDashboard /></button><button title="Configurações" onClick={() => setShowSettings((current) => !current)}><Settings2 /></button>
         </nav>
 
         <aside className="explorer panel">
@@ -588,6 +590,7 @@ export const App = (): React.JSX.Element => {
         <div className="resize-handle agent-resize" role="separator" aria-label="Redimensionar agente" onPointerDown={(event) => beginResize('agentWidth', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, agentWidth: current.layout.agentWidth === 0 ? 340 : 0 } }))} />
         <div className="resize-handle deck-resize" role="separator" aria-label="Redimensionar deck inferior" onPointerDown={(event) => beginResize('deckHeight', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, deckHeight: current.layout.deckHeight === 0 ? 220 : 0 } }))} />
       </div>
+      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectOllamaModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} />
       {showSettings && profile !== null && <aside className="settings-popover"><header><strong>Preferências</strong><button onClick={() => setShowSettings(false)}>×</button></header><label>Densidade<select value={profile.density} onChange={(event) => updateProfile((current) => ({ ...current, density: event.target.value as UIProfile['density'] }))}><option value="COMPACT">Compacta</option><option value="COMFORTABLE">Confortável</option></select></label><label>Acento<input type="color" value={profile.theme.accent} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, accent: event.target.value } }))} /></label><label>Fundo<input type="color" value={profile.theme.background} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, background: event.target.value } }))} /></label><button className="save-settings" onClick={() => void saveProfile()}>Validar e salvar</button></aside>}
       <footer className="statusbar"><span><ShieldCheck size={13} />Sandbox ativo</span><span>{workspaceRoot === null ? 'Sem workspace' : workspaceRoot}</span><div className="spacer" /><span>{system?.platform ?? 'win32'} · {system?.arch ?? 'x64'}</span><span>v{system?.version ?? '0.1.0'}</span></footer>
     </main>
