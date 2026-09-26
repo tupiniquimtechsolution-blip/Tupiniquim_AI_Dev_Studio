@@ -2,7 +2,7 @@
   "name": "tupiniquim-ai-dev-studio",
   "version": "0.1.0-rc.1",
   "private": true,
-  "description": "Plataforma privada local-first de engenharia de software ag\u00eantica.",
+  "description": "Plataforma privada local-first de engenharia de software agêntica.",
   "type": "module",
   "main": "out/main/index.js",
   "packageManager": "pnpm@11.16.0",
@@ -45,6 +45,7 @@
     }
   },
   "dependencies": {
+    "@cloudflare/sandbox": "0.12.10",
     "@monaco-editor/react": "4.7.0",
     "@xstate/react": "6.1.0",
     "@xterm/addon-fit": "0.11.0",
