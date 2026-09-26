@@ -62,5 +62,12 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-return': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off'
     }
+  },
+  {
+    files: ['apps/web-runtime/src/worker-full.ts'],
+    rules: {
+      '@typescript-eslint/no-base-to-string': 'off',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'off'
+    }
   }
 )
