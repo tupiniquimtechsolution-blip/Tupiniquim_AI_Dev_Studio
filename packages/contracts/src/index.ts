@@ -1,5 +1,6 @@
 export * from './agent-runtime'
 export * from './ai'
+export * from './control-center'
 export * from './domain'
 export * from './google-tasks'
 export * from './ipc'
