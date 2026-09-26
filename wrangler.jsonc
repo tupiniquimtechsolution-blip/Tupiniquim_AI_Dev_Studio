@@ -1,10 +1,42 @@
 {
-  // Cloudflare web deployment for the browser test edition.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "tupiniquim-dev-ai-web",
+  "main": "apps/web-runtime/src/worker.ts",
   "compatibility_date": "2026-09-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "ai": {
+    "binding": "AI"
+  },
   "assets": {
     "directory": "./out/renderer",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/ws/*"]
+  },
+  "containers": [
+    {
+      "class_name": "Sandbox",
+      "image": "./Dockerfile.web",
+      "instance_type": "basic",
+      "max_instances": 3
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "Sandbox",
+        "class_name": "Sandbox"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "web-sandbox-v1",
+      "new_sqlite_classes": ["Sandbox"]
+    }
+  ],
+  "vars": {
+    "SANDBOX_TRANSPORT": "rpc",
+    "WEB_ALLOW_ANONYMOUS": "true"
   }
 }
