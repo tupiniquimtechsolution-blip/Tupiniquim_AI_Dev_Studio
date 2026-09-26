@@ -25,8 +25,12 @@ const renderFatal = (error: unknown): void => {
 
 const bootstrap = async (): Promise<void> => {
   if (!hasDesktopBridge) {
-    const { installWebBridge } = await import('./webBridge')
+    const [{ installWebBridge }, { installWebFullOverrides }] = await Promise.all([
+      import('./webBridge'),
+      import('./webBridgeFull')
+    ])
     installWebBridge()
+    installWebFullOverrides()
   }
 
   await import('@xterm/xterm/css/xterm.css')
