@@ -1,3 +1,4 @@
+import './monaco'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './styles.css'
@@ -28,10 +29,7 @@ const bootstrap = async (): Promise<void> => {
     installWebBridge()
   }
 
-  await Promise.all([
-    import('./monaco'),
-    import('@xterm/xterm/css/xterm.css')
-  ])
+  await import('@xterm/xterm/css/xterm.css')
   const [{ App }, { GoogleTasksDock }] = await Promise.all([
     import('./App'),
     import('./GoogleTasksDock')
