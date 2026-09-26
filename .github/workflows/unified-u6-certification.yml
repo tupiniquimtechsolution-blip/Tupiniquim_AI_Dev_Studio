@@ -1,0 +1,151 @@
+name: Unified U6 Hosted Certification
+
+on:
+  push:
+    branches:
+      - 'ci/unified-u6-certification'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  u6-hosted-windows:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      TARGET_SHA: 19012e418d8410b067b0e9eed0957551f944ce07
+      TARGET_ROOT: 'F:\CODEX\Tupiniquim-AI-Dev-Studio'
+    steps:
+      - name: Checkout certification harness
+        uses: actions/checkout@v4
+
+      - name: Checkout immutable unified candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          path: unified-target
+
+      - name: Materialize exact F drive and candidate path
+        shell: powershell
+        run: |
+          $backing = Join-Path $env:RUNNER_TEMP 'tupiniquim-u6-f-drive'
+          New-Item -ItemType Directory -Path $backing -Force | Out-Null
+          if (-not (Test-Path 'F:\')) {
+            subst F: $backing
+            if ($LASTEXITCODE -ne 0) { throw "Falha ao provisionar F: via subst (exit=$LASTEXITCODE)." }
+          }
+          New-Item -ItemType Directory -Force -Path 'F:\CODEX' | Out-Null
+          robocopy "$env:GITHUB_WORKSPACE\unified-target" $env:TARGET_ROOT /E /NFL /NDL /NJH /NJS /NP
+          $rc = $LASTEXITCODE
+          if ($rc -ge 8) { throw "robocopy falhou com codigo $rc" }
+          Set-Location $env:TARGET_ROOT
+          $actual = (git rev-parse HEAD).Trim()
+          if ($actual -ne $env:TARGET_SHA) { throw "SHA materializado incorreto: $actual" }
+          Write-Host "Exact unified candidate materialized at $env:TARGET_ROOT ($actual)"
+
+      - name: Bootstrap portable toolchain, Ollama and required model
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-rc1-windows.ps1 -AcceptDownloads
+
+      - name: Provision controlled Codex boundary
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: |
+          . .\scripts\rc1-environment.ps1
+          $node = 'F:\CODEX\programas\nodejs\node.exe'
+          $fixture = Get-Content '.\tests\fixtures\fake-codex-app-server.mjs' -Raw
+          $fixture = $fixture.Replace("'codex-test'", "'0.0.0'")
+          Set-Content -Path '.\app-server' -Value $fixture -Encoding utf8
+          "TUPINIQUIM_CODEX_PATH=$node" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Validate portable F-drive contract
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\validate-f-drive.ps1
+
+      - name: Lint
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: F:\CODEX\programas\pnpm\pnpm.cmd lint
+
+      - name: Typecheck
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: F:\CODEX\programas\pnpm\pnpm.cmd typecheck
+
+      - name: Unit tests including unified registries
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: F:\CODEX\programas\pnpm\pnpm.cmd test:unit
+
+      - name: Integration tests
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: F:\CODEX\programas\pnpm\pnpm.cmd test:integration
+
+      - name: Security tests
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: F:\CODEX\programas\pnpm\pnpm.cmd test:security
+
+      - name: Windows script fixtures
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\scripts\ollama-live-smoke.test.ps1
+
+      - name: Real Ollama required-model smoke
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: |
+          . .\scripts\rc1-environment.ps1
+          . .\scripts\ollama-live-smoke.ps1
+          $evidence = 'F:\CODEX\Tupiniquim-AI-Dev-Studio.data\u6-evidence'
+          New-Item -ItemType Directory -Force $evidence | Out-Null
+          $result = Invoke-OllamaLiveSmoke -ManifestPath '.\config\local-models.json' -EvidencePath $evidence
+          if ($result.exitCode -ne 0) { throw "Ollama live smoke failed: $($result.cause)" }
+
+      - name: Build
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: F:\CODEX\programas\pnpm\pnpm.cmd build
+
+      - name: Electron E2E hosted Windows
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: F:\CODEX\programas\pnpm\pnpm.cmd test:e2e
+
+      - name: Package portable Windows build
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: F:\CODEX\programas\pnpm\pnpm.cmd package:win
+
+      - name: Verify portable artifacts exist
+        shell: powershell
+        working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
+        run: |
+          $portable = Get-ChildItem '.\release\Tupiniquim-AI-Dev-Studio-*.exe' -File | Select-Object -First 1
+          $unpacked = '.\release\win-unpacked\Tupiniquim AI Dev Studio.exe'
+          if ($null -eq $portable) { throw 'Portable executable not produced.' }
+          if (-not (Test-Path $unpacked -PathType Leaf)) { throw 'Unpacked executable not produced.' }
+          Write-Host "portable=$($portable.FullName)"
+          Write-Host "unpacked=$unpacked"
+
+      - name: Upload U6 evidence and portable artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-u6-${{ env.TARGET_SHA }}
+          if-no-files-found: warn
+          path: |
+            F:/CODEX/Tupiniquim-AI-Dev-Studio/release/**
+            F:/CODEX/Tupiniquim-AI-Dev-Studio/test-results/**
+            F:/CODEX/Tupiniquim-AI-Dev-Studio/playwright-report/**
+            F:/CODEX/Tupiniquim-AI-Dev-Studio.data/u6-evidence/**
+
+# This workflow certifies cloud/hosted equivalents only. It cannot prove the
+# physical removable-media behavior, user-specific GPU/VRAM/thermals, or a real
+# user's USB/SSD unplug/replug lifecycle. Those remain PHYSICAL-USB-DEFERRED.
