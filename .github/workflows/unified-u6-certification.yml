@@ -9,12 +9,16 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: unified-u6-hosted
+  cancel-in-progress: true
+
 jobs:
   u6-hosted-windows:
     runs-on: windows-latest
     timeout-minutes: 120
     env:
-      TARGET_SHA: 19012e418d8410b067b0e9eed0957551f944ce07
+      TARGET_SHA: 429ae42d1193fe3d9d5dab90b3d802c5d9a5b9de
       TARGET_ROOT: 'F:\CODEX\Tupiniquim-AI-Dev-Studio'
     steps:
       - name: Checkout certification harness
@@ -64,8 +68,7 @@ jobs:
       - name: Validate portable F-drive contract
         shell: powershell
         working-directory: F:\CODEX\Tupiniquim-AI-Dev-Studio
-        run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\validate-f-drive.ps1
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\validate-f-drive.ps1
 
       - name: Lint
         shell: powershell
