@@ -1,4 +1,4 @@
-import { authorizeAccessRequest, scopeWorkspaceId, type AccessAuthConfig } from './access-auth'
+import { accessAuthReadiness, authorizeAccessRequest, scopeWorkspaceId, type AccessAuthConfig } from './access-auth'
 import fullWorker, { Sandbox, WebState } from './worker-full'
 export { Sandbox, WebState }
 
@@ -27,6 +27,11 @@ const scopedRequest = async (request: Request, identity: { email: string; sub: s
 export default {
   async fetch(request: Request, env: FullEnv): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname === '/api/health') {
+      const response = await fullWorker.fetch(request, env)
+      const body = await response.clone().json() as Record<string, unknown>
+      return Response.json({ ...body, auth: accessAuthReadiness(env) }, { status: response.status })
+    }
     const protectedRuntimeRoute = url.pathname === '/api/studio' || url.pathname.startsWith('/ws/')
     if (!protectedRuntimeRoute) return fullWorker.fetch(request, env)
 
