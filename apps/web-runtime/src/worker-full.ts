@@ -1,4 +1,5 @@
 import { getSandbox } from '@cloudflare/sandbox'
+import { WEB_PROVIDER, resolveWebModel } from './model-catalog'
 import legacyWorker, { Sandbox } from './worker'
 export { Sandbox }
 export { WebState } from './web-state'
@@ -25,13 +26,11 @@ type JsonRecord = Record<string, unknown>
 type RpcRequest = { action?: string; input?: unknown }
 type StoredToken = { accessToken: string; refreshToken?: string; expiresAt: string; scope: string[] }
 
-const WEB_PROVIDER = 'cloudflare-workers-ai' as const
-const DEFAULT_MODEL = '@cf/moonshotai/kimi-k2.6'
 const ok = <T>(value: T, extra?: JsonRecord): Response => Response.json({ ok: true, value, ...(extra ?? {}) })
 const fail = (code: string, message: string, status = 400, retryable = false): Response => Response.json({ ok: false, error: { code, message, retryable } }, { status })
 const safeId = (value: string | null): string | null => value !== null && /^[a-zA-Z0-9_-]{8,96}$/.test(value.trim()) ? value.trim() : null
 const workspaceIdFrom = (request: Request, url = new URL(request.url)): string | null => safeId(request.headers.get('x-tupiniquim-workspace')) ?? safeId(url.searchParams.get('workspace'))
-const modelFrom = (request: Request): string => request.headers.get('x-tupiniquim-model')?.trim() || DEFAULT_MODEL
+const modelFrom = (request: Request): string => resolveWebModel(request.headers.get('x-tupiniquim-model'))
 const safePath = (value: unknown): string | null => {
   if (typeof value !== 'string') return null
   const normalized = value.replace(/\\/g, '/').replace(/^\/+/, '')
