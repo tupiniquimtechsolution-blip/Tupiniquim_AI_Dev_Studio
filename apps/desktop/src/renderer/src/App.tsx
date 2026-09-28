@@ -163,11 +163,11 @@ export const App = (): React.JSX.Element => {
     void window.studio.system.info().then(async (result) => {
       if (!result.ok) return
       setSystem(result.value)
-      // Web Full possui um workspace canônico no Sandbox. Diferente do Desktop,
+      // Web Full possui um workspace lógico canônico. Diferente do Desktop,
       // não existe seletor nativo de pasta: preparar /workspace automaticamente
       // remove a dependência artificial do botão "Abrir workspace" sem relaxar
       // a guarda fail-closed do composer.
-      if (result.value.platform === 'cloudflare-sandbox') {
+      if (result.value.platform === 'cloudflare-edge' || result.value.platform === 'cloudflare-sandbox') {
         const selected = await window.studio.workspace.pick()
         if (!selected.ok || selected.value === null) {
           setNotice(selected.ok ? 'Workspace Web não identificado.' : selected.error.message)
@@ -555,7 +555,7 @@ export const App = (): React.JSX.Element => {
         : aiStatus.state !== 'READY'
           ? `Codex indisponível (estado ${aiStatus.state})`
           : aiStatus.account === 'API_KEY' ? 'API key local' : aiStatus.account === 'CHATGPT' ? 'Conta Codex' : 'Ctrl + Enter para enviar'
-  const availableProviders: AIProviderKind[] = aiStatus?.availableProviders ?? (system?.platform === 'cloudflare-sandbox'
+  const availableProviders: AIProviderKind[] = aiStatus?.availableProviders ?? ((system?.platform === 'cloudflare-edge' || system?.platform === 'cloudflare-sandbox')
     ? ['cloudflare-workers-ai']
     : ['codex-app-server', 'ollama'])
   const missingEffectManifest = planned?.plan.steps.some((step) => step.requiresApproval && step.effects.length === 0) ?? false
