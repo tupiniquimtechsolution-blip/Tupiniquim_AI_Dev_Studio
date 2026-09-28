@@ -1,8 +1,5 @@
-import { getSandbox } from '@cloudflare/sandbox'
 import { WEB_MODELS, WEB_PROVIDER, WEB_RUNTIME, isWebModelId, resolveWebModel } from './model-catalog'
-export { Sandbox } from '@cloudflare/sandbox'
-
-type SandboxNamespace = Parameters<typeof getSandbox>[0]
+import { getRemoteSandbox, type RemoteRuntimeConfig } from './remote-runtime'
 
 type WorkersAi = {
   run(model: string, input: Record<string, unknown>): Promise<unknown>
@@ -10,8 +7,7 @@ type WorkersAi = {
 
 type AssetBinding = { fetch(request: Request): Promise<Response> }
 
-type Env = {
-  Sandbox: SandboxNamespace
+type Env = RemoteRuntimeConfig & {
   AI: WorkersAi
   ASSETS: AssetBinding
   WEB_ALLOW_ANONYMOUS?: string
@@ -38,8 +34,6 @@ const safeRelativePath = (value: unknown): string | null => {
   return normalized
 }
 
-const shellQuote = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`
-
 const sha256 = async (value: string): Promise<string> => {
   const bytes = new TextEncoder().encode(value)
   const digest = await crypto.subtle.digest('SHA-256', bytes)
@@ -55,40 +49,15 @@ const identityAllowed = (request: Request, env: Env): boolean => {
   return env.WEB_ALLOW_ANONYMOUS === 'true'
 }
 
-const sandboxFor = (env: Env, id: string) => getSandbox(env.Sandbox, `tupiniquim-${id}`, {
-  transport: 'rpc',
-  sleepAfter: '30m',
-  labels: { product: 'tupiniquim-dev-ai', surface: 'web' }
-})
+const sandboxFor = (env: Env, id: string) => getRemoteSandbox(env, id)
 
 const ensureWorkspace = async (sandbox: ReturnType<typeof sandboxFor>): Promise<void> => {
   const exists = await sandbox.exists('/workspace')
   if (!exists.exists) await sandbox.mkdir('/workspace', { recursive: true })
 }
 
-const parseFindTree = (stdout: string): Array<JsonRecord> => stdout
-  .split('\n')
-  .filter(Boolean)
-  .flatMap((line) => {
-    const [kind, path, size, epoch] = line.split('|')
-    if (path === undefined || size === undefined || epoch === undefined) return []
-    const relativePath = path.replace(/^\.\/?/, '')
-    if (relativePath === '' || relativePath.startsWith('.tupiniquim-web')) return []
-    return [{
-      name: relativePath.split('/').at(-1) ?? relativePath,
-      relativePath,
-      kind: kind === 'd' ? 'directory' : 'file',
-      size: Number(size) || 0,
-      modifiedAt: new Date((Number(epoch) || 0) * 1000).toISOString()
-    }]
-  })
-
-const listWorkspace = async (sandbox: ReturnType<typeof sandboxFor>, depth: number): Promise<Array<JsonRecord>> => {
-  const boundedDepth = Math.max(1, Math.min(8, Math.floor(depth)))
-  const result = await sandbox.exec(`find . -mindepth 1 -maxdepth ${boundedDepth} -printf '%y|%p|%s|%T@\\n'`, { cwd: '/workspace', timeout: 15_000 })
-  if (!result.success) throw new Error(result.stderr || 'Falha ao listar workspace.')
-  return parseFindTree(result.stdout)
-}
+const listWorkspace = async (sandbox: ReturnType<typeof sandboxFor>, depth: number): Promise<Array<JsonRecord>> =>
+  sandbox.listTree(Math.max(1, Math.min(8, Math.floor(depth))))
 
 const selectedModel = (request: Request): string => resolveWebModel(request.headers.get('x-tupiniquim-model'))
 
@@ -171,7 +140,7 @@ const handleStudioRpc = async (request: Request, env: Env, workspaceId: string):
   try {
     switch (action) {
       case 'system.info':
-        return ok({ platform: 'cloudflare-sandbox', arch: 'linux', version: 'web-0.1.0', dataRoot: '/workspace', permissionProfile: 'ASSISTED' })
+        return ok({ platform: 'cloudflare-edge', arch: 'remote', version: 'web-free-remote-0.3.0', dataRoot: '/workspace', permissionProfile: 'ASSISTED' })
       case 'workspace.pick':
         return ok('/workspace')
       case 'workspace.configure':
@@ -209,33 +178,17 @@ const handleStudioRpc = async (request: Request, env: Env, workspaceId: string):
         const query = typeof input.query === 'string' ? input.query : ''
         if (query === '') return fail('INVALID_QUERY', 'Consulta vazia.')
         const limit = typeof input.limit === 'number' ? Math.max(1, Math.min(500, Math.floor(input.limit))) : 100
-        const result = await sandbox.exec(`rg -n --fixed-strings --color never -- ${shellQuote(query)} . | head -n ${limit}`, { cwd: '/workspace', timeout: 15_000 })
-        const matches = result.stdout.split('\n').filter(Boolean).flatMap((line) => {
-          const first = line.indexOf(':')
-          const second = line.indexOf(':', first + 1)
-          if (first < 0 || second < 0) return []
-          return [{ relativePath: line.slice(0, first).replace(/^\.\//, ''), line: Number(line.slice(first + 1, second)) || 1, preview: line.slice(second + 1) }]
-        })
-        return ok(matches)
+        return ok(await sandbox.search(query, limit))
       }
       case 'workspace.context': {
         const entries = await listWorkspace(sandbox, 4)
         return ok({ generatedAt: new Date().toISOString(), entries: entries.slice(0, 1000).map(({ relativePath, kind, size }) => ({ relativePath, kind, size })), truncated: entries.length > 1000, contentPolicy: 'METADATA_ONLY' })
       }
-      case 'git.status': {
-        const result = await sandbox.exec("git status --porcelain=v1 -b", { cwd: '/workspace', timeout: 15_000 })
-        if (!result.success) return ok({ branch: 'web-workspace', ahead: 0, behind: 0, entries: [] })
-        const lines = result.stdout.split('\n').filter(Boolean)
-        const branchLine = lines.shift() ?? '## web-workspace'
-        const branch = branchLine.replace(/^##\s*/, '').split('...')[0]?.trim() || 'web-workspace'
-        const entries = lines.map((line) => ({ path: line.slice(3).trim(), index: line[0] ?? ' ', worktree: line[1] ?? ' ' }))
-        return ok({ branch, ahead: 0, behind: 0, entries })
-      }
+      case 'git.status':
+        return ok(await sandbox.gitStatus())
       case 'git.diff': {
         const relativePath = safeRelativePath(input.relativePath)
-        const command = relativePath === null || relativePath === '' ? 'git diff --' : `git diff -- ${shellQuote(relativePath)}`
-        const result = await sandbox.exec(command, { cwd: '/workspace', timeout: 15_000 })
-        return result.success ? ok(result.stdout) : fail('GIT_DIFF_FAILED', result.stderr || 'Falha no git diff.')
+        return ok(await sandbox.gitDiff(relativePath === '' ? null : relativePath))
       }
       case 'agent.status':
         return ok({ provider: WEB_PROVIDER, runtime: WEB_RUNTIME, availableProviders: [WEB_PROVIDER], selectedModel: selectedModel(request), state: 'READY', account: 'NONE', version: 'workers-ai', activeThreadId: null, activeTurnId: null, detail: 'WEB_WORKERS_AI' })
@@ -291,7 +244,7 @@ export default {
     const url = new URL(request.url)
 
     if (url.pathname === '/api/health') {
-      return Response.json({ ok: true, product: 'Tupiniquim Dev AI Web', runtime: 'cloudflare-sandbox', ai: 'workers-ai' })
+      return Response.json({ ok: true, product: 'Tupiniquim Dev AI Web', runtime: 'cloudflare-edge', ai: 'workers-ai' })
     }
 
     if (url.pathname.startsWith('/api/') || url.pathname === '/ws/terminal') {
