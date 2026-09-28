@@ -74,18 +74,22 @@ O terminal usa `/ws/terminal`. A aplicação Access deve apontar para o hostname
 
 ### Automático
 
-Defina uma variável de repositório GitHub:
+O gatilho canônico para a branch ativa é `push` em
+`integration/ai-lab-toolbox-unified`.
 
-`WEB_SMOKE_BASE_URL=https://<hostname-público>`
+Isso evita depender de `workflow_run` em um workflow que ainda não existe no
+branch padrão `main`.
 
-Quando o **Cloud Quality Gate** terminar com SUCCESS na branch
-`integration/ai-lab-toolbox-unified`, o workflow **Web Product Smoke**
-é disparado automaticamente, espera `/api/health` ficar disponível e executa
-o smoke funcional contra o exact SHA que acabou de passar pelo gate.
+Cada novo SHA da integração dispara o Web Product Smoke diretamente. O job:
 
-Se `WEB_SMOKE_BASE_URL` não existir, o job `smoke-target` termina em
-**BLOCKED/FAIL explícito** com `LIVE_WEB_SMOKE_BLOCKED`. O job Playwright não
-é executado e o workflow não pode ser confundido com PASS de produto.
+- resolve `vars.WEB_SMOKE_BASE_URL`;
+- falha explicitamente como `LIVE_WEB_SMOKE_BLOCKED` se a URL não existir;
+- espera `/api/health`;
+- executa Playwright no exact SHA;
+- publica evidência.
+
+O gatilho `workflow_run` permanece compatível para o futuro, quando esses
+workflows forem promovidos ao branch padrão.
 
 ### Manual
 

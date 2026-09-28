@@ -1,6 +1,9 @@
 name: Web Product Smoke
 
 on:
+  push:
+    branches:
+      - integration/ai-lab-toolbox-unified
   workflow_dispatch:
     inputs:
       base_url:
@@ -29,6 +32,7 @@ jobs:
   target:
     name: smoke-target
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (
         github.event_name == 'workflow_run' &&
