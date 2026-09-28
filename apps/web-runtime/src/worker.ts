@@ -1,5 +1,5 @@
 import { WEB_MODELS, WEB_PROVIDER, WEB_RUNTIME, isWebModelId, resolveWebModel } from './model-catalog'
-import { getRemoteSandbox, type RemoteRuntimeConfig } from './remote-runtime'
+import { getRemoteSandbox, remoteRuntimeStatus, type RemoteRuntimeConfig } from './remote-runtime'
 
 type WorkersAi = {
   run(model: string, input: Record<string, unknown>): Promise<unknown>
@@ -141,6 +141,8 @@ const handleStudioRpc = async (request: Request, env: Env, workspaceId: string):
     switch (action) {
       case 'system.info':
         return ok({ platform: 'cloudflare-edge', arch: 'remote', version: 'web-free-remote-0.3.0', dataRoot: '/workspace', permissionProfile: 'ASSISTED' })
+      case 'runtime.status':
+        return ok(await remoteRuntimeStatus(env))
       case 'workspace.pick':
         return ok('/workspace')
       case 'workspace.configure':
