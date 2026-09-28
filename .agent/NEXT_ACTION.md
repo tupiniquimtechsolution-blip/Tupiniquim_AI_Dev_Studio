@@ -4,77 +4,69 @@ Atualizado em: 2026-09-28
 
 ## Foco atual
 
-**Web Full — desbloqueio de produção Cloudflare e certificação funcional real.**
+**Certificar o Web Free já implantado.**
 
-Branch canônica:
+Branch:
 `integration/ai-lab-toolbox-unified`
 
-Issue canônica:
-#53 — Web P0: Cloudflare Containers entitlement/token blocks production deploy
+Issue:
+#53
 
-## Estado já comprovado
+## Estado comprovado
 
-- código Web P0 integrado;
+- Containers pagos removidos;
+- Workers Build GREEN;
 - Cloud Quality GREEN;
-- Workers AI separado de Ollama;
-- modelo Web padrão + catálogo compatível;
-- workspace auto-bootstrap;
-- persistência R2 implementada;
-- Cloudflare Access implementado;
-- Service Auth implementado;
-- Product Smoke implementado;
-- terminal Web alinhado ao runtime real.
+- Workers AI gratuito configurado;
+- GLM-4.7-Flash como default;
+- Remote Runtime implementado;
+- Web Product Smoke dispara por push;
+- ausência de URL pública agora aparece como blocker explícito.
 
 ## Próxima sequência
 
-### 1. Desbloquear Containers/Sandbox na Cloudflare
+### 1. Registrar o hostname público
 
-Na mesma account usada pelo build:
-- confirmar Workers Paid;
-- confirmar Containers entitlement;
-- confirmar credencial do build;
-- rerodar `wrangler deploy --config wrangler.jsonc`.
+Configurar no GitHub:
 
-Critério:
-`/containers/me` não pode falhar.
+`WEB_SMOKE_BASE_URL=https://<hostname-público-real>`
 
-### 2. Ativar persistência R2
+A URL deve ser o workers.dev ou custom domain real do Worker.
 
-Seguir `docs/WEB/WORKSPACE_R2_PERSISTENCE.md`.
+Não inventar hostname.
 
-Não ativar `WEB_WORKSPACE_BACKUP_ENABLED=true` sem bucket, vars e secrets completos.
+### 2. Reexecutar Web Product Smoke
 
-### 3. Ativar Cloudflare Access
+O próximo push na branch dispara automaticamente.
 
-Seguir `docs/WEB/CLOUDFLARE_ACCESS.md`.
-
-Produção exige:
-`WEB_ALLOW_ANONYMOUS=false`.
-
-### 4. Executar Product Smoke
-
-Workflow:
-`Web Product Smoke`
+Também pode ser executado manualmente com `base_url`.
 
 Primeiro:
 `production_ready=false`
 
-Depois da configuração R2 + Access:
-`production_ready=true`
+### 3. Validar o Web cloud-only
 
-### 5. Promover somente com evidência
+Critérios:
+- health 2xx;
+- UI abre;
+- provider correto;
+- modelo gratuito correto;
+- Enviar habilita;
+- Workers AI responde;
+- sessão recupera após reload;
+- terminal/Git/filesystem aparecem offline quando Gateway não está conectado.
 
-Não declarar Web production-ready enquanto faltar qualquer um:
-- deploy real;
-- chat Workers AI;
-- workspace;
-- editor;
-- terminal;
-- checkpoint R2;
-- auth Access;
-- reload/recovery;
-- smoke GREEN.
+### 4. Conectar Remote Runtime opcional
 
-## Trilhas independentes
+Depois do smoke cloud-only:
+- iniciar `pnpm runtime:gateway` no Windows;
+- expor por Cloudflare Tunnel;
+- configurar URL/token do gateway;
+- repetir smoke com filesystem/Git/terminal/build/test.
 
-Windows/USB físico permanecem certificados por gates próprios e não bloqueiam a publicação Web quando os gates Web estiverem GREEN.
+## Não fazer
+
+- não reintroduzir Cloudflare Containers;
+- não migrar para plano pago;
+- não esconder falha de smoke;
+- não marcar SKIPPED/BLOCKED como PASS.
