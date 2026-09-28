@@ -165,11 +165,15 @@ const gate = async (workspaceId: string, gateId: string): Promise<{ state: 'PASS
   return { state: 'PASS', evidence: evidence.trim().slice(-12_000) || 'Gate concluído.' }
 }
 
-const stringArg = (record: JsonRecord, key: string, fallback = ''): string =>
-  typeof record[key] === 'string' ? record[key] as string : fallback
+const stringArg = (record: JsonRecord, key: string, fallback = ''): string => {
+  const value = record[key]
+  return typeof value === 'string' ? value : fallback
+}
 
-const numberArg = (record: JsonRecord, key: string, fallback: number): number =>
-  typeof record[key] === 'number' && Number.isFinite(record[key]) ? record[key] as number : fallback
+const numberArg = (record: JsonRecord, key: string, fallback: number): number => {
+  const value = record[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
 
 const handleRpc = async (body: JsonRecord): Promise<unknown> => {
   const workspaceId = typeof body.workspaceId === 'string' ? body.workspaceId : ''
