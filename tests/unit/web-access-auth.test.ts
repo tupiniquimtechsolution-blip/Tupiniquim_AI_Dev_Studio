@@ -69,16 +69,16 @@ describe('Cloudflare Access JWT auth', () => {
   it('valida assinatura, issuer, audience, exp e identidade', async () => {
     const issuer = 'https://team.cloudflareaccess.com'
     const { token, jwk } = await signedJwt({ audience: 'app-aud', issuer })
-    const mockFetch = async (): Promise<Response> => Response.json({ keys: [jwk] })
-    const identity = await verifyAccessJwt(token, { ACCESS_TEAM_DOMAIN: issuer, ACCESS_AUD: 'app-aud' }, mockFetch as typeof fetch)
+    const mockFetch: typeof fetch = () => Promise.resolve(Response.json({ keys: [jwk] }))
+    const identity = await verifyAccessJwt(token, { ACCESS_TEAM_DOMAIN: issuer, ACCESS_AUD: 'app-aud' }, mockFetch)
     expect(identity).toMatchObject({ email: 'dev@example.com', sub: 'user-123', issuer, audience: ['app-aud'] })
   })
 
   it('rejeita audience diferente mesmo com assinatura válida', async () => {
     const issuer = 'https://team.cloudflareaccess.com'
     const { token, jwk } = await signedJwt({ audience: 'wrong-aud', issuer })
-    const mockFetch = async (): Promise<Response> => Response.json({ keys: [jwk] })
-    await expect(verifyAccessJwt(token, { ACCESS_TEAM_DOMAIN: issuer, ACCESS_AUD: 'expected-aud' }, mockFetch as typeof fetch)).rejects.toThrow(/Audience/)
+    const mockFetch: typeof fetch = () => Promise.resolve(Response.json({ keys: [jwk] }))
+    await expect(verifyAccessJwt(token, { ACCESS_TEAM_DOMAIN: issuer, ACCESS_AUD: 'expected-aud' }, mockFetch)).rejects.toThrow(/Audience/)
   })
 
   it('isola o mesmo workspace client-side entre identidades diferentes', async () => {
