@@ -1,0 +1,46 @@
+name: One-shot Live Web Smoke
+
+on:
+  push:
+    branches:
+      - test/live-web-smoke-bbb947
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WEB_SMOKE_BASE_URL: ${{ vars.WEB_PUBLIC_URL != '' && vars.WEB_PUBLIC_URL || 'https://tupiniquim.dev' }}
+      WEB_SMOKE_REQUIRE_PRODUCTION_READY: 'false'
+      WEB_SMOKE_ACCESS_CLIENT_ID: ${{ secrets.WEB_SMOKE_ACCESS_CLIENT_ID }}
+      WEB_SMOKE_ACCESS_CLIENT_SECRET: ${{ secrets.WEB_SMOKE_ACCESS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Show smoke target
+        run: node -e "console.log(new URL(process.env.WEB_SMOKE_BASE_URL).origin)"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run Web Product Smoke
+        run: pnpm test:web-smoke
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: one-shot-live-web-smoke-bbb947
+          if-no-files-found: ignore
+          path: |
+            test-results/web-product-smoke/**
+            playwright-report-web/**
