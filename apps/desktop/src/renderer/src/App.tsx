@@ -160,7 +160,49 @@ export const App = (): React.JSX.Element => {
   }, [aiStatus?.provider])
 
   useEffect(() => {
-    void window.studio.system.info().then((result) => { if (result.ok) setSystem(result.value) })
+    void window.studio.system.info().then(async (result) => {
+      if (!result.ok) return
+      setSystem(result.value)
+      // Web Full possui um workspace canônico no Sandbox. Diferente do Desktop,
+      // não existe seletor nativo de pasta: preparar /workspace automaticamente
+      // remove a dependência artificial do botão "Abrir workspace" sem relaxar
+      // a guarda fail-closed do composer.
+      if (result.value.platform === 'cloudflare-sandbox') {
+        const selected = await window.studio.workspace.pick()
+        if (!selected.ok || selected.value === null) {
+          setNotice(selected.ok ? 'Workspace Web não identificado.' : selected.error.message)
+          return
+        }
+        const configured = await window.studio.workspace.configure({ root: selected.value })
+        if (!configured.ok) {
+          setNotice(configured.error.message)
+          return
+        }
+        setWorkspaceRoot(configured.value)
+        const session = await window.studio.agent.session()
+        if (session.ok) {
+          setSessionId(session.value?.session.id ?? null)
+          setConversation((session.value?.turns ?? []).flatMap((turn) => {
+            if (turn.role !== 'user' && turn.role !== 'assistant' && turn.role !== 'error') return []
+            return [{ id: turn.id, role: turn.role, text: turn.text, turnId: turn.turnId, complete: true, provider: turn.provider }]
+          }))
+        }
+        const [tree, status, context, agentStatus] = await Promise.all([
+          window.studio.workspace.list({ relativePath: '', depth: 4 }),
+          window.studio.git.status(),
+          window.studio.workspace.context(),
+          window.studio.agent.status()
+        ])
+        if (tree.ok) setFiles(tree.value)
+        if (status.ok) setGit(status.value)
+        if (context.ok) setWorkspaceContext(context.value)
+        if (agentStatus.ok) {
+          setAIStatus(agentStatus.value)
+          setSelectedLocalModel(agentStatus.value.selectedModel ?? '')
+        }
+        setNotice(context.ok ? 'Workspace Web preparado e contexto mapeado.' : 'Workspace Web preparado.')
+      }
+    })
     /**
      * Issue #25 (dogfood pós-auth) — startup: processo novo com provider já
      * selecionado e DISCONNECTED reconecta ESSE MESMO provider pela via
