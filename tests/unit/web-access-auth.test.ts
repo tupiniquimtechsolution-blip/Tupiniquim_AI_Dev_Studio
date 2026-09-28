@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  accessAuthReadiness,
   authorizeAccessRequest,
   clearAccessJwksCacheForTests,
   scopeWorkspaceId,
@@ -39,6 +40,12 @@ const signedJwt = async (input: { audience: string; issuer: string; email?: stri
 afterEach(() => clearAccessJwksCacheForTests())
 
 describe('Cloudflare Access JWT auth', () => {
+  it('reporta readiness sem expor configuração sensível', () => {
+    expect(accessAuthReadiness({ WEB_ALLOW_ANONYMOUS: 'true' })).toEqual({ state: 'ANONYMOUS_TEST', productionReady: false })
+    expect(accessAuthReadiness({ WEB_ALLOW_ANONYMOUS: 'false' })).toEqual({ state: 'MISCONFIGURED', productionReady: false })
+    expect(accessAuthReadiness({ WEB_ALLOW_ANONYMOUS: 'false', ACCESS_TEAM_DOMAIN: 'team.cloudflareaccess.com', ACCESS_AUD: 'aud' })).toEqual({ state: 'ACCESS_READY', productionReady: true })
+  })
+
   it('permite modo anônimo somente quando explicitamente habilitado', async () => {
     const result = await authorizeAccessRequest(new Request('https://app.example/api/studio'), { WEB_ALLOW_ANONYMOUS: 'true' })
     expect(result).toEqual({ allowed: true, anonymous: true, identity: null })
