@@ -35,7 +35,7 @@ export type AgentPermissionProfile = z.infer<typeof agentPermissionProfileSchema
 export const agentLoadoutPutInputSchema = z.object({
   projectId: z.string().trim().min(1).max(200),
   agentId: z.string().trim().min(1).max(200),
-  provider: z.enum(['codex-app-server', 'ollama']),
+  provider: z.enum(['codex-app-server', 'ollama', 'cloudflare-workers-ai']),
   model: z.string().trim().min(1).max(300).nullable(),
   skillIds: z.array(z.enum(['tupiniquim-toolbox'])).max(20),
   permissionProfile: agentPermissionProfileSchema,

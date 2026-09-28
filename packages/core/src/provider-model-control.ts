@@ -1,8 +1,8 @@
-export type UnifiedProviderId = 'codex-app-server' | 'ollama'
+export type UnifiedProviderId = 'codex-app-server' | 'ollama' | 'cloudflare-workers-ai'
 
 export interface UnifiedLocalModel {
   name: string
-  provider: 'ollama'
+  provider: UnifiedProviderId
   available: boolean
   selected: boolean
 }
@@ -19,6 +19,9 @@ export interface UnifiedProviderSelection {
   model: string | null
 }
 
+export const providerRequiresExplicitModel = (provider: UnifiedProviderId): boolean =>
+  provider !== 'codex-app-server'
+
 export const validateExplicitProviderSelection = (
   current: UnifiedProviderState,
   requested: UnifiedProviderSelection
@@ -29,16 +32,25 @@ export const validateExplicitProviderSelection = (
   }
 
   if (requested.model === null || requested.model.trim() === '') {
-    throw new Error('Ollama selection requires an explicit local model.')
+    if (requested.provider === 'ollama') {
+      throw new Error('Ollama selection requires an explicit local model.')
+    }
+    throw new Error(`${requested.provider} selection requires an explicit model.`)
   }
-  const model = current.localModels.find((candidate) => candidate.name === requested.model)
-  if (model === undefined || !model.available) throw new Error('Requested Ollama model is not currently available.')
-  return { provider: 'ollama', model: model.name }
+  const model = current.localModels.find((candidate) =>
+    candidate.provider === requested.provider && candidate.name === requested.model
+  )
+  if (model === undefined || !model.available) {
+    throw new Error('Requested provider/model is not currently available on this runtime.')
+  }
+  return { provider: requested.provider, model: model.name }
 }
 
 export const providerCanSend = (state: UnifiedProviderState): boolean => {
   if (state.state !== 'READY') return false
-  if (state.provider === 'ollama') return state.selectedModel !== null && state.selectedModel.trim() !== ''
+  if (providerRequiresExplicitModel(state.provider)) {
+    return state.selectedModel !== null && state.selectedModel.trim() !== ''
+  }
   return true
 }
 

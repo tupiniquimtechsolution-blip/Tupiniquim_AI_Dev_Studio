@@ -55,7 +55,7 @@ const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/)
 
 export const agentProposalEffectSourceSchema = z.object({
   kind: z.literal('AGENT_PROPOSAL'),
-  provider: z.enum(['codex-app-server', 'ollama']),
+  provider: z.enum(['codex-app-server', 'ollama', 'cloudflare-workers-ai']),
   threadId: z.string().min(1).max(200),
   turnId: z.string().min(1).max(200),
   toolCallId: z.string().uuid(),

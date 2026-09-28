@@ -58,6 +58,8 @@ import {
 import { AuditLog, CodexAppServerAdapter, detectPrivateEnvironmentPresence, GitAdapter, HttpResearchProvider, LocalDatabase, OllamaAdapter, TerminalAdapter, WorkspaceAdapter } from '@tupiniquim/adapters'
 import { AwaitedShutdownCoordinator, PlanApprovalService, PolicyEngine, PreferenceService, PrivilegedRuntimeGate, PromptArchitect, TechnologyResolutionEngine, TupiniquimSessionRecovery, TupiniquimSessionService, TupiniquimSessionSnapshotCoordinator, VisualIntelligenceService, WorkspaceWriteProposalService, agentRuntimeSealedMessage, isTransientTurnStatus, prepareProviderSendInput, reconnectSelectedProvider, resolveDataRoot, shouldCompleteTurnFromError, switchTupiniquimWorkspaceWithDurableFlush, withRuntimeOperation, type AwaitedShutdownReport, type ToolIntent } from '@tupiniquim/core'
 
+type DesktopAIProviderKind = Exclude<AIProviderKind, 'cloudflare-workers-ai'>
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 /**
  * Wave 16 — Incremento 4/4 (correção da auditoria, Bloqueio 3): resolução do
@@ -97,7 +99,7 @@ const terminal = new TerminalAdapter(
 )
 const providerPreferences = new ProviderPreferenceStore(dataRoot)
 let persistedModelChoice: string | null = null
-let selectedAgentProvider: AIProviderKind = 'codex-app-server'
+let selectedAgentProvider: DesktopAIProviderKind = 'codex-app-server'
 const tupiniquimSession = new TupiniquimSessionService()
 /**
  * Wave 16 — Incremento 2/4: recovery fail-closed da Tupiniquim Session a partir
@@ -148,7 +150,7 @@ const runtimeGate = new PrivilegedRuntimeGate(() => Object.values(agents).some((
   const state = agent.status().state
   return state === 'STARTING' || state === 'BUSY'
 }))
-const publishAgentEvent = (provider: AIProviderKind, event: AIEvent): void => {
+const publishAgentEvent = (provider: DesktopAIProviderKind, event: AIEvent): void => {
   // RUNTIME QUIESCENCE (SEGUNDA correção, Bloqueio 1): todo evento de agente
   // pode ter mudado o estado busy/starting → livre. A notificação resolve
   // waiters de quiescência de forma determinística (sem polling) quando o
@@ -253,7 +255,7 @@ const ollamaAgent = new OllamaAdapter({
   },
   onEvent: (event) => { publishAgentEvent('ollama', event) }
 })
-const agents: Record<AIProviderKind, AIProvider> = { 'codex-app-server': codexAgent, ollama: ollamaAgent }
+const agents: Record<DesktopAIProviderKind, AIProvider> = { 'codex-app-server': codexAgent, ollama: ollamaAgent }
 const activeAgent = (): AIProvider => agents[selectedAgentProvider]
 const redactContextMetadata = (value: string): string => value
   .replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/gu, '[REDACTED]')
@@ -662,6 +664,7 @@ const registerIpc = (): void => {
   register(ipcChannels.agentStatus, z.undefined(), 'agent.status', () => tupiniquimSession.scopedStatus(activeAgent().status()))
   register(ipcChannels.agentProviderSelect, agentProviderSelectInputSchema, 'agent.provider.select', async ({ provider }) => {
     if (runtimeGate.isSealedForShutdown()) throw new Error(agentRuntimeSealedMessage)
+    if (provider === 'cloudflare-workers-ai') throw new Error('Cloudflare Workers AI está disponível somente na edição Web.')
     if (provider === selectedAgentProvider) {
       if (runtimeGate.locked()) throw new Error('Aguarde o turno ou a transição de provider em andamento.')
       /**
@@ -933,6 +936,9 @@ else {
       callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:*"] } })
     })
     const choice = await providerPreferences.load()
+    if (choice.provider === 'cloudflare-workers-ai') {
+      throw new Error('Preferência Web de provider não é válida no runtime Desktop.')
+    }
     selectedAgentProvider = choice.provider
     persistedModelChoice = choice.model
     ollamaAgent.restoreModelChoice(choice.model)

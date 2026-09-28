@@ -212,6 +212,7 @@ export const registerControlCenterIpc = (input: {
   ipcMain.handle(controlCenterIpcChannels.agentLoadoutPut, async (_event, raw: unknown) => {
     try {
       const parsed = agentLoadoutPutInputSchema.parse(raw)
+      if (parsed.provider === 'cloudflare-workers-ai') return err('PROVIDER_NOT_AVAILABLE_ON_DESKTOP', 'Cloudflare Workers AI está disponível somente na edição Web.')
       if (!agentCatalog.some((agent) => agent.id === parsed.agentId)) return err('AGENT_NOT_REGISTERED', 'O agente não está registrado no catálogo canônico.')
       if (parsed.provider === 'ollama' && parsed.model === null) return err('MODEL_REQUIRED', 'Loadout Ollama exige modelo explícito.')
       if (parsed.provider === 'codex-app-server' && parsed.model !== null) return err('MODEL_INVALID', 'Loadout Codex não pode embutir modelo Ollama.')
