@@ -25,6 +25,7 @@ type JsonRecord = Record<string, unknown>
 type RpcRequest = { action?: string; input?: unknown }
 type StoredToken = { accessToken: string; refreshToken?: string; expiresAt: string; scope: string[] }
 
+const WEB_PROVIDER = 'cloudflare-workers-ai' as const
 const DEFAULT_MODEL = '@cf/moonshotai/kimi-k2.6'
 const ok = <T>(value: T, extra?: JsonRecord): Response => Response.json({ ok: true, value, ...(extra ?? {}) })
 const fail = (code: string, message: string, status = 400, retryable = false): Response => Response.json({ ok: false, error: { code, message, retryable } }, { status })
@@ -102,14 +103,14 @@ const persistAgentTurn = async (env: Env, workspaceId: string, input: JsonRecord
   sessionMeta.updatedAt = now
   const turns = Array.isArray(session.turns) ? session.turns as JsonRecord[] : []
   const sessionId = String(sessionMeta.id)
-  turns.push({ id: crypto.randomUUID(), sessionId, role: 'user', text: typeof input.message === 'string' ? input.message : '', provider: 'ollama', model, threadId, turnId, createdAt: now })
-  if (assistantText !== '') turns.push({ id: crypto.randomUUID(), sessionId, role: 'assistant', text: assistantText, provider: 'ollama', model, threadId, turnId, createdAt: new Date().toISOString() })
+  turns.push({ id: crypto.randomUUID(), sessionId, role: 'user', text: typeof input.message === 'string' ? input.message : '', provider: WEB_PROVIDER, model, threadId, turnId, createdAt: now })
+  if (assistantText !== '') turns.push({ id: crypto.randomUUID(), sessionId, role: 'assistant', text: assistantText, provider: WEB_PROVIDER, model, threadId, turnId, createdAt: new Date().toISOString() })
   session.turns = turns.slice(-400)
   const bindings = Array.isArray(session.providerThreads) ? session.providerThreads as JsonRecord[] : []
-  session.providerThreads = [...bindings.filter((item) => item.provider !== 'ollama'), { provider: 'ollama', threadId, model }]
+  session.providerThreads = [...bindings.filter((item) => item.provider !== WEB_PROVIDER), { provider: WEB_PROVIDER, threadId, model }]
   await statePut(env, workspaceId, 'agent-session', session)
   const priorHistory = await stateGet<JsonRecord>(env, workspaceId, `agent-history:${threadId}`)
-  const history = priorHistory ?? { thread: { id: threadId, provider: 'ollama', workspaceRoot: '/workspace', model, createdAt: now, updatedAt: now }, turns: [], events: [] }
+  const history = priorHistory ?? { thread: { id: threadId, provider: WEB_PROVIDER, workspaceRoot: '/workspace', model, createdAt: now, updatedAt: now }, turns: [], events: [] }
   ;(history.thread as JsonRecord).updatedAt = now
   const historyTurns = Array.isArray(history.turns) ? history.turns as JsonRecord[] : []
   historyTurns.push({ id: crypto.randomUUID(), threadId, mode: typeof input.mode === 'string' ? input.mode : 'CHAT', inputHash: await sha256(typeof input.message === 'string' ? input.message : ''), createdAt: now })
@@ -152,9 +153,9 @@ const createProposal = async (request: Request, env: Env, workspaceId: string, i
   const effect = {
     id: effectId, capability: 'workspace.write', operation: exists.exists ? 'REPLACE' : 'CREATE', target: relativePath,
     payloadHash: await sha256(content), risk: 'LOW', expectedTargetHash,
-    source: { kind: 'AGENT_PROPOSAL', provider: 'ollama', threadId: String(turn.threadId), turnId: String(turn.turnId), toolCallId, proposalId, tool: 'workspace.write' }
+    source: { kind: 'AGENT_PROPOSAL', provider: WEB_PROVIDER, threadId: String(turn.threadId), turnId: String(turn.turnId), toolCallId, proposalId, tool: 'workspace.write' }
   }
-  const proposal = { id: proposalId, executionId: proposalContext.executionId, stepId: proposalContext.stepId, provider: 'ollama', threadId: String(turn.threadId), turnId: String(turn.turnId), toolCallId, tool: 'workspace.write', effect, createdAt: new Date().toISOString() }
+  const proposal = { id: proposalId, executionId: proposalContext.executionId, stepId: proposalContext.stepId, provider: WEB_PROVIDER, threadId: String(turn.threadId), turnId: String(turn.turnId), toolCallId, tool: 'workspace.write', effect, createdAt: new Date().toISOString() }
   await statePut(env, workspaceId, `proposal:${proposalId}`, { proposal, content, status: 'PENDING_REVIEW' })
   const planned = await stateGet<JsonRecord>(env, workspaceId, `plan:${proposalContext.executionId}`)
   if (planned !== null && planned.plan !== null && typeof planned.plan === 'object') {
