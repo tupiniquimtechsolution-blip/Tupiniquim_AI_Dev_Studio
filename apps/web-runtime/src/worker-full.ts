@@ -1,5 +1,12 @@
 import { getSandbox } from '@cloudflare/sandbox'
 import { WEB_PROVIDER, resolveWebModel } from './model-catalog'
+import {
+  WORKSPACE_BACKUP_STATE_KEY,
+  WORKSPACE_BACKUP_TTL_SECONDS,
+  WORKSPACE_RESTORE_MARKER,
+  workspaceBackupName,
+  workspaceBackupReadiness
+} from './workspace-backup'
 import legacyWorker, { Sandbox } from './worker'
 export { Sandbox }
 export { WebState } from './web-state'
@@ -20,6 +27,11 @@ type Env = {
   WEB_BOOTSTRAP_REF?: string
   GOOGLE_TASKS_CLIENT_ID?: string
   GOOGLE_TASKS_CLIENT_SECRET?: string
+  WEB_WORKSPACE_BACKUP_ENABLED?: string
+  BACKUP_BUCKET_NAME?: string
+  CLOUDFLARE_ACCOUNT_ID?: string
+  R2_ACCESS_KEY_ID?: string
+  R2_SECRET_ACCESS_KEY?: string
 }
 
 type JsonRecord = Record<string, unknown>
@@ -71,6 +83,49 @@ const ensureWorkspace = async (env: Env, workspaceId: string): Promise<ReturnTyp
   const exists = await sandbox.exists('/workspace')
   if (!exists.exists) await sandbox.mkdir('/workspace', { recursive: true })
   return sandbox
+}
+
+type WorkspaceBackupHandle = Awaited<ReturnType<ReturnType<typeof sandboxFor>['createBackup']>>
+
+const workspacePersistenceStatus = (env: Env): JsonRecord => {
+  const readiness = workspaceBackupReadiness(env)
+  return readiness.state === 'READY'
+    ? { state: 'READY', configured: true }
+    : { state: readiness.state, configured: false, missing: readiness.missing }
+}
+
+const restoreWorkspaceCheckpoint = async (env: Env, workspaceId: string, sandbox: ReturnType<typeof sandboxFor>): Promise<JsonRecord> => {
+  const readiness = workspaceBackupReadiness(env)
+  if (readiness.state === 'DISABLED') return { state: 'DISABLED', configured: false }
+  if (readiness.state === 'MISCONFIGURED') return { state: 'MISCONFIGURED', configured: false, missing: readiness.missing }
+
+  const marker = await sandbox.exists(WORKSPACE_RESTORE_MARKER)
+  if (marker.exists) return { state: 'ALREADY_INITIALIZED', configured: true }
+
+  const backup = await stateGet<WorkspaceBackupHandle>(env, workspaceId, WORKSPACE_BACKUP_STATE_KEY)
+  if (backup === null) return { state: 'EMPTY', configured: true }
+
+  await sandbox.restoreBackup(backup)
+  await sandbox.writeFile(WORKSPACE_RESTORE_MARKER, new Date().toISOString())
+  return { state: 'RESTORED', configured: true, backupId: String((backup as unknown as JsonRecord).id ?? '') }
+}
+
+const createWorkspaceCheckpoint = async (env: Env, workspaceId: string, sandbox: ReturnType<typeof sandboxFor>): Promise<JsonRecord> => {
+  const readiness = workspaceBackupReadiness(env)
+  if (readiness.state === 'DISABLED') return { state: 'DISABLED', configured: false }
+  if (readiness.state === 'MISCONFIGURED') {
+    throw new Error(`Workspace backup habilitado, mas incompleto: ${readiness.missing.join(', ')}`)
+  }
+
+  const backup = await sandbox.createBackup({
+    dir: '/workspace',
+    name: workspaceBackupName(workspaceId),
+    ttl: WORKSPACE_BACKUP_TTL_SECONDS,
+    gitignore: true
+  })
+  await statePut(env, workspaceId, WORKSPACE_BACKUP_STATE_KEY, backup)
+  await sandbox.writeFile(WORKSPACE_RESTORE_MARKER, new Date().toISOString())
+  return { state: 'SNAPSHOT', configured: true, backupId: String((backup as unknown as JsonRecord).id ?? '') }
 }
 
 const defaultProfile = () => ({
@@ -206,13 +261,39 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
   switch (action) {
     case 'full.workspace.bootstrap': {
       const sandbox = await ensureWorkspace(env, workspaceId)
+      const persistence = await restoreWorkspaceCheckpoint(env, workspaceId, sandbox)
+      if (persistence.state === 'MISCONFIGURED') {
+        return fail('WORKSPACE_PERSISTENCE_MISCONFIGURED', `Persistência Web incompleta: ${String((persistence.missing as string[] | undefined)?.join(', ') ?? '')}`, 503, false)
+      }
       const git = await sandbox.exists('/workspace/.git')
       if (!git.exists && env.WEB_BOOTSTRAP_REPO) {
         const ref = env.WEB_BOOTSTRAP_REF?.trim() || 'main'
         const clone = await sandbox.exec(`git clone --depth 1 --branch ${JSON.stringify(ref)} ${JSON.stringify(env.WEB_BOOTSTRAP_REPO)} .`, { cwd: '/workspace', timeout: 120_000 })
         if (!clone.success) return fail('WORKSPACE_BOOTSTRAP_FAILED', clone.stderr || 'Falha ao preparar repositório Web.', 500, true)
       }
-      return ok('/workspace')
+      await sandbox.writeFile(WORKSPACE_RESTORE_MARKER, new Date().toISOString())
+      return ok('/workspace', { persistence })
+    }
+    case 'full.workspace.persistence-status': return ok(workspacePersistenceStatus(env))
+    case 'full.workspace.checkpoint': {
+      const sandbox = await ensureWorkspace(env, workspaceId)
+      try {
+        return ok(await createWorkspaceCheckpoint(env, workspaceId, sandbox))
+      } catch (cause) {
+        return fail('WORKSPACE_BACKUP_FAILED', cause instanceof Error ? cause.message : 'Falha ao persistir workspace Web.', 503, true)
+      }
+    }
+    case 'workspace.write': {
+      const response = await legacyWorker.fetch(request.clone(), env)
+      const envelope = await response.clone().json() as JsonRecord
+      if (envelope.ok !== true) return response
+      try {
+        const sandbox = await ensureWorkspace(env, workspaceId)
+        const persistence = await createWorkspaceCheckpoint(env, workspaceId, sandbox)
+        return Response.json({ ...envelope, persistence }, { status: response.status })
+      } catch (cause) {
+        return fail('WORKSPACE_BACKUP_FAILED', cause instanceof Error ? cause.message : 'Arquivo escrito, mas o checkpoint R2 falhou.', 503, true)
+      }
     }
     case 'agent.send': return handleAgentSend(request, env, workspaceId, input)
     case 'full.agent.session': return ok(await stateGet<JsonRecord>(env, workspaceId, 'agent-session'))
@@ -265,10 +346,16 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
       const sandbox = await ensureWorkspace(env, workspaceId); const target = `/workspace/${relativePath}`; const exists = await sandbox.exists(target); const expected = typeof effect.expectedTargetHash === 'string' ? effect.expectedTargetHash : null
       if (expected !== null && exists.exists) { const currentFile = await sandbox.readFile(target, { encoding: 'utf-8' }); if (await sha256(typeof currentFile.content === 'string' ? currentFile.content : '') !== expected) return fail('STALE_WRITE', 'Arquivo mudou após a aprovação.', 409) }
       const parent = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''; if (parent !== '') await sandbox.mkdir(`/workspace/${parent}`, { recursive: true }); await sandbox.writeFile(target, content)
+      let persistence: JsonRecord
+      try {
+        persistence = await createWorkspaceCheckpoint(env, workspaceId, sandbox)
+      } catch (cause) {
+        return fail('WORKSPACE_BACKUP_FAILED', cause instanceof Error ? cause.message : 'Proposta aplicada, mas o checkpoint R2 falhou.', 503, true)
+      }
       stored.status = 'MATERIALIZED'; await statePut(env, workspaceId, `proposal:${proposalId}`, stored)
       const executionId = String(proposal.executionId); const current = await stateGet<JsonRecord>(env, workspaceId, `plan:${executionId}`); if (current !== null) { const execution = current.execution as JsonRecord; const completed = Array.isArray(execution.completedEffectIds) ? execution.completedEffectIds as string[] : []; execution.completedEffectIds = [...completed, String(effect.id)]; execution.state = 'COMPLETED'; execution.updatedAt = now; await statePut(env, workspaceId, `plan:${executionId}`, current) }
       await appendExecutionEvent(env, workspaceId, executionId, { id: crypto.randomUUID(), at: now, state: 'COMPLETED', category: 'TOOL', title: 'workspace.write materializado.', detail: relativePath, severity: 'SUCCESS' })
-      return ok({ effectId: String(effect.id), relativePath, hash: await sha256(content), modifiedAt: now })
+      return ok({ effectId: String(effect.id), relativePath, hash: await sha256(content), modifiedAt: now, persistence })
     }
     case 'full.prompt.list': return ok(await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? [])
     case 'full.prompt.save': {
