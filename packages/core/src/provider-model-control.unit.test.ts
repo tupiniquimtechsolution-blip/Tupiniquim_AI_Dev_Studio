@@ -7,7 +7,8 @@ const state: UnifiedProviderState = {
   selectedModel: 'qwen2.5-coder:3b',
   localModels: [
     { name: 'qwen2.5-coder:3b', provider: 'ollama', available: true, selected: true },
-    { name: 'qwen3:8b', provider: 'ollama', available: false, selected: false }
+    { name: 'qwen3:8b', provider: 'ollama', available: false, selected: false },
+    { name: '@cf/moonshotai/kimi-k2.6', provider: 'cloudflare-workers-ai', available: true, selected: false }
   ]
 }
 
@@ -26,6 +27,14 @@ describe('provider/model control', () => {
 
   it('mantém Codex sem modelo local acoplado', () => {
     expect(validateExplicitProviderSelection(state, { provider: 'codex-app-server', model: null })).toEqual({ provider: 'codex-app-server', model: null })
+  })
+
+  it('aceita Workers AI somente com modelo cloud disponível e explícito', () => {
+    expect(validateExplicitProviderSelection(
+      { ...state, provider: 'cloudflare-workers-ai', selectedModel: '@cf/moonshotai/kimi-k2.6' },
+      { provider: 'cloudflare-workers-ai', model: '@cf/moonshotai/kimi-k2.6' }
+    )).toEqual({ provider: 'cloudflare-workers-ai', model: '@cf/moonshotai/kimi-k2.6' })
+    expect(providerCanSend({ ...state, provider: 'cloudflare-workers-ai', selectedModel: null })).toBe(false)
   })
 
   it('bloqueia envio quando runtime/modelo não estão prontos', () => {
