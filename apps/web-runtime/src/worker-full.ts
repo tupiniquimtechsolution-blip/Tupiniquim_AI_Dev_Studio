@@ -1,5 +1,5 @@
-import { getSandbox } from '@cloudflare/sandbox'
 import { WEB_PROVIDER, resolveWebModel } from './model-catalog'
+import { getRemoteSandbox, remoteRuntimeStatus, type RemoteRuntimeConfig } from './remote-runtime'
 import {
   WORKSPACE_BACKUP_STATE_KEY,
   WORKSPACE_BACKUP_TTL_SECONDS,
@@ -7,18 +7,20 @@ import {
   workspaceBackupName,
   workspaceBackupReadiness
 } from './workspace-backup'
-import legacyWorker, { Sandbox } from './worker'
-export { Sandbox }
-export { WebState } from './web-state'
+import legacyWorker from './worker'
 
-type SandboxNamespace = Parameters<typeof getSandbox>[0]
+export class Sandbox {
+  async fetch(): Promise<Response> {
+    return Response.json({ ok: false, error: { code: 'SANDBOX_RETIRED', message: 'Cloudflare Sandbox foi substituído pelo Tupiniquim Remote Runtime.', retryable: false } }, { status: 410 })
+  }
+}
+export { WebState } from './web-state'
 type WorkersAi = { run(model: string, input: Record<string, unknown>): Promise<unknown> }
 type AssetBinding = { fetch(request: Request): Promise<Response> }
 type DurableObjectStub = { fetch(input: Request | string, init?: RequestInit): Promise<Response> }
 type DurableObjectNamespace = { idFromName(name: string): unknown; get(id: unknown): DurableObjectStub }
 
-type Env = {
-  Sandbox: SandboxNamespace
+type Env = RemoteRuntimeConfig & {
   AI: WorkersAi
   ASSETS: AssetBinding
   STATE: DurableObjectNamespace
@@ -77,7 +79,7 @@ const stateDelete = async (env: Env, workspaceId: string, key: string): Promise<
   await stateStub(env, workspaceId).fetch(`https://state.local/value?key=${encodeURIComponent(key)}`, { method: 'DELETE' })
 }
 
-const sandboxFor = (env: Env, workspaceId: string) => getSandbox(env.Sandbox, `tupiniquim-${workspaceId}`, { transport: 'rpc', sleepAfter: '30m', labels: { product: 'tupiniquim-dev-ai', surface: 'web-full' } })
+const sandboxFor = (env: Env, workspaceId: string) => getRemoteSandbox(env, workspaceId)
 const ensureWorkspace = async (env: Env, workspaceId: string): Promise<ReturnType<typeof sandboxFor>> => {
   const sandbox = sandboxFor(env, workspaceId)
   const exists = await sandbox.exists('/workspace')
@@ -260,6 +262,10 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
   const now = new Date().toISOString()
   switch (action) {
     case 'full.workspace.bootstrap': {
+      const runtime = await remoteRuntimeStatus(env)
+      if (runtime.state !== 'READY') {
+        return ok('/workspace', { runtime, persistence: { state: 'REMOTE_RUNTIME_OFFLINE', configured: false } })
+      }
       const sandbox = await ensureWorkspace(env, workspaceId)
       const persistence = await restoreWorkspaceCheckpoint(env, workspaceId, sandbox)
       if (persistence.state === 'MISCONFIGURED') {
@@ -268,8 +274,11 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
       const git = await sandbox.exists('/workspace/.git')
       if (!git.exists && env.WEB_BOOTSTRAP_REPO) {
         const ref = env.WEB_BOOTSTRAP_REF?.trim() || 'main'
-        const clone = await sandbox.exec(`git clone --depth 1 --branch ${JSON.stringify(ref)} ${JSON.stringify(env.WEB_BOOTSTRAP_REPO)} .`, { cwd: '/workspace', timeout: 120_000 })
-        if (!clone.success) return fail('WORKSPACE_BOOTSTRAP_FAILED', clone.stderr || 'Falha ao preparar repositório Web.', 500, true)
+        try {
+          await sandbox.bootstrapRepo(env.WEB_BOOTSTRAP_REPO, ref)
+        } catch (cause) {
+          return fail('WORKSPACE_BOOTSTRAP_FAILED', cause instanceof Error ? cause.message : 'Falha ao preparar repositório Web.', 500, true)
+        }
       }
       await sandbox.writeFile(WORKSPACE_RESTORE_MARKER, new Date().toISOString())
       return ok('/workspace', { persistence })
@@ -381,7 +390,14 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
     case 'full.control.loadouts': return ok(await stateGet<JsonRecord[]>(env, workspaceId, `loadouts:${String(input.projectId ?? 'default')}`) ?? [])
     case 'full.control.loadout-put': { const key = `loadouts:${String(input.projectId ?? 'default')}`; const items = await stateGet<JsonRecord[]>(env, workspaceId, key) ?? []; const view = { projectId: input.projectId, agentId: input.agentId, provider: input.provider, model: input.model ?? null, skillIds: Array.isArray(input.skillIds) ? input.skillIds : [], permissionProfile: input.permissionProfile, runtimeExecutionAuthorized: false }; await statePut(env, workspaceId, key, [...items.filter((item) => item.agentId !== view.agentId), view]); return ok(view) }
     case 'full.control.gate': {
-      const gateId = String(input.gateId ?? ''); const commands: Record<string, string> = { 'quality-gates': 'pnpm lint && pnpm typecheck && pnpm test:unit', 'dependency-audit': 'pnpm audit --audit-level high', 'secret-scan': "git grep -nE '(sk-(proj-)?[A-Za-z0-9_-]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)' -- . ':!pnpm-lock.yaml' || true", 'security-review': 'pnpm test:security', 'privacy-lgpd': "git grep -niE '(lgpd|privacy|privacidade)' -- AGENTS.md docs .agent | head -n 50", 'accessibility-wcag': "git grep -niE '(aria-|accessib|wcag)' -- apps packages | head -n 100", 'architecture-review': 'pnpm typecheck', 'supply-chain': 'pnpm install --frozen-lockfile', 'release-checklist': 'pnpm build' }; const command = commands[gateId]; if (!command) return fail('UNKNOWN_GATE', 'Gate desconhecido.'); const sandbox = await ensureWorkspace(env, workspaceId); const result = await sandbox.exec(command, { cwd: '/workspace', timeout: 180_000 }); return ok({ gateId, state: result.success ? 'PASS' : 'FAIL', evidence: (result.stdout + '\n' + result.stderr).trim().slice(-12_000) || (result.success ? 'Comando concluído.' : 'Comando falhou.') })
+      const gateId = String(input.gateId ?? '')
+      const allowed = new Set(['quality-gates', 'dependency-audit', 'secret-scan', 'security-review', 'privacy-lgpd', 'accessibility-wcag', 'architecture-review', 'supply-chain', 'release-checklist'])
+      if (!allowed.has(gateId)) return fail('UNKNOWN_GATE', 'Gate desconhecido.')
+      const runtime = await remoteRuntimeStatus(env)
+      if (runtime.state !== 'READY') return fail('REMOTE_RUNTIME_OFFLINE', 'O Tupiniquim Remote Runtime precisa estar conectado para executar gates.', 503, true)
+      const sandbox = await ensureWorkspace(env, workspaceId)
+      const result = await sandbox.runGate(gateId)
+      return ok({ gateId, state: result.state, evidence: result.evidence })
     }
     case 'google-tasks.status': return ok(await googleStatus(env, workspaceId))
     case 'google-tasks.connect': {
@@ -417,7 +433,11 @@ export default {
     if (url.pathname === '/api/health') {
       const response = await legacyWorker.fetch(request.clone(), env)
       const body = await response.clone().json() as JsonRecord
-      return Response.json({ ...body, workspacePersistence: workspacePersistenceStatus(env) }, { status: response.status })
+      return Response.json({
+        ...body,
+        executionRuntime: await remoteRuntimeStatus(env),
+        workspacePersistence: workspacePersistenceStatus(env)
+      }, { status: response.status })
     }
     if (url.pathname === '/api/google-tasks/callback') return handleGoogleCallback(request, env)
     if (url.pathname === '/api/studio' && request.method === 'POST') {
