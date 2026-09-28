@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      WEB_SMOKE_BASE_URL: ${{ vars.WEB_PUBLIC_URL != '' && vars.WEB_PUBLIC_URL || 'https://tupiniquim.dev' }}
+      WEB_SMOKE_BASE_URL: ${{ vars.WEB_PUBLIC_URL != '' && vars.WEB_PUBLIC_URL || 'https://tupiniquim-dev-ai-web.tupiniquim-techsolution.workers.dev' }}
       WEB_SMOKE_REQUIRE_PRODUCTION_READY: 'false'
       WEB_SMOKE_ACCESS_CLIENT_ID: ${{ secrets.WEB_SMOKE_ACCESS_CLIENT_ID }}
       WEB_SMOKE_ACCESS_CLIENT_SECRET: ${{ secrets.WEB_SMOKE_ACCESS_CLIENT_SECRET }}
