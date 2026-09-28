@@ -60,6 +60,10 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
 
   useEffect(() => {
     if (!props.open) return
+    if (!providerOptions.includes(loadoutProvider)) {
+      setLoadoutProvider(providerOptions[0] ?? 'codex-app-server')
+      setLoadoutModel('')
+    }
     let active = true
     void window.controlCenter.listAgents().then((result) => {
       if (!active || !result.ok) return
