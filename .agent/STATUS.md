@@ -1,102 +1,129 @@
 # Status
 
-Atualizado em: 2026-09-24
+Atualizado em: 2026-09-28
 
-## Estado atual
+## Estado operacional atual
 
-- Estratégia operacional: **CLOUD-FIRST**.
-- GitHub: fonte de verdade e ambiente canônico de desenvolvimento/CI/checkpoints.
-- PR #32 / branch `arena/01a0c8ba-tupiniquim-ai-dev-studio`: RC1 Windows **DRAFT / NÃO MERGEADO / WINDOWS-DEFERRED**.
-- PR #33 / `cloud/master-wave-2-foundation`: fundação cloud-first **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
-- PR #36 / `cloud/mw2-research-knowledge-registries`: MW2 **CLOUD-GREEN / DRAFT / NÃO MERGEADO**.
-- PR #39 / `cloud/mw3-dev-studio-hardening-dogfood`: MW3 **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD / DRAFT / NÃO MERGEADO**.
-- PR #41 / `cloud/mw4-agent-registry-project-threads`: MW4 **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD / DRAFT / NÃO MERGEADO**; Issue #40 fechada `completed`.
-- PR #43 / `cloud/mw5-multimodal-automation-voice`: MW5 **CLOUD-GREEN FUNCIONAL / DRAFT / NÃO MERGEADO**; fechamento formal depende do HEAD documental final.
-- `package:win` chegou a PASS no Windows físico, mas RC1 completa não foi declarada `RELEASE-GREEN`.
-- Cloudflare preview + MW0–MW5 passam dry-run; MW2–MW4 estão `WAVE_STATE=CLOUD_GREEN` e MW5 será promovida no checkpoint documental final; `RELEASE_STATE` permanece `WINDOWS_DEFERRED`.
-- Supabase dedicado permanece sem DDL remoto implícito pelas MW2–MW5.
-- Google Drive: upload completo recebido e organizado como acervo/snapshot; GitHub continua fonte de verdade.
+- Estratégia: **CLOUD-FIRST**, com GitHub como fonte de verdade para código, CI, Issues, PRs, evidências e decisões.
+- Branch de integração canônica: `integration/ai-lab-toolbox-unified`.
+- HEAD auditado antes deste checkpoint documental: `4cf2660e2cf2f1ca2f5a71fd0f3c551d67b9eca8`.
+- Cloud Quality Gate do HEAD: run `36436621157` — **SUCCESS**.
+- Web Full está implementado com Workers AI, Sandbox/Containers, Durable Objects, persistência R2 preparada, Cloudflare Access preparado e Product Smoke automatizado.
+- O deploy de produção está **BLOCKED por infraestrutura Cloudflare** em `/accounts/<account>/containers/me` — Issue #53.
+- Não remover Sandbox/Containers para contornar o blocker.
 
-## Estados formais
+## Web Full — entregas P0 integradas
 
-- `CLOUD-GREEN`: gates cloud compatíveis passam no GitHub Actions.
-- `WINDOWS-DEFERRED`: certificação/hardware Windows real permanece pendente quando aplicável.
-- `NOT_CONFIGURED`: provider/service externa ainda não recebeu configuração explícita.
-- `RELEASE-GREEN`: cloud + certificações obrigatórias de release comprovadas.
+- PR #52 — provider/runtime/model separados, Workers AI como provider real, catálogo/default Web, filtragem por runtime e workspace Web auto-bootstrap: **MERGED**.
+- PR #54 — backup/restore durável do workspace via R2: **MERGED**.
+- PR #55 — validação criptográfica de JWT Cloudflare Access + isolamento por identidade: **MERGED**.
+- PR #56 — Service Auth verificado para smoke/CI: **MERGED**.
+- PR #57 — Web Product Smoke Gate contra URL implantada: **MERGED**.
+- PR #58 — terminal exibe semântica real do runtime Web vs Desktop: **MERGED**.
 
-## Master Waves
+## Estado por camada
 
-- MW0: CONCLUÍDA.
-- MW1: desenvolvimento cloud consolidado; RC1 física `WINDOWS-DEFERRED`.
-- MW2: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
-- MW3: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
-- MW4: **CLOUD-GREEN / CONCLUÍDA NA TRILHA CLOUD**.
-- MW5: **CLOUD-GREEN FUNCIONAL / CHECKPOINT DOCUMENTAL FINAL**.
+### Código
+**GREEN**
 
-## Master Wave 5 — entregas
+### CI
+**GREEN**
 
-- contratos strict de sources, operations, intents, decisions, provenance e voice consent;
-- `Mw5CapabilityRuntime` provider-neutral e fail-closed;
-- Open-Generative-AI registrado como capability source do Illustrator sem seleção automática de provider/model;
-- Gemini `/reveal`, `/teardown`, `/explodedview` preservados como aliases internos, com `officialGeminiCommand=false`;
-- Pocket TTS registrado como source local; execução real continua `WINDOWS_DEFERRED` quando não reproduzível em CI;
-- voice cloning exige consentimento ativo no mesmo projeto + provenance da amostra;
-- OpenReply permanece `NOT_CONFIGURED` até setup explícito e external write exige API oficial + network + Policy + approval;
-- `kimi-k3-in-c` permanece experimental/research-only;
-- `asset:create`, `asset:edit` e `network:external-write` são mapeados para capabilities canônicas, mas a camada MW5 nunca concede execução direta;
-- `runtimeExecutionAuthorized=false` é invariável; materialização continua em ApprovalStore/PlanApprovalService + AuditLog;
-- `Mw5CapabilityJsonStore` persiste provenance/consent atomicamente no data root e preserva isolamento após restart;
-- security negatives e dogfood MW5 cobrem consentimento, provenance, API oficial, FULL_ACCESS, experimental source e restart.
-
-## Evidência MW5 funcional
-
-HEAD funcional: `1db71a96e80b2bd1dfce693a78bfcfa605f3eb18`.
-
-Cloud Quality Gate run `36042725979`: **PASS**
+Gates do HEAD atual:
 - lint PASS;
 - typecheck PASS;
-- unit — 34 arquivos / 265 testes;
-- integration — 15 arquivos / 104 testes; 4 skips explícitos de ambiente/live;
-- security — 8 arquivos / 55 testes;
-- dogfood — 3 arquivos / 13 testes (MW3 A–K + MW4 + MW5);
+- unit PASS;
+- integration PASS;
+- security PASS;
+- dogfood PASS;
 - build PASS;
-- Cloudflare preview + MW0–MW5 dry-runs PASS.
+- Cloudflare dry-run PASS.
 
-Documentos MW5:
-- `.agent/MW5_EXECUTION_PLAN.md`
-- `.agent/MW5_SOURCE_REVIEW.md`
-- `.agent/MW5_TEST_RESULTS.md`
-- `.agent/MW5_HANDOFF.md`
+### Deploy
+**BLOCKED — CLOUDFLARE ACCOUNT / ENTITLEMENT / CREDENTIAL**
 
-## Google Drive
+Sintoma:
+- build passa;
+- imagem Sandbox é construída;
+- Worker/assets são uploaded;
+- `wrangler deploy` falha ao consultar `/containers/me`.
 
-O upload bruto foi classificado sem tornar Drive fonte de verdade:
-- source snapshot preservado em `07_ARCHIVE/2026-09-24_REPO_SOURCE_SNAPSHOT`;
-- `.env*` segregados em `EXCLUDED_SENSITIVE` sem leitura;
-- `node_modules`/`.cache` em `EXCLUDED_GENERATED`;
-- `test-results`/`playwright-report` em `03_EVIDENCE`;
-- `out`/`release` em `04_BUILDS_RELEASES`;
-- itens que o conector recusou mover permanecem exceções explícitas no inbox, sem tentativa de bypass.
+Issue canônica: #53.
 
-## Segurança / autoridade
+### Persistência R2
+**IMPLEMENTADA / CLOUD CONFIG PENDING**
 
-- `agent != provider != model != tool != skill != source_repository`;
-- source registrada != adotada != configurada != aprovada != executada;
-- nenhum Agent/Registry/Skill/Tool/MCP/source concede runtime authority por existência;
-- FULL_ACCESS não remove ApprovalStore/PlanApprovalService;
-- nenhum secret real ou DDL Supabase MW5 foi introduzido;
-- hardware/OAuth/provider externo real não recebe PASS por inferência.
+Código e documentação:
+- `apps/web-runtime/src/workspace-backup.ts`
+- `docs/WEB/WORKSPACE_R2_PERSISTENCE.md`
+- ADR 0015
 
-## Pendências após MW5
+Produção ainda requer:
+- bucket;
+- credenciais R2;
+- vars/secrets;
+- `WEB_WORKSPACE_BACKUP_ENABLED=true`;
+- teste destrutivo de restore.
 
-- certificar RC1 Windows física para eventual `RELEASE-GREEN`;
-- configurar/testar serviços externos somente por fluxo explícito quando desejado;
-- Issue #37 de sincronização autenticada skills.sh permanece independente;
-- integração/merge dos PRs empilhados requer decisão explícita.
+### Cloudflare Access
+**IMPLEMENTADO / CLOUD CONFIG PENDING**
 
-## Próximo passo
+Código e documentação:
+- `apps/web-runtime/src/access-auth.ts`
+- `docs/WEB/CLOUDFLARE_ACCESS.md`
+- ADR 0016
 
-1. Validar o HEAD documental final MW5 no Cloud Quality Gate.
-2. Fechar Issue #42 como `completed` somente após GREEN.
-3. Manter PR #43 DRAFT/não mergeado.
-4. Com MW5 concluída, considerar a sequência cloud Master Waves 0–5 encerrada; qualquer nova wave exige novo planejamento/versionamento explícito.
+Produção ainda requer:
+- aplicação Access self-hosted;
+- Audience;
+- Team Domain;
+- Service Token para smoke;
+- `WEB_ALLOW_ANONYMOUS=false`.
+
+### Product Smoke
+**IMPLEMENTADO / WAITING FOR DEPLOYABLE URL**
+
+Workflow:
+- `.github/workflows/web-product-smoke.yml`
+
+Documentação:
+- `docs/WEB/PRODUCT_SMOKE.md`
+
+## Distribuições
+
+### Web
+Prioridade operacional atual.
+
+Status: **CODE GREEN / CI GREEN / DEPLOY BLOCKED BY CLOUDFLARE INFRA**
+
+### Windows/Desktop
+Mantém Codex App Server + Ollama, runtime local e certificações específicas.
+
+Status físico/hardware continua separado da Web.
+
+### USB/Portable
+Permanece distribuição da mesma plataforma e possui gate físico próprio.
+
+## Invariantes
+
+- Agent != Provider != Runtime != Model != Tool != Skill != Source Repository.
+- Build PASS != produto funcional.
+- CI GREEN != produção certificada.
+- Modelo padrão inicial compatível != fallback automático.
+- Nenhuma troca silenciosa de provider/model durante sessão.
+- Ações privilegiadas continuam fail-closed sob Policy/Approval/Audit.
+- Ausência de ambiente/entitlement/credencial = BLOCKED/NOT_CONFIGURED, nunca PASS fictício.
+
+## Pendência crítica única para avanço Web
+
+Issue #53:
+
+1. Workers Paid ativo na account Cloudflare usada pelo projeto;
+2. Containers habilitado/entitled;
+3. credencial do Cloudflare Build autorizada para Workers + Containers;
+4. deploy do HEAD canônico passar;
+5. ativar/configurar R2;
+6. ativar/configurar Access;
+7. executar Web Product Smoke funcional;
+8. executar Web Product Smoke `production_ready=true`;
+9. somente então considerar Web production-ready.
