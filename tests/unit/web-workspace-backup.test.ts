@@ -18,7 +18,7 @@ describe('Web workspace backup configuration', () => {
 
   it('lista configuração/secrets ausentes sem expor valores', () => {
     expect(workspaceBackupReadiness({ WEB_WORKSPACE_BACKUP_ENABLED: 'true' })).toEqual({
-      state: 'DISABLED',
+      state: 'MISCONFIGURED',
       configured: false,
       missing: ['BACKUP_BUCKET_NAME', 'CLOUDFLARE_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']
     })
