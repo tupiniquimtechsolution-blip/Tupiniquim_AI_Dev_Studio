@@ -4,22 +4,13 @@ Atualizado em: 2026-09-28
 
 ## Estado operacional atual
 
-- Estratégia: **CLOUD-FIRST**, com GitHub como fonte de verdade para código, CI, Issues, PRs, evidências e decisões.
-- Branch de integração canônica: `integration/ai-lab-toolbox-unified`.
-- HEAD auditado antes deste checkpoint documental: `4cf2660e2cf2f1ca2f5a71fd0f3c551d67b9eca8`.
-- Cloud Quality Gate do HEAD: run `36436621157` — **SUCCESS**.
-- Web Full está implementado com Workers AI, Sandbox/Containers, Durable Objects, persistência R2 preparada, Cloudflare Access preparado e Product Smoke automatizado.
-- O deploy de produção está **BLOCKED por infraestrutura Cloudflare** em `/accounts/<account>/containers/me` — Issue #53.
-- Não remover Sandbox/Containers para contornar o blocker.
-
-## Web Full — entregas P0 integradas
-
-- PR #52 — provider/runtime/model separados, Workers AI como provider real, catálogo/default Web, filtragem por runtime e workspace Web auto-bootstrap: **MERGED**.
-- PR #54 — backup/restore durável do workspace via R2: **MERGED**.
-- PR #55 — validação criptográfica de JWT Cloudflare Access + isolamento por identidade: **MERGED**.
-- PR #56 — Service Auth verificado para smoke/CI: **MERGED**.
-- PR #57 — Web Product Smoke Gate contra URL implantada: **MERGED**.
-- PR #58 — terminal exibe semântica real do runtime Web vs Desktop: **MERGED**.
+- Estratégia: **CLOUD-FIRST / ZERO-COST-FIRST**, com GitHub como fonte de verdade.
+- Branch canônica: `integration/ai-lab-toolbox-unified`.
+- HEAD operacional auditado: `d0b59c5ece7f001667e2318833d65915e36dccae`.
+- Cloudflare Containers pagos foram removidos da arquitetura Web.
+- Cloudflare Free hospeda UI/Worker/Workers AI/Durable state.
+- Execução de SO é fornecida pelo **Tupiniquim Remote Runtime** opcional no hardware do usuário.
+- Modelo Web padrão gratuito: `@cf/zai-org/glm-4.7-flash`.
 
 ## Estado por camada
 
@@ -29,101 +20,77 @@ Atualizado em: 2026-09-28
 ### CI
 **GREEN**
 
-Gates do HEAD atual:
-- lint PASS;
-- typecheck PASS;
-- unit PASS;
-- integration PASS;
-- security PASS;
-- dogfood PASS;
-- build PASS;
-- Cloudflare dry-run PASS.
+Cloud Quality permanece GREEN no fluxo de integração.
 
-### Deploy
-**BLOCKED — CLOUDFLARE ACCOUNT / ENTITLEMENT / CREDENTIAL**
+### Deploy Cloudflare
+**GREEN**
 
-Sintoma:
-- build passa;
-- imagem Sandbox é construída;
-- Worker/assets são uploaded;
-- `wrangler deploy` falha ao consultar `/containers/me`.
+O blocker antigo `/containers/me` foi eliminado.
 
-Issue canônica: #53.
+Evidência recente:
+- Workers Build do SHA `d0b59c5ece7f001667e2318833d65915e36dccae`: **SUCCESS**
+- Build ID: `7f4a7a95-3cca-471a-8d5f-456f04298186`
+- Version ID: `c6500336-9110-479a-ab59-4435b1c41bdc`
 
-### Persistência R2
-**IMPLEMENTADA / CLOUD CONFIG PENDING**
-
-Código e documentação:
-- `apps/web-runtime/src/workspace-backup.ts`
-- `docs/WEB/WORKSPACE_R2_PERSISTENCE.md`
-- ADR 0015
-
-Produção ainda requer:
-- bucket;
-- credenciais R2;
-- vars/secrets;
-- `WEB_WORKSPACE_BACKUP_ENABLED=true`;
-- teste destrutivo de restore.
-
-### Cloudflare Access
-**IMPLEMENTADO / CLOUD CONFIG PENDING**
-
-Código e documentação:
-- `apps/web-runtime/src/access-auth.ts`
-- `docs/WEB/CLOUDFLARE_ACCESS.md`
-- ADR 0016
-
-Produção ainda requer:
-- aplicação Access self-hosted;
-- Audience;
-- Team Domain;
-- Service Token para smoke;
-- `WEB_ALLOW_ANONYMOUS=false`.
-
-### Product Smoke
-**IMPLEMENTADO / WAITING FOR DEPLOYABLE URL**
+### Web Product Smoke
+**AUTOMAÇÃO FUNCIONAL / TARGET BLOQUEADO POR URL AUSENTE**
 
 Workflow:
-- `.github/workflows/web-product-smoke.yml`
+`.github/workflows/web-product-smoke.yml`
 
-Documentação:
-- `docs/WEB/PRODUCT_SMOKE.md`
+Gatilho canônico:
+- push em `integration/ai-lab-toolbox-unified`;
+- execução manual opcional.
 
-## Distribuições
+Evidência:
+- run `36477142690` disparado por push;
+- job `smoke-target`: FAIL/BLOCKED;
+- motivo: `WEB_SMOKE_BASE_URL` vazio;
+- `live-web-smoke`: SKIPPED por dependência do target.
 
-### Web
-Prioridade operacional atual.
+Isso não é falha de produto nem de build. É ausência do hostname público real no GitHub.
 
-Status: **CODE GREEN / CI GREEN / DEPLOY BLOCKED BY CLOUDFLARE INFRA**
+### Remote Runtime
+**IMPLEMENTADO / NÃO CONFIGURADO**
 
-### Windows/Desktop
-Mantém Codex App Server + Ollama, runtime local e certificações específicas.
+Capacidades quando conectado:
+- workspace;
+- filesystem;
+- Git;
+- terminal;
+- build;
+- testes;
+- persistência local.
 
-Status físico/hardware continua separado da Web.
+Sem gateway conectado:
+- chat/Workers AI continuam disponíveis;
+- capacidades de SO ficam explicitamente offline/fail-closed.
 
-### USB/Portable
-Permanece distribuição da mesma plataforma e possui gate físico próprio.
+## Próximo gate único
 
-## Invariantes
+Registrar uma URL pública real HTTPS em:
 
-- Agent != Provider != Runtime != Model != Tool != Skill != Source Repository.
-- Build PASS != produto funcional.
-- CI GREEN != produção certificada.
-- Modelo padrão inicial compatível != fallback automático.
-- Nenhuma troca silenciosa de provider/model durante sessão.
-- Ações privilegiadas continuam fail-closed sob Policy/Approval/Audit.
-- Ausência de ambiente/entitlement/credencial = BLOCKED/NOT_CONFIGURED, nunca PASS fictício.
+`vars.WEB_SMOKE_BASE_URL`
 
-## Pendência crítica única para avanço Web
+ou informar `base_url` manualmente ao workflow.
 
-Issue #53:
+Depois disso o smoke deve provar:
+1. `/api/health`;
+2. `runtime=cloudflare-edge`;
+3. `ai=workers-ai`;
+4. provider `cloudflare-workers-ai`;
+5. modelo padrão `@cf/zai-org/glm-4.7-flash`;
+6. chat real;
+7. resposta real;
+8. reload/recovery;
+9. capacidades de SO offline enquanto Remote Runtime não estiver conectado.
 
-1. Workers Paid ativo na account Cloudflare usada pelo projeto;
-2. Containers habilitado/entitled;
-3. credencial do Cloudflare Build autorizada para Workers + Containers;
-4. deploy do HEAD canônico passar;
-5. ativar/configurar R2;
-6. ativar/configurar Access;
-7. executar Web Product Smoke funcional;
-8. executar Web Product Smoke `production_ready=true`;
-9. somente então considerar Web production-ready.
+## Classificação atual
+
+- CODE: GREEN
+- CI: GREEN
+- CLOUDFLARE DEPLOY: GREEN
+- CONTAINERS PAID: REMOVIDO
+- LIVE WEB SMOKE: BLOCKED — PUBLIC URL NOT REGISTERED
+- REMOTE RUNTIME: IMPLEMENTED / NOT CONFIGURED
+- NOVA MENSALIDADE OBRIGATÓRIA: ZERO dentro das franquias Free
