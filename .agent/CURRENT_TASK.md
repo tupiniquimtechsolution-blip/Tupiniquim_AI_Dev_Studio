@@ -4,84 +4,58 @@ Atualizado em: 2026-09-28
 
 ## Objetivo
 
-Levar a edição **Tupiniquim Dev AI Web Full** do estado:
+Levar o Tupiniquim Dev AI Web Free de:
 
-`CODE/CI GREEN + CLOUD DEPLOY BLOCKED`
+`DEPLOY GREEN / SMOKE BLOCKED BY PUBLIC URL`
 
 para:
 
-`DEPLOY REAL + PRODUCT SMOKE GREEN + PRODUCTION-READY`
+`LIVE WEB SMOKE GREEN`
 
-sem remover Sandbox/Containers nem mascarar ausência de infraestrutura.
+sem custo recorrente obrigatório novo.
 
 ## Fonte de verdade
 
 - Branch: `integration/ai-lab-toolbox-unified`
 - Issue: #53
-- GitHub Actions: Cloud Quality Gate
-- Product Smoke: `.github/workflows/web-product-smoke.yml`
+- Workflow: `.github/workflows/web-product-smoke.yml`
 
-## Estado implementado
+## Arquitetura atual
 
-PRs integrados:
-- #52 provider/runtime/model + workspace bootstrap
-- #54 R2 backup/restore
-- #55 Cloudflare Access JWT
-- #56 Service Auth
-- #57 Product Smoke
-- #58 terminal runtime
+Cloudflare Free:
+- Worker;
+- Assets;
+- Workers AI;
+- Durable state.
+
+Runtime opcional:
+- Tupiniquim Remote Runtime no hardware do usuário.
+
+Modelo padrão:
+`@cf/zai-org/glm-4.7-flash`
 
 ## Blocker atual
 
-Cloudflare deploy falha em:
+A URL pública real do Worker ainda não está registrada em:
 
-`/accounts/<account-id>/containers/me`
+`vars.WEB_SMOKE_BASE_URL`
 
-Classificação:
-**INFRASTRUCTURE / ENTITLEMENT / CREDENTIAL**
+Evidência:
+- Web Product Smoke run `36477142690`;
+- `smoke-target` falhou corretamente;
+- erro: `LIVE_WEB_SMOKE_BLOCKED`;
+- Workers Build do mesmo SHA ficou GREEN.
 
-O build e o código não devem ser degradados para evitar este gate.
+## Definition of Done desta tarefa
 
-## Critério de execução
+- hostname público real registrado;
+- health passa;
+- UI abre;
+- provider/model corretos;
+- chat real passa;
+- resposta Workers AI passa;
+- reload/recovery passa;
+- capacidades Remote Runtime ficam explicitamente OFFLINE quando não configuradas;
+- Issue #53 atualizada com exact SHA, URL e evidências.
 
-### Infra
-- Workers Paid confirmado;
-- Containers entitlement confirmado;
-- credencial CI/build válida;
-- deploy completo.
-
-### R2
-- bucket configurado;
-- secrets/vars configurados;
-- checkpoint real;
-- restore após lifecycle/restart comprovado.
-
-### Access
-- aplicação self-hosted;
-- AUD/Team Domain configurados;
-- Service Auth configurado;
-- anonymous desativado em produção;
-- WebSocket autenticado funcional.
-
-### Produto
-Product Smoke deve provar:
-1. health;
-2. workspace bootstrap;
-3. Workers AI/provider/model;
-4. chat real;
-5. workspace read/write;
-6. terminal real;
-7. checkpoint;
-8. reload/recovery;
-9. auth/persistência production-ready quando aplicável.
-
-## Definition of Done
-
-A tarefa só termina quando:
-- Cloud Quality permanece GREEN;
-- deploy Cloudflare passa;
-- Web Product Smoke funcional passa;
-- Web Product Smoke production-ready passa;
-- Issue #53 é fechada com evidência;
-- documentação operacional registra URL, SHA e gates;
-- limitações restantes ficam explícitas.
+A conexão do Runtime Gateway local é fase seguinte e independente do smoke cloud-only.
