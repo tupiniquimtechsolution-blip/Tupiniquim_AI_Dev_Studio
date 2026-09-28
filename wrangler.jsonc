@@ -3,7 +3,9 @@
   "name": "tupiniquim-dev-ai-web",
   "main": "apps/web-runtime/src/worker-secure.ts",
   "compatibility_date": "2026-09-26",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
   "ai": {
     "binding": "AI"
   },
@@ -11,22 +13,13 @@
     "directory": "./out/renderer",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/ws/*"]
+    "run_worker_first": [
+      "/api/*",
+      "/ws/*"
+    ]
   },
-  "containers": [
-    {
-      "class_name": "Sandbox",
-      "image": "./Dockerfile.web",
-      "instance_type": "basic",
-      "max_instances": 3
-    }
-  ],
   "durable_objects": {
     "bindings": [
-      {
-        "name": "Sandbox",
-        "class_name": "Sandbox"
-      },
       {
         "name": "STATE",
         "class_name": "WebState"
@@ -36,19 +29,23 @@
   "migrations": [
     {
       "tag": "web-sandbox-v1",
-      "new_sqlite_classes": ["Sandbox"]
+      "new_sqlite_classes": [
+        "Sandbox"
+      ]
     },
     {
       "tag": "web-full-state-v1",
-      "new_sqlite_classes": ["WebState"]
+      "new_sqlite_classes": [
+        "WebState"
+      ]
     }
   ],
   "vars": {
-    "SANDBOX_TRANSPORT": "rpc",
     "WEB_ALLOW_ANONYMOUS": "true",
     "WEB_WORKSPACE_BACKUP_ENABLED": "false",
-    "WEB_RUNTIME_VERSION": "web-full-0.2.1",
+    "WEB_RUNTIME_VERSION": "web-free-remote-0.3.0",
     "WEB_BOOTSTRAP_REPO": "https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio.git",
-    "WEB_BOOTSTRAP_REF": "integration/ai-lab-toolbox-unified"
+    "WEB_BOOTSTRAP_REF": "integration/ai-lab-toolbox-unified",
+    "WEB_REMOTE_RUNTIME_ENABLED": "false"
   }
 }

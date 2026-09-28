@@ -7,6 +7,7 @@ describe('Web Workers AI model catalog', () => {
     expect(WEB_RUNTIME).toBe('workers-ai')
     expect(WEB_MODELS.filter((model) => model.default)).toHaveLength(1)
     expect(isWebModelId(WEB_DEFAULT_MODEL)).toBe(true)
+    expect(WEB_DEFAULT_MODEL).toBe('@cf/zai-org/glm-4.7-flash')
   })
 
   it('keeps a compatible requested model and fails closed to the default for unknown client headers', () => {

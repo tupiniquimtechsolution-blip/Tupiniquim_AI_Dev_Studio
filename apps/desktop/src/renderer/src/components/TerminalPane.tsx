@@ -69,7 +69,7 @@ export const TerminalPane = ({ workspaceReady, platform }: { workspaceReady: boo
     <section className="terminal-shell">
       <header className="terminal-toolbar">
         <span className={`state-dot ${state}`} />
-        <span>{state === 'running' ? (platform === 'cloudflare-sandbox' ? 'Shell · Cloudflare Sandbox' : 'PowerShell · ConPTY') : state === 'error' ? 'Falha no terminal' : 'Terminal parado'}</span>
+        <span>{state === 'running' ? ((platform === 'cloudflare-edge' || platform === 'cloudflare-sandbox') ? 'Shell · Tupiniquim Remote Runtime' : 'PowerShell · ConPTY') : state === 'error' ? 'Falha no terminal' : 'Terminal parado'}</span>
         <div className="spacer" />
         {state === 'running'
           ? <button className="icon-button" onClick={() => void stop()} title="Encerrar terminal"><Square size={14} /></button>
