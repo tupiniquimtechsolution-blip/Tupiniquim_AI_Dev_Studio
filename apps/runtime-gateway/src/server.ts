@@ -50,15 +50,16 @@ const resolveWorkspacePath = async (workspaceId: string, requested: string): Pro
 }
 
 const readBody = async (request: IncomingMessage): Promise<JsonRecord> => {
-  const chunks: Buffer[] = []
+  const decoder = new TextDecoder()
+  let raw = ''
   let total = 0
-  for await (const chunk of request) {
-    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
-    total += bytes.length
+  for await (const chunk of request as AsyncIterable<unknown>) {
+    if (!(chunk instanceof Uint8Array)) throw new Error('Chunk HTTP inválido.')
+    total += chunk.byteLength
     if (total > MAX_BODY) throw new Error('Payload excede o limite do gateway.')
-    chunks.push(bytes)
+    raw += decoder.decode(chunk, { stream: true })
   }
-  const raw = Buffer.concat(chunks).toString('utf8')
+  raw += decoder.decode()
   return raw === '' ? {} : JSON.parse(raw) as JsonRecord
 }
 
@@ -164,6 +165,12 @@ const gate = async (workspaceId: string, gateId: string): Promise<{ state: 'PASS
   return { state: 'PASS', evidence: evidence.trim().slice(-12_000) || 'Gate concluído.' }
 }
 
+const stringArg = (record: JsonRecord, key: string, fallback = ''): string =>
+  typeof record[key] === 'string' ? record[key] as string : fallback
+
+const numberArg = (record: JsonRecord, key: string, fallback: number): number =>
+  typeof record[key] === 'number' && Number.isFinite(record[key]) ? record[key] as number : fallback
+
 const handleRpc = async (body: JsonRecord): Promise<unknown> => {
   const workspaceId = typeof body.workspaceId === 'string' ? body.workspaceId : ''
   const method = typeof body.method === 'string' ? body.method : ''
@@ -171,22 +178,22 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
   if (!SAFE_ID.test(workspaceId)) throw new Error('Workspace ID inválido.')
 
   if (method === 'fs.exists') {
-    const target = await resolveWorkspacePath(workspaceId, String(args.path ?? ''))
+    const target = await resolveWorkspacePath(workspaceId, stringArg(args, 'path'))
     try { await fs.access(target); return { exists: true } } catch { return { exists: false } }
   }
   if (method === 'fs.mkdir') {
-    await fs.mkdir(await resolveWorkspacePath(workspaceId, String(args.path ?? '')), { recursive: args.recursive === true })
+    await fs.mkdir(await resolveWorkspacePath(workspaceId, stringArg(args, 'path')), { recursive: args.recursive === true })
     return null
   }
-  if (method === 'fs.read-file') return { content: await fs.readFile(await resolveWorkspacePath(workspaceId, String(args.path ?? '')), 'utf8') }
+  if (method === 'fs.read-file') return { content: await fs.readFile(await resolveWorkspacePath(workspaceId, stringArg(args, 'path')), 'utf8') }
   if (method === 'fs.write-file') {
-    const target = await resolveWorkspacePath(workspaceId, String(args.path ?? ''))
+    const target = await resolveWorkspacePath(workspaceId, stringArg(args, 'path'))
     await fs.mkdir(path.dirname(target), { recursive: true })
-    await fs.writeFile(target, String(args.content ?? ''), 'utf8')
+    await fs.writeFile(target, stringArg(args, 'content'), 'utf8')
     return null
   }
-  if (method === 'workspace.tree') return listTree(workspaceId, Number(args.depth ?? 4))
-  if (method === 'workspace.search') return searchWorkspace(workspaceId, String(args.query ?? ''), Number(args.limit ?? 100))
+  if (method === 'workspace.tree') return listTree(workspaceId, numberArg(args, 'depth', 4))
+  if (method === 'workspace.search') return searchWorkspace(workspaceId, stringArg(args, 'query'), numberArg(args, 'limit', 100))
   if (method === 'git.status') {
     const cwd = await workspaceRoot(workspaceId)
     const result = await runProcess('git', ['status', '--porcelain=v1', '-b'], cwd, 15_000)
@@ -210,17 +217,17 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
       await fs.access(path.join(cwd, '.git'))
       return { cloned: false, detail: 'Repositório já inicializado.' }
     } catch { /* clone below */ }
-    const repository = String(args.repository ?? '')
-    const ref = String(args.ref ?? 'main')
+    const repository = stringArg(args, 'repository')
+    const ref = stringArg(args, 'ref', 'main')
     if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/.test(repository)) throw new Error('Repositório bootstrap não permitido.')
-    if (!/^[A-Za-z0-9._\/-]{1,200}$/.test(ref)) throw new Error('Ref bootstrap inválida.')
+    if (!/^[A-Za-z0-9._/-]{1,200}$/.test(ref)) throw new Error('Ref bootstrap inválida.')
     const result = await runProcess('git', ['clone', '--depth', '1', '--branch', ref, repository, '.'], cwd, 120_000)
     if (result.code !== 0) throw new Error(result.stderr || 'Falha ao clonar workspace.')
     return { cloned: true, detail: result.stdout || result.stderr || 'Clone concluído.' }
   }
-  if (method === 'control.gate') return gate(workspaceId, String(args.gateId ?? ''))
+  if (method === 'control.gate') return gate(workspaceId, stringArg(args, 'gateId'))
   if (method === 'workspace.backup-create') {
-    const id = createHash('sha256').update(`${workspaceId}:${Date.now()}:${String(args.name ?? '')}`).digest('hex').slice(0, 32)
+    const id = createHash('sha256').update(`${workspaceId}:${Date.now()}:${stringArg(args, 'name')}`).digest('hex').slice(0, 32)
     const source = await workspaceRoot(workspaceId)
     const backup = path.join(ROOT, 'backups', workspaceId, id)
     await fs.rm(backup, { recursive: true, force: true })
@@ -269,7 +276,7 @@ const attachTerminal = async (request: IncomingMessage, socket: Socket, head: Bu
   const rows = Math.max(5, Math.min(200, Number(url.searchParams.get('rows') ?? 30)))
   const shell = process.platform === 'win32' ? (process.env.TUPINIQUIM_GATEWAY_SHELL?.trim() || 'powershell.exe') : (process.env.SHELL?.trim() || '/bin/bash')
   const args = process.platform === 'win32' ? ['-NoLogo', '-NoProfile'] : ['--noprofile', '--norc']
-  const terminal = pty.spawn(shell, args, { cwd, cols, rows, name: 'xterm-256color', env: process.env as Record<string, string> })
+  const terminal = pty.spawn(shell, args, { cwd, cols, rows, name: 'xterm-256color', env: process.env })
 
   socket.write([
     'HTTP/1.1 101 Switching Protocols',
@@ -328,7 +335,7 @@ const attachTerminal = async (request: IncomingMessage, socket: Socket, head: Bu
 
 await fs.mkdir(ROOT, { recursive: true })
 
-const server = createServer(async (request, response) => {
+const handleHttp = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
   try {
     if (!authorized(request)) { json(response, 401, { ok: false, error: { code: 'AUTH_REQUIRED', message: 'Gateway token inválido.' } }); return }
     const url = new URL(request.url ?? '/', `http://${request.headers.host ?? 'localhost'}`)
@@ -352,6 +359,10 @@ const server = createServer(async (request, response) => {
   } catch (cause) {
     json(response, 500, { ok: false, error: { code: 'RUNTIME_GATEWAY_ERROR', message: cause instanceof Error ? cause.message : 'Falha no gateway.', retryable: true } })
   }
+}
+
+const server = createServer((request, response) => {
+  void handleHttp(request, response)
 })
 
 server.on('upgrade', (request, socket, head) => {
