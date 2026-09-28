@@ -21,6 +21,7 @@ interface HealthEnvelope {
   ai?: string
   auth?: { state?: string; productionReady?: boolean }
   workspacePersistence?: { state?: string; configured?: boolean; missing?: string[] }
+  executionRuntime?: { state?: string; configured?: boolean; online?: boolean; capabilities?: string[] }
 }
 
 const requireProductionReady = process.env.WEB_SMOKE_REQUIRE_PRODUCTION_READY === 'true'
@@ -59,18 +60,24 @@ test('health diferencia funcional de production-ready sem PASS fictício', async
 
   const health = await response.json() as HealthEnvelope
   expect(health.ok).toBe(true)
-  expect(health.runtime).toBe('cloudflare-sandbox')
+  expect(health.runtime).toBe('cloudflare-edge')
   expect(health.ai).toBe('workers-ai')
   expect(health.auth?.state).not.toBe('MISCONFIGURED')
   expect(health.workspacePersistence?.state).not.toBe('MISCONFIGURED')
 
   if (requireProductionReady) {
     expect(health.auth).toMatchObject({ state: 'ACCESS_READY', productionReady: true })
-    expect(health.workspacePersistence).toMatchObject({ state: 'READY', configured: true })
+    expect(health.executionRuntime).toMatchObject({ state: 'READY', configured: true, online: true })
+    expect(health.executionRuntime?.capabilities).toContain('local-persistence')
+    expect(health.workspacePersistence?.state).not.toBe('MISCONFIGURED')
   }
 })
 
 test('workspace RPC escreve, lê e cria checkpoint com isolamento por workspace', async ({ request }) => {
+  const healthResponse = await request.get('/api/health')
+  const health = await healthResponse.json() as HealthEnvelope
+  test.skip(health.executionRuntime?.state !== 'READY', 'Remote Runtime offline: workspace executável é testado somente quando o gateway está conectado.')
+
   const workspaceId = `web-smoke-${randomUUID()}`
   const relativePath = '.tupiniquim-web/product-smoke.txt'
   const marker = `TUPINIQUIM_WEB_FILE_SMOKE_${Date.now()}`
@@ -108,7 +115,7 @@ test('workspace RPC escreve, lê e cria checkpoint com isolamento por workspace'
   }
 })
 
-test('UI Web Full inicializa workspace/modelo, conversa, usa terminal e recupera sessão no reload', async ({ page }) => {
+test('UI Web Full inicializa workspace/modelo, conversa e recupera sessão; terminal quando o Remote Runtime está online', async ({ page, request }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' })
   await expect(page.locator('.brand')).toContainText('Tupiniquim')
   await waitForWebWorkspace(page)
@@ -139,8 +146,11 @@ test('UI Web Full inicializa workspace/modelo, conversa, usa terminal e recupera
   await expect(assistant.locator('p')).not.toHaveText('')
   await expect(page.locator('.agent-message.error')).toHaveCount(0)
 
-  const terminalMarker = `TUPINIQUIM_TERMINAL_SMOKE_${Date.now()}`
-  const terminalResult = await page.evaluate(async (expectedMarker) => {
+  const healthResponse = await request.get('/api/health')
+  const health = await healthResponse.json() as HealthEnvelope
+  if (health.executionRuntime?.state === 'READY') {
+    const terminalMarker = `TUPINIQUIM_TERMINAL_SMOKE_${Date.now()}`
+    const terminalResult = await page.evaluate(async (expectedMarker) => {
     interface TerminalEvent {
       terminalId: string
       data: string
@@ -190,8 +200,9 @@ test('UI Web Full inicializa workspace/modelo, conversa, usa terminal e recupera
         if (!write.ok) finish({ ok: false, detail: write.error?.message ?? 'terminal.write falhou' })
       })
     })
-  }, terminalMarker)
-  expect(terminalResult.ok, terminalResult.detail).toBe(true)
+    }, terminalMarker)
+    expect(terminalResult.ok, terminalResult.detail).toBe(true)
+  }
 
   await page.reload({ waitUntil: 'domcontentloaded' })
   await waitForWebWorkspace(page)
