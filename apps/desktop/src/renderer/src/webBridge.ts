@@ -358,7 +358,7 @@ export const installWebBridge = (): void => {
         root: '/workspace',
         directories: { runtime: '/workspace/.tupiniquim-web/runtime', models: '/workspace/.tupiniquim-web/models', data: '/workspace/.tupiniquim-web/data', projects: '/workspace', cache: '/workspace/.tupiniquim-web/cache' },
         runtimes: [
-          { id: 'remote-runtime', label: 'Tupiniquim Remote Runtime', available: remoteAvailable, state: remoteAvailable ? 'AVAILABLE' : 'NOT_AVAILABLE' },
+          { id: 'remote-runtime', label: 'Tupiniquim Remote Runtime', available: remoteAvailable, state: remoteAvailable ? 'AVAILABLE' : 'NOT_INSTALLED' },
           { id: 'workers-ai', label: 'Workers AI', available: true, state: 'AVAILABLE' }
         ]
       })
