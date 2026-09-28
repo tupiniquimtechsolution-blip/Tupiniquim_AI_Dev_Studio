@@ -1,4 +1,5 @@
 import { getSandbox } from '@cloudflare/sandbox'
+import { WEB_DEFAULT_MODEL, WEB_MODELS, WEB_PROVIDER, WEB_RUNTIME, isWebModelId, resolveWebModel } from './model-catalog'
 export { Sandbox } from '@cloudflare/sandbox'
 
 type SandboxNamespace = Parameters<typeof getSandbox>[0]
@@ -19,14 +20,6 @@ type Env = {
 type RpcRequest = { action?: string; input?: unknown }
 
 type JsonRecord = Record<string, unknown>
-
-const WEB_PROVIDER = 'cloudflare-workers-ai' as const
-const WEB_RUNTIME = 'workers-ai' as const
-const WEB_MODELS = [
-  '@cf/moonshotai/kimi-k2.6',
-  '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
-] as const
-const WEB_DEFAULT_MODEL: typeof WEB_MODELS[number] = WEB_MODELS[0]
 
 const ok = <T>(value: T, extra?: JsonRecord): Response => Response.json({ ok: true, value, ...(extra ?? {}) })
 const fail = (code: string, message: string, status = 400, retryable = false): Response =>
@@ -97,10 +90,7 @@ const listWorkspace = async (sandbox: ReturnType<typeof sandboxFor>, depth: numb
   return parseFindTree(result.stdout)
 }
 
-const selectedModel = (request: Request): string => {
-  const requested = request.headers.get('x-tupiniquim-model')
-  return WEB_MODELS.includes(requested as typeof WEB_MODELS[number]) ? requested as typeof WEB_MODELS[number] : WEB_DEFAULT_MODEL
-}
+const selectedModel = (request: Request): string => resolveWebModel(request.headers.get('x-tupiniquim-model'))
 
 const aiText = (response: unknown): string => {
   if (typeof response === 'string') return response
@@ -255,10 +245,10 @@ const handleStudioRpc = async (request: Request, env: Env, workspaceId: string):
         return ok({ provider: WEB_PROVIDER, runtime: WEB_RUNTIME, availableProviders: [WEB_PROVIDER], selectedModel: selectedModel(request), state: 'READY', account: 'NONE', version: 'workers-ai', activeThreadId: null, activeTurnId: null, detail: 'WEB_WORKERS_AI' })
       }
       case 'agent.local-models':
-        return ok(WEB_MODELS.map((model) => ({ name: model.replace('@cf/', ''), displayName: model.replace('@cf/', ''), model, provider: WEB_PROVIDER, runtime: WEB_RUNTIME, execution: 'CLOUD', capabilities: ['chat', 'plan', 'research', 'coding'], available: true, default: model === WEB_DEFAULT_MODEL, modifiedAt: null, size: null })))
+        return ok(WEB_MODELS.map((entry) => ({ name: entry.displayName, displayName: entry.displayName, model: entry.id, provider: WEB_PROVIDER, runtime: WEB_RUNTIME, execution: 'CLOUD', capabilities: [...entry.capabilities], available: true, default: entry.default, modifiedAt: null, size: null })))
       case 'agent.local-model.select': {
         const requestedModel = typeof input.model === 'string' ? input.model : selectedModel(request)
-        if (!WEB_MODELS.includes(requestedModel as typeof WEB_MODELS[number])) return fail('MODEL_NOT_AVAILABLE', 'O modelo solicitado não é executável no Workers AI desta edição Web.', 409)
+        if (!isWebModelId(requestedModel)) return fail('MODEL_NOT_AVAILABLE', 'O modelo solicitado não é executável no Workers AI desta edição Web.', 409)
         return ok({ provider: WEB_PROVIDER, runtime: WEB_RUNTIME, availableProviders: [WEB_PROVIDER], selectedModel: requestedModel, state: 'READY', account: 'NONE', version: 'workers-ai', activeThreadId: null, activeTurnId: null, detail: 'WEB_WORKERS_AI' })
       }
       case 'agent.session':
