@@ -72,11 +72,30 @@ O terminal usa `/ws/terminal`. A aplicação Access deve apontar para o hostname
 
 ## Como executar
 
+### Automático
+
+Defina uma variável de repositório GitHub:
+
+`WEB_SMOKE_BASE_URL=https://<hostname-público>`
+
+Quando o **Cloud Quality Gate** terminar com SUCCESS na branch
+`integration/ai-lab-toolbox-unified`, o workflow **Web Product Smoke**
+é disparado automaticamente, espera `/api/health` ficar disponível e executa
+o smoke funcional contra o exact SHA que acabou de passar pelo gate.
+
+Se `WEB_SMOKE_BASE_URL` não existir, o job fica **SKIPPED**. Isso não conta como
+PASS de produto.
+
+### Manual
+
 GitHub Actions → **Web Product Smoke** → Run workflow:
 
-- `base_url`: URL pública implantada;
+- `base_url`: opcional; se vazio usa `vars.WEB_SMOKE_BASE_URL`;
 - `production_ready=false`: diagnóstico funcional;
 - `production_ready=true`: gate de produção.
+
+O modo manual também espera o deployment responder em `/api/health` antes de
+instalar Chromium e iniciar Playwright.
 
 ## O que este gate ainda não prova sozinho
 
