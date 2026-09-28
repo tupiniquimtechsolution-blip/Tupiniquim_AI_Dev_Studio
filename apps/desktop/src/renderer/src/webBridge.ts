@@ -351,7 +351,18 @@ export const installWebBridge = (): void => {
   const loadouts = new Map<string, AgentLoadoutView[]>()
   const controlCenter: ControlCenterDesktopApi = {
     status: async () => success({ product: 'Tupiniquim Dev AI', sections: [{ id: 'web-runtime', label: 'Web Runtime' }, { id: 'models', label: 'Modelos' }, { id: 'toolbox', label: 'Toolbox' }], policy: { explicitProviderSelection: true, explicitModelSelection: true, automaticFallback: false, privilegedActionsDefaultDeny: true } }),
-    inspectPortable: async () => success({ root: '/workspace', directories: { runtime: '/workspace/.tupiniquim-web/runtime', models: '/workspace/.tupiniquim-web/models', data: '/workspace/.tupiniquim-web/data', projects: '/workspace', cache: '/workspace/.tupiniquim-web/cache' }, runtimes: [{ id: 'cloudflare-sandbox', label: 'Cloudflare Sandbox', available: true, state: 'AVAILABLE' }, { id: 'workers-ai', label: 'Workers AI', available: true, state: 'AVAILABLE' }] }),
+    inspectPortable: async () => {
+      const runtime = await rpc<{ state: string }>('runtime.status')
+      const remoteAvailable = runtime.ok && runtime.value.state === 'READY'
+      return success({
+        root: '/workspace',
+        directories: { runtime: '/workspace/.tupiniquim-web/runtime', models: '/workspace/.tupiniquim-web/models', data: '/workspace/.tupiniquim-web/data', projects: '/workspace', cache: '/workspace/.tupiniquim-web/cache' },
+        runtimes: [
+          { id: 'remote-runtime', label: 'Tupiniquim Remote Runtime', available: remoteAvailable, state: remoteAvailable ? 'AVAILABLE' : 'NOT_AVAILABLE' },
+          { id: 'workers-ai', label: 'Workers AI', available: true, state: 'AVAILABLE' }
+        ]
+      })
+    },
     runToolboxGate: async (input) => success({ gateId: input.gateId, state: 'NOT_AVAILABLE', evidence: 'Gate disponível na UI Web; execução automatizada será realizada no workspace Sandbox quando o comando correspondente estiver configurado.' }),
     listSkills: async () => success([{ id: 'tupiniquim-toolbox', name: 'Tupiniquim Toolbox', status: 'APPROVED_INTERNAL', enabled: true, runtimeExecutionAuthorized: false }]),
     setSkillEnabled: async (input) => success({ id: 'tupiniquim-toolbox', name: 'Tupiniquim Toolbox', status: 'APPROVED_INTERNAL', enabled: input.enabled, runtimeExecutionAuthorized: false }),
