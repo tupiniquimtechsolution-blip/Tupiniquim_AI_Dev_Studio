@@ -32,6 +32,9 @@ export const validateExplicitProviderSelection = (
   }
 
   if (requested.model === null || requested.model.trim() === '') {
+    if (requested.provider === 'ollama') {
+      throw new Error('Ollama selection requires an explicit local model.')
+    }
     throw new Error(`${requested.provider} selection requires an explicit model.`)
   }
   const model = current.localModels.find((candidate) =>
