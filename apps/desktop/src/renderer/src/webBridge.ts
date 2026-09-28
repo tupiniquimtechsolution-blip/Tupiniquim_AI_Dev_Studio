@@ -22,7 +22,7 @@ const MODEL_KEY = 'tupiniquim.web.model'
 const PROFILE_KEY = 'tupiniquim.web.ui-profile'
 const PROMPTS_KEY = 'tupiniquim.web.prompts'
 const VISUAL_ASSETS_KEY = 'tupiniquim.web.visual-assets'
-const DEFAULT_MODEL = '@cf/moonshotai/kimi-k2.6'
+const DEFAULT_MODEL = '@cf/zai-org/glm-4.7-flash'
 
 const workspaceId = (): string => {
   const existing = localStorage.getItem(WORKSPACE_KEY)
