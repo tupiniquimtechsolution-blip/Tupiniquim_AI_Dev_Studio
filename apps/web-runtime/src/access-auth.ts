@@ -30,11 +30,13 @@ type JwksResponse = { keys?: JwkWithKid[] }
 const jwksCache = new Map<string, { expiresAt: number; keys: JwkWithKid[] }>()
 const JWKS_CACHE_MS = 5 * 60 * 1000
 
-const decodeBase64Url = (value: string): Uint8Array => {
+const decodeBase64Url = (value: string): Uint8Array<ArrayBuffer> => {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
   const binary = atob(padded)
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index)
+  return bytes
 }
 
 const decodeJsonPart = <T>(value: string): T => {
