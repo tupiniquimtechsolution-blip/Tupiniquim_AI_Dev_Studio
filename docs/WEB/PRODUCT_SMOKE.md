@@ -1,6 +1,6 @@
 # Web Product Smoke Gate
 
-Status: GATE IMPLEMENTADO / EXECUÇÃO BLOQUEADA PELO DEPLOY CLOUD  
+Status: GATE IMPLEMENTADO / DEPLOY CLOUD FREE ATIVO / SMOKE PÚBLICO PENDENTE  
 Data: 2026-09-28
 
 ## Propósito
@@ -37,7 +37,7 @@ Exige:
 ## Fluxo testado
 
 1. `GET /api/health`.
-2. runtime `cloudflare-sandbox`.
+2. runtime `cloudflare-edge`.
 3. AI `workers-ai`.
 4. bootstrap de workspace.
 5. `workspace.write`.
@@ -49,7 +49,7 @@ Exige:
 11. modelo padrão/selecionado = identificador `@cf/...`.
 12. Chat habilita `Enviar`.
 13. turno real chega ao Workers AI e retorna resposta.
-14. WebSocket de terminal executa um comando real no Sandbox.
+14. quando o Remote Runtime estiver READY, WebSocket de terminal executa comando real no gateway local.
 15. reload preserva sessão/conversa lógica.
 
 ## Access em CI
@@ -80,8 +80,8 @@ GitHub Actions → **Web Product Smoke** → Run workflow:
 
 ## O que este gate ainda não prova sozinho
 
-O checkpoint R2 é validado, mas restart físico de um Sandbox e restore em outro ciclo de container ainda deve ser comprovado por um teste destrutivo/controlado ou por lifecycle real antes de declarar `workspace restore PASS`.
+No modo zero-custo, o runtime executável é opcional. Chat/Workers AI devem funcionar sem gateway; filesystem/Git/terminal só recebem PASS quando o Tupiniquim Remote Runtime estiver READY. Persistência local do gateway e eventual R2 devem ser certificadas separadamente.
 
 ## Blocker atual
 
-Issue #53: o deploy Cloudflare continua falhando em `/containers/me` antes de existir uma URL/candidate que possamos certificar com este gate.
+O blocker `/containers/me` foi eliminado pela arquitetura zero-custo. O gate atual é descobrir/usar o hostname público `workers.dev`/Version URL e executar este smoke no exact SHA.
