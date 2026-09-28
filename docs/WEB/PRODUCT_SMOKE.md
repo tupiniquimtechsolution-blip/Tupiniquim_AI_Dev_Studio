@@ -83,8 +83,9 @@ Quando o **Cloud Quality Gate** terminar com SUCCESS na branch
 é disparado automaticamente, espera `/api/health` ficar disponível e executa
 o smoke funcional contra o exact SHA que acabou de passar pelo gate.
 
-Se `WEB_SMOKE_BASE_URL` não existir, o job fica **SKIPPED**. Isso não conta como
-PASS de produto.
+Se `WEB_SMOKE_BASE_URL` não existir, o job `smoke-target` termina em
+**BLOCKED/FAIL explícito** com `LIVE_WEB_SMOKE_BLOCKED`. O job Playwright não
+é executado e o workflow não pode ser confundido com PASS de produto.
 
 ### Manual
 

@@ -26,25 +26,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  target:
+    name: smoke-target
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'integration/ai-lab-toolbox-unified'
+      )
+    runs-on: ubuntu-latest
+    outputs:
+      base_url: ${{ steps.target.outputs.base_url }}
+    env:
+      REQUESTED_BASE_URL: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.base_url || vars.WEB_SMOKE_BASE_URL }}
+    steps:
+      - id: target
+        name: Resolve public deployment URL
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${REQUESTED_BASE_URL}" ]; then
+            echo "::error::LIVE_WEB_SMOKE_BLOCKED: configure a URL pública real em vars.WEB_SMOKE_BASE_URL ou informe base_url manualmente."
+            exit 1
+          fi
+          node -e "const u=new URL(process.env.REQUESTED_BASE_URL); if (u.protocol !== 'https:') { console.error('WEB_SMOKE_BASE_URL deve usar HTTPS.'); process.exit(1) }"
+          normalized="${REQUESTED_BASE_URL%/}"
+          echo "base_url=${normalized}" >> "${GITHUB_OUTPUT}"
+          echo "Smoke target configurado: ${normalized}"
+
   smoke:
     name: live-web-smoke
-    if: >-
-      (
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.head_branch == 'integration/ai-lab-toolbox-unified'
-        )
-      ) &&
-      (
-        (github.event_name == 'workflow_dispatch' && github.event.inputs.base_url != '') ||
-        vars.WEB_SMOKE_BASE_URL != ''
-      )
+    needs:
+      - target
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      WEB_SMOKE_BASE_URL: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.base_url || vars.WEB_SMOKE_BASE_URL }}
+      WEB_SMOKE_BASE_URL: ${{ needs.target.outputs.base_url }}
       WEB_SMOKE_REQUIRE_PRODUCTION_READY: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.production_ready == 'true' }}
       WEB_SMOKE_ACCESS_CLIENT_ID: ${{ secrets.WEB_SMOKE_ACCESS_CLIENT_ID }}
       WEB_SMOKE_ACCESS_CLIENT_SECRET: ${{ secrets.WEB_SMOKE_ACCESS_CLIENT_SECRET }}
@@ -60,11 +78,10 @@ jobs:
         with:
           node-version: '24'
           cache: pnpm
-      - name: Validate smoke configuration
+      - name: Validate smoke authentication configuration
         shell: bash
         run: |
           set -euo pipefail
-          node -e "const u=new URL(process.env.WEB_SMOKE_BASE_URL); if (u.protocol !== 'https:') { console.error('WEB_SMOKE_BASE_URL deve usar HTTPS.'); process.exit(1) }"
           if { [ -n "${WEB_SMOKE_ACCESS_CLIENT_ID}" ] && [ -z "${WEB_SMOKE_ACCESS_CLIENT_SECRET}" ]; } || { [ -z "${WEB_SMOKE_ACCESS_CLIENT_ID}" ] && [ -n "${WEB_SMOKE_ACCESS_CLIENT_SECRET}" ]; }; then
             echo "WEB_SMOKE_ACCESS_CLIENT_ID e WEB_SMOKE_ACCESS_CLIENT_SECRET devem existir juntos."
             exit 1
