@@ -90,14 +90,17 @@ export const remoteRuntimeStatus = async (env: RemoteRuntimeConfig): Promise<Rem
     })
     if (!response.ok) return { ...base, state: 'OFFLINE', online: false, detail: `Gateway respondeu HTTP ${response.status}.` }
     const body = await response.json() as JsonRecord
-    return {
+    const status: RemoteRuntimeStatus = {
       state: 'READY',
       configured: true,
       online: true,
-      transport: 'https-tunnel',
-      platform: typeof body.platform === 'string' ? body.platform : undefined,
-      capabilities: Array.isArray(body.capabilities) ? body.capabilities.filter((value): value is string => typeof value === 'string') : undefined
+      transport: 'https-tunnel'
     }
+    if (typeof body.platform === 'string') status.platform = body.platform
+    if (Array.isArray(body.capabilities)) {
+      status.capabilities = body.capabilities.filter((value): value is string => typeof value === 'string')
+    }
+    return status
   } catch (cause) {
     return { ...base, state: 'OFFLINE', online: false, detail: cause instanceof Error ? cause.message : 'Gateway indisponível.' }
   }
