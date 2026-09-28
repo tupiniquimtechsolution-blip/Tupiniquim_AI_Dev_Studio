@@ -10,7 +10,7 @@ import {
 import legacyWorker from './worker'
 
 export class Sandbox {
-  async fetch(): Promise<Response> {
+  fetch(): Response {
     return Response.json({ ok: false, error: { code: 'SANDBOX_RETIRED', message: 'Cloudflare Sandbox foi substituído pelo Tupiniquim Remote Runtime.', retryable: false } }, { status: 410 })
   }
 }
