@@ -11,7 +11,8 @@ export const WORKSPACE_BACKUP_TTL_SECONDS = 7 * 24 * 60 * 60
 export const WORKSPACE_RESTORE_MARKER = '/tmp/tupiniquim-workspace-restored' as const
 
 export type WorkspaceBackupReadiness =
-  | { state: 'DISABLED'; configured: false; missing: string[] }
+  | { state: 'DISABLED'; configured: false; missing: ['WEB_WORKSPACE_BACKUP_ENABLED'] }
+  | { state: 'MISCONFIGURED'; configured: false; missing: string[] }
   | { state: 'READY'; configured: true; missing: [] }
 
 export const workspaceBackupReadiness = (env: WorkspaceBackupConfig): WorkspaceBackupReadiness => {
@@ -28,7 +29,7 @@ export const workspaceBackupReadiness = (env: WorkspaceBackupConfig): WorkspaceB
   const missing = required.filter((key) => typeof env[key] !== 'string' || env[key]?.trim() === '').map(String)
   return missing.length === 0
     ? { state: 'READY', configured: true, missing: [] }
-    : { state: 'DISABLED', configured: false, missing }
+    : { state: 'MISCONFIGURED', configured: false, missing }
 }
 
 export const workspaceBackupName = (workspaceId: string): string =>
