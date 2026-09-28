@@ -24,8 +24,10 @@ Rotas protegidas pelo runtime:
   - audience;
   - expiração;
   - `nbf`, quando presente;
-  - email e subject.
+  - principal de identidade válido.
 - Nenhuma claim é confiada antes da validação da assinatura.
+- Identidade humana usa `sub` + `email`.
+- Service Auth pode emitir JWT com `sub`/email vazios; nesse caso o principal validado é `common_name` (Client ID do service token).
 
 ## Configuração necessária
 
@@ -46,7 +48,11 @@ Após autenticação válida, o workspace efetivo não é o ID client-side puro.
 
 O runtime deriva:
 
-`sha256(issuer + sub + clientWorkspaceId)`
+`sha256(issuer + principalNormalizado + clientWorkspaceId)`
+
+onde `principalNormalizado` é:
+- `user:<sub>` para identidade humana validada;
+- `service:<common_name>` para Service Auth validado.
 
 Isso impede que duas identidades autenticadas com o mesmo client workspace ID compartilhem acidentalmente o mesmo Sandbox/Durable Object.
 
@@ -72,7 +78,7 @@ Referência GitHub:
 
 e `productionReady: true|false`.
 
-Nunca retorna JWT, email, subject, audience real ou secrets.
+Nunca retorna JWT, email, subject, common_name, audience real ou secrets.
 
 ## Gate de ativação
 
@@ -84,9 +90,10 @@ Nunca retorna JWT, email, subject, audience real ou secrets.
 6. JWT adulterado → 403.
 7. JWT com AUD incorreto → 403.
 8. JWT expirado → 403.
-9. JWT válido → `/api/studio` funciona.
-10. Duas identidades com mesmo client workspace permanecem isoladas.
-11. Terminal WebSocket autenticado → 101 e sessão funcional.
-12. `/api/health.auth.productionReady=true`.
+9. JWT humano válido → `/api/studio` funciona.
+10. Service Token sob policy `Service Auth` recebe JWT Access válido e funciona sem login humano.
+11. Duas identidades/principals com mesmo client workspace permanecem isoladas.
+12. Terminal WebSocket autenticado → 101 e sessão funcional.
+13. `/api/health.auth.productionReady=true`.
 
 Não promover Auth para PASS antes desse smoke real.
