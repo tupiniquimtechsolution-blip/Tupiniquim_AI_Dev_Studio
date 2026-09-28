@@ -1,0 +1,65 @@
+name: Web Product Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: URL pública implantada do Tupiniquim Dev AI Web
+        required: true
+        type: string
+      production_ready:
+        description: Exigir Access + persistência durável READY
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-product-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      WEB_SMOKE_BASE_URL: ${{ inputs.base_url }}
+      WEB_SMOKE_REQUIRE_PRODUCTION_READY: ${{ inputs.production_ready }}
+      WEB_SMOKE_ACCESS_CLIENT_ID: ${{ secrets.WEB_SMOKE_ACCESS_CLIENT_ID }}
+      WEB_SMOKE_ACCESS_CLIENT_SECRET: ${{ secrets.WEB_SMOKE_ACCESS_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Validate smoke configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const u=new URL(process.env.WEB_SMOKE_BASE_URL); if (!/^https?:$/.test(u.protocol)) process.exit(1)"
+          if { [ -n "${WEB_SMOKE_ACCESS_CLIENT_ID}" ] && [ -z "${WEB_SMOKE_ACCESS_CLIENT_SECRET}" ]; } || { [ -z "${WEB_SMOKE_ACCESS_CLIENT_ID}" ] && [ -n "${WEB_SMOKE_ACCESS_CLIENT_SECRET}" ]; }; then
+            echo "WEB_SMOKE_ACCESS_CLIENT_ID e WEB_SMOKE_ACCESS_CLIENT_SECRET devem existir juntos."
+            exit 1
+          fi
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Chromium
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run Web Product Smoke
+        run: pnpm test:web-smoke
+      - name: Upload Web Product Smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-product-smoke-${{ github.sha }}
+          if-no-files-found: ignore
+          path: |
+            test-results/web-product-smoke/**
+            playwright-report-web/**
