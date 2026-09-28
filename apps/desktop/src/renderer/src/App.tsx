@@ -28,7 +28,14 @@ interface ConversationMessage {
   provider: AIProviderKind | null
 }
 
-const providerLabel = (provider: AIProviderKind | null): string => provider === 'ollama' ? 'OLLAMA' : provider === 'codex-app-server' ? 'CODEX' : 'AGENTE'
+const providerLabel = (provider: AIProviderKind | null): string =>
+  provider === 'ollama' ? 'OLLAMA' : provider === 'codex-app-server' ? 'CODEX' : provider === 'cloudflare-workers-ai' ? 'WORKERS AI' : 'AGENTE'
+
+const providerDisplayName = (provider: AIProviderKind): string =>
+  provider === 'ollama' ? 'Ollama local' : provider === 'codex-app-server' ? 'Codex App Server' : 'Cloudflare Workers AI'
+
+const providerUsesSelectableModel = (provider: AIProviderKind | null | undefined): boolean =>
+  provider === 'ollama' || provider === 'cloudflare-workers-ai'
 
 // ProposalStatus imported from @tupiniquim/contracts — includes EXPIRED
 
@@ -60,9 +67,9 @@ const OLLAMA_MODEL_REQUIRED_MESSAGE = 'Selecione um modelo Ollama local antes de
 const sendBlockedReason = (status: AIStatus | null): string => {
   if (status === null) return 'Provider ainda não reportou estado. Envio bloqueado até READY.'
   if (status.state === 'AUTH_REQUIRED') {
-    return status.provider === 'codex-app-server' ? CODEX_AUTH_REQUIRED_MESSAGE : 'Ollama local requer autenticação; envio bloqueado.'
+    return status.provider === 'codex-app-server' ? CODEX_AUTH_REQUIRED_MESSAGE : `${providerDisplayName(status.provider)} requer autenticação; envio bloqueado.`
   }
-  const label = status.provider === 'codex-app-server' ? 'Codex' : 'Ollama local'
+  const label = providerDisplayName(status.provider)
   return `${label} indisponível no momento (estado ${status.state}). Envio bloqueado até READY.`
 }
 
@@ -74,7 +81,9 @@ const sendBlockedReason = (status: AIStatus | null): string => {
  */
 const providerTurnBlockReason = (status: AIStatus | null, selectedModel: string): string | null => {
   if (status === null || status.state !== 'READY') return sendBlockedReason(status)
-  if (status.provider === 'ollama' && selectedModel === '') return OLLAMA_MODEL_REQUIRED_MESSAGE
+  if (providerUsesSelectableModel(status.provider) && selectedModel === '') {
+    return status.provider === 'ollama' ? OLLAMA_MODEL_REQUIRED_MESSAGE : 'Selecione um modelo compatível com Workers AI antes de enviar.'
+  }
   return null
 }
 
@@ -169,7 +178,7 @@ export const App = (): React.JSX.Element => {
         const reconnected = await window.studio.agent.selectProvider({ provider: result.value.provider })
         if (reconnected.ok) setAIStatus(reconnected.value)
       }
-      if (result.value.provider === 'ollama') {
+      if (providerUsesSelectableModel(result.value.provider)) {
         const models = await window.studio.agent.listLocalModels()
         if (models.ok) setLocalModels(models.value)
         const status = await window.studio.agent.status()
@@ -383,13 +392,13 @@ export const App = (): React.JSX.Element => {
     const session = await window.studio.agent.session()
     if (session.ok) setSessionId(session.value?.session.id ?? null)
     setSelectedLocalModel(result.value.selectedModel ?? '')
-    if (provider !== 'ollama') { setLocalModels([]); return }
+    if (!providerUsesSelectableModel(provider)) { setLocalModels([]); return }
     const models = await window.studio.agent.listLocalModels()
     if (models.ok) setLocalModels(models.value)
     else setNotice(models.error.message)
   }
 
-  const selectOllamaModel = async (model: string): Promise<void> => {
+  const selectProviderModel = async (model: string): Promise<void> => {
     if (model === '') return
     const result = await window.studio.agent.selectLocalModel({ model })
     if (result.ok) { setSelectedLocalModel(model); setAIStatus(result.value) }
@@ -497,11 +506,16 @@ export const App = (): React.JSX.Element => {
     ? 'Aguardando estado do provider…'
     : aiStatus.provider === 'ollama'
       ? (selectedLocalModel === '' ? 'Selecione um modelo local' : 'Ollama somente loopback')
-      : aiStatus.state === 'AUTH_REQUIRED'
+      : aiStatus.provider === 'cloudflare-workers-ai'
+        ? (selectedLocalModel === '' ? 'Selecione um modelo Workers AI' : `Workers AI · ${selectedLocalModel}`)
+        : aiStatus.state === 'AUTH_REQUIRED'
         ? 'Codex requer autenticação no runtime isolado'
         : aiStatus.state !== 'READY'
           ? `Codex indisponível (estado ${aiStatus.state})`
           : aiStatus.account === 'API_KEY' ? 'API key local' : aiStatus.account === 'CHATGPT' ? 'Conta Codex' : 'Ctrl + Enter para enviar'
+  const availableProviders: AIProviderKind[] = aiStatus?.availableProviders ?? (system?.platform === 'cloudflare-sandbox'
+    ? ['cloudflare-workers-ai']
+    : ['codex-app-server', 'ollama'])
   const missingEffectManifest = planned?.plan.steps.some((step) => step.requiresApproval && step.effects.length === 0) ?? false
   const proposalMatchesManifest = proposal !== null && planned !== null
     && proposal.executionId === planned.execution.id
@@ -553,11 +567,11 @@ export const App = (): React.JSX.Element => {
           <div className="context-strip"><span>ESTADO</span><strong>{aiStatus?.state ?? 'DISCONNECTED'}</strong><span>POLÍTICA</span><strong>ASSISTED</strong><span>CONTEXTO</span><strong>{workspaceContext === null ? 'NÃO MAPEADO' : String(workspaceContext.entries.length) + (workspaceContext.truncated ? '+' : '') + ' ITENS'}</strong></div>
           <div className="context-strip" aria-label="Sessão Tupiniquim" data-session-id={sessionId ?? ''}><span>SESSÃO TUPINIQUIM</span><strong title={sessionId ?? ''}>{sessionId ?? 'NENHUMA'}</strong></div>
           <div className="provider-controls">
-            <label>PROVIDER<select aria-label="Provedor de IA" value={aiStatus?.provider ?? 'codex-app-server'} disabled={sending || aiStatus?.state === 'BUSY'} onChange={(event) => void selectAgentProvider(event.target.value as AIProviderKind)}><option value="codex-app-server">Codex App Server</option><option value="ollama">Ollama local</option></select></label>
-            {aiStatus?.provider === 'ollama' && <label>MODELO<select aria-label="Modelo Ollama local" value={selectedLocalModel} disabled={localModels.length === 0 || aiStatus.state !== 'READY'} onChange={(event) => void selectOllamaModel(event.target.value)}><option value="">Selecionar modelo</option>{localModels.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select><button disabled={sending || aiStatus.state === 'BUSY'} onClick={() => void window.studio.agent.listLocalModels().then(async (result) => { if (result.ok) { setLocalModels(result.value); if (!result.value.some((model) => model.name === selectedLocalModel)) setSelectedLocalModel('') } else setNotice(result.error.message); const status = await window.studio.agent.status(); if (status.ok) setAIStatus(status.value) })}>Atualizar modelos</button></label>}
+            <label>PROVIDER<select aria-label="Provedor de IA" value={aiStatus?.provider ?? availableProviders[0] ?? 'codex-app-server'} disabled={sending || aiStatus?.state === 'BUSY'} onChange={(event) => void selectAgentProvider(event.target.value as AIProviderKind)}>{availableProviders.map((provider) => <option key={provider} value={provider}>{providerDisplayName(provider)}</option>)}</select></label>
+            {providerUsesSelectableModel(aiStatus?.provider) && <label>MODELO<select aria-label="Modelo de IA" value={selectedLocalModel} disabled={localModels.length === 0 || aiStatus?.state !== 'READY'} onChange={(event) => void selectProviderModel(event.target.value)}><option value="">Selecionar modelo</option>{localModels.map((model) => <option key={model.model} value={model.model}>{model.displayName ?? model.name}</option>)}</select><button disabled={sending || aiStatus?.state === 'BUSY'} onClick={() => void window.studio.agent.listLocalModels().then(async (result) => { if (result.ok) { setLocalModels(result.value); if (!result.value.some((model) => model.model === selectedLocalModel)) setSelectedLocalModel('') } else setNotice(result.error.message); const status = await window.studio.agent.status(); if (status.ok) setAIStatus(status.value) })}>Atualizar modelos</button></label>}
           </div>
           <section className="agent-conversation">
-            <div className="agent-message"><span className="message-label">SISTEMA</span><p>{aiStatus?.provider === 'ollama' ? 'Ollama usa somente o loopback local; modelos são escolhidos explicitamente e não há downloads automáticos.' : 'Codex usa stdio JSONL, dados em F:\\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.'}</p></div>
+            <div className="agent-message"><span className="message-label">SISTEMA</span><p>{aiStatus?.provider === 'ollama' ? 'Ollama usa somente o loopback local; modelos são escolhidos explicitamente e não há downloads automáticos.' : aiStatus?.provider === 'cloudflare-workers-ai' ? 'Workers AI executa inferência na nuvem Cloudflare; apenas modelos compatíveis com esta edição Web aparecem na seleção.' : 'Codex usa stdio JSONL, dados em F:\\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.'}</p></div>
             {conversation.map((message) => <div key={message.id} className={`agent-message ${message.role}`} data-provider={message.provider ?? ''}><span className="message-label">{message.role === 'user' ? 'VOCÊ' : message.role === 'error' ? 'ERRO' : providerLabel(message.provider)}</span><p>{message.text}{!message.complete && <span className="stream-caret">▋</span>}</p></div>)}
             {expiredProposals.map((item) => <ProposalProvenance key={item.proposal.id} proposal={item.proposal} status={item.status} expired />)}
             {proposal !== null && <ProposalProvenance proposal={proposal} status={proposalStatus ?? 'PENDING_REVIEW'} />}
@@ -590,7 +604,7 @@ export const App = (): React.JSX.Element => {
         <div className="resize-handle agent-resize" role="separator" aria-label="Redimensionar agente" onPointerDown={(event) => beginResize('agentWidth', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, agentWidth: current.layout.agentWidth === 0 ? 340 : 0 } }))} />
         <div className="resize-handle deck-resize" role="separator" aria-label="Redimensionar deck inferior" onPointerDown={(event) => beginResize('deckHeight', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, deckHeight: current.layout.deckHeight === 0 ? 220 : 0 } }))} />
       </div>
-      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectOllamaModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} />
+      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectProviderModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} />
       {showSettings && profile !== null && <aside className="settings-popover"><header><strong>Preferências</strong><button onClick={() => setShowSettings(false)}>×</button></header><label>Densidade<select value={profile.density} onChange={(event) => updateProfile((current) => ({ ...current, density: event.target.value as UIProfile['density'] }))}><option value="COMPACT">Compacta</option><option value="COMFORTABLE">Confortável</option></select></label><label>Acento<input type="color" value={profile.theme.accent} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, accent: event.target.value } }))} /></label><label>Fundo<input type="color" value={profile.theme.background} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, background: event.target.value } }))} /></label><button className="save-settings" onClick={() => void saveProfile()}>Validar e salvar</button></aside>}
       <footer className="statusbar"><span><ShieldCheck size={13} />Sandbox ativo</span><span>{workspaceRoot === null ? 'Sem workspace' : workspaceRoot}</span><div className="spacer" /><span>{system?.platform ?? 'win32'} · {system?.arch ?? 'x64'}</span><span>v{system?.version ?? '0.1.0'}</span></footer>
     </main>
