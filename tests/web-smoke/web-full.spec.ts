@@ -147,18 +147,16 @@ test('UI Web Full inicializa workspace/modelo, conversa, usa terminal e recupera
       exited?: boolean
       exitCode?: number
     }
-    interface StudioWindow extends Window {
-      studio: {
-        terminal: {
-          create(input: { cwd: string; cols: number; rows: number }): Promise<{ ok: boolean; value?: { terminalId: string }; error?: { message: string } }>
-          write(input: { terminalId: string; data: string }): Promise<{ ok: boolean; error?: { message: string } }>
-          kill(input: { terminalId: string }): Promise<unknown>
-          onData(listener: (event: TerminalEvent) => void): () => void
-        }
+    interface SmokeStudio {
+      terminal: {
+        create(input: { cwd: string; cols: number; rows: number }): Promise<{ ok: boolean; value?: { terminalId: string }; error?: { message: string } }>
+        write(input: { terminalId: string; data: string }): Promise<{ ok: boolean; error?: { message: string } }>
+        kill(input: { terminalId: string }): Promise<unknown>
+        onData(listener: (event: TerminalEvent) => void): () => void
       }
     }
 
-    const studio = (window as StudioWindow).studio
+    const studio = (window as unknown as { studio: SmokeStudio }).studio
     return await new Promise<{ ok: boolean; detail: string }>((resolve) => {
       let terminalId: string | null = null
       let settled = false
