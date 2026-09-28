@@ -1,5 +1,5 @@
 import { getSandbox } from '@cloudflare/sandbox'
-import { WEB_DEFAULT_MODEL, WEB_MODELS, WEB_PROVIDER, WEB_RUNTIME, isWebModelId, resolveWebModel } from './model-catalog'
+import { WEB_MODELS, WEB_PROVIDER, WEB_RUNTIME, isWebModelId, resolveWebModel } from './model-catalog'
 export { Sandbox } from '@cloudflare/sandbox'
 
 type SandboxNamespace = Parameters<typeof getSandbox>[0]
