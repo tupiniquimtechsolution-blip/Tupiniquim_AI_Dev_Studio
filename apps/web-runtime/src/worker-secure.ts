@@ -1,28 +1,44 @@
+import { accessAuthReadiness, authorizeAccessRequest, scopeWorkspaceId, type AccessAuthConfig } from './access-auth'
 import fullWorker, { Sandbox, WebState } from './worker-full'
 export { Sandbox, WebState }
 
-type FullEnv = Parameters<typeof fullWorker.fetch>[1] & { WEB_ALLOW_ANONYMOUS?: string }
+type FullEnv = Parameters<typeof fullWorker.fetch>[1] & AccessAuthConfig
 
-const identityAllowed = (request: Request, env: FullEnv): boolean => {
-  const accessIdentity = request.headers.get('cf-access-authenticated-user-email')
-  if (accessIdentity !== null && accessIdentity.trim() !== '') return true
-  return env.WEB_ALLOW_ANONYMOUS === 'true'
-}
-
-const unauthorized = (): Response => Response.json({
+const authError = (input: { status: 401 | 403 | 503; code: string; message: string }): Response => Response.json({
   ok: false,
   error: {
-    code: 'WEB_AUTH_REQUIRED',
-    message: 'A edição Web requer uma identidade autenticada.',
-    retryable: false
+    code: input.code,
+    message: input.message,
+    retryable: input.status === 503
   }
-}, { status: 401 })
+}, { status: input.status })
+
+const scopedRequest = async (request: Request, identity: { email: string; sub: string; issuer: string; audience: string[] }): Promise<Request> => {
+  const url = new URL(request.url)
+  const clientWorkspaceId = request.headers.get('x-tupiniquim-workspace') ?? url.searchParams.get('workspace')
+  if (clientWorkspaceId === null || clientWorkspaceId.trim() === '') return request
+
+  const headers = new Headers(request.headers)
+  headers.set('x-tupiniquim-workspace', await scopeWorkspaceId(identity, clientWorkspaceId.trim()))
+  headers.delete('cf-access-authenticated-user-email')
+  return new Request(request, { headers })
+}
 
 export default {
-  fetch(request: Request, env: FullEnv): Promise<Response> | Response {
+  async fetch(request: Request, env: FullEnv): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname === '/api/health') {
+      const response = await fullWorker.fetch(request, env)
+      const body = await response.clone().json() as Record<string, unknown>
+      return Response.json({ ...body, auth: accessAuthReadiness(env) }, { status: response.status })
+    }
     const protectedRuntimeRoute = url.pathname === '/api/studio' || url.pathname.startsWith('/ws/')
-    if (protectedRuntimeRoute && !identityAllowed(request, env)) return unauthorized()
-    return fullWorker.fetch(request, env)
+    if (!protectedRuntimeRoute) return fullWorker.fetch(request, env)
+
+    const authorization = await authorizeAccessRequest(request, env)
+    if (!authorization.allowed) return authError(authorization)
+    if (authorization.anonymous) return fullWorker.fetch(request, env)
+
+    return fullWorker.fetch(await scopedRequest(request, authorization.identity), env)
   }
 }
