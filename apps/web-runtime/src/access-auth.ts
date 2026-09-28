@@ -16,6 +16,12 @@ export type AccessAuthorization =
   | { allowed: true; anonymous: false; identity: AccessIdentity }
   | { allowed: false; status: 401 | 403 | 503; code: 'WEB_AUTH_REQUIRED' | 'WEB_AUTH_INVALID' | 'WEB_AUTH_MISCONFIGURED'; message: string }
 
+export const accessAuthReadiness = (config: AccessAuthConfig): { state: 'ANONYMOUS_TEST' | 'ACCESS_READY' | 'MISCONFIGURED'; productionReady: boolean } => {
+  if (config.WEB_ALLOW_ANONYMOUS === 'true') return { state: 'ANONYMOUS_TEST', productionReady: false }
+  if (config.ACCESS_TEAM_DOMAIN?.trim() && config.ACCESS_AUD?.trim()) return { state: 'ACCESS_READY', productionReady: true }
+  return { state: 'MISCONFIGURED', productionReady: false }
+}
+
 type AccessJwtHeader = { alg?: unknown; kid?: unknown }
 type AccessJwtPayload = { iss?: unknown; aud?: unknown; exp?: unknown; nbf?: unknown; email?: unknown; sub?: unknown }
 type JwkWithKid = JsonWebKey & { kid?: string }
