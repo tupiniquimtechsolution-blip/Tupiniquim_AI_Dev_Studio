@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import type { Socket } from 'node:net'
+import type { Duplex } from 'node:stream'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -268,7 +268,7 @@ const frame = (opcode: number, payload: Buffer): Buffer => {
   return Buffer.concat([header, payload])
 }
 
-const attachTerminal = async (request: IncomingMessage, socket: Socket, head: Buffer): Promise<void> => {
+const attachTerminal = async (request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> => {
   if (!authorized(request)) { socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n'); socket.destroy(); return }
   const key = request.headers['sec-websocket-key']
   if (typeof key !== 'string') { socket.destroy(); return }
