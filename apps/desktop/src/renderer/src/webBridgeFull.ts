@@ -17,7 +17,7 @@ import type {
 
 const WORKSPACE_KEY = 'tupiniquim.web.workspace-id'
 const MODEL_KEY = 'tupiniquim.web.model'
-const DEFAULT_MODEL = '@cf/moonshotai/kimi-k2.6'
+const DEFAULT_MODEL = '@cf/zai-org/glm-4.7-flash'
 
 interface RpcEnvelope<T> {
   ok: boolean
