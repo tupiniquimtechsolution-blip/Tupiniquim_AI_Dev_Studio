@@ -16,7 +16,7 @@ const encodeBase64Url = (value: Uint8Array): string => {
 const jsonPart = (value: unknown): string =>
   encodeBase64Url(new TextEncoder().encode(JSON.stringify(value)))
 
-const signedJwt = async (input: { audience: string; issuer: string; email?: string }): Promise<{ token: string; jwk: JsonWebKey & { kid: string } }> => {
+const signedJwt = async (input: { audience: string; issuer: string; email?: string | null; sub?: string | null; commonName?: string | null }): Promise<{ token: string; jwk: JsonWebKey & { kid: string } }> => {
   const keyPair = await crypto.subtle.generateKey(
     { name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
     true,
@@ -29,8 +29,9 @@ const signedJwt = async (input: { audience: string; issuer: string; email?: stri
     aud: input.audience,
     exp: Math.floor(Date.now() / 1000) + 300,
     iat: Math.floor(Date.now() / 1000),
-    email: input.email ?? 'dev@example.com',
-    sub: 'user-123'
+    email: input.email === undefined ? 'dev@example.com' : input.email,
+    sub: input.sub === undefined ? 'user-123' : input.sub,
+    common_name: input.commonName ?? undefined
   })
   const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', keyPair.privateKey, new TextEncoder().encode(`${header}.${payload}`))
   const exported = await crypto.subtle.exportKey('jwk', keyPair.publicKey)
@@ -71,7 +72,29 @@ describe('Cloudflare Access JWT auth', () => {
     const { token, jwk } = await signedJwt({ audience: 'app-aud', issuer })
     const mockFetch: typeof fetch = () => Promise.resolve(Response.json({ keys: [jwk] }))
     const identity = await verifyAccessJwt(token, { ACCESS_TEAM_DOMAIN: issuer, ACCESS_AUD: 'app-aud' }, mockFetch)
-    expect(identity).toMatchObject({ email: 'dev@example.com', sub: 'user-123', issuer, audience: ['app-aud'] })
+    expect(identity).toMatchObject({ kind: 'USER', principal: 'user:user-123', email: 'dev@example.com', sub: 'user-123', issuer, audience: ['app-aud'] })
+  })
+
+  it('aceita service token autenticado pelo Access usando common_name como principal', async () => {
+    const issuer = 'https://team.cloudflareaccess.com'
+    const { token, jwk } = await signedJwt({
+      audience: 'app-aud',
+      issuer,
+      email: null,
+      sub: null,
+      commonName: 'smoke-client.access'
+    })
+    const mockFetch: typeof fetch = () => Promise.resolve(Response.json({ keys: [jwk] }))
+    const identity = await verifyAccessJwt(token, { ACCESS_TEAM_DOMAIN: issuer, ACCESS_AUD: 'app-aud' }, mockFetch)
+    expect(identity).toEqual({
+      kind: 'SERVICE',
+      principal: 'service:smoke-client.access',
+      email: null,
+      sub: null,
+      commonName: 'smoke-client.access',
+      issuer,
+      audience: ['app-aud']
+    })
   })
 
   it('rejeita audience diferente mesmo com assinatura válida', async () => {
@@ -82,11 +105,11 @@ describe('Cloudflare Access JWT auth', () => {
   })
 
   it('isola o mesmo workspace client-side entre identidades diferentes', async () => {
-    const common = { issuer: 'https://team.cloudflareaccess.com', audience: ['app-aud'] }
-    const a = await scopeWorkspaceId({ ...common, email: 'a@example.com', sub: 'a' }, 'workspace-local')
-    const b = await scopeWorkspaceId({ ...common, email: 'b@example.com', sub: 'b' }, 'workspace-local')
+    const common = { kind: 'USER' as const, issuer: 'https://team.cloudflareaccess.com', audience: ['app-aud'], commonName: null }
+    const a = await scopeWorkspaceId({ ...common, principal: 'user:a', email: 'a@example.com', sub: 'a' }, 'workspace-local')
+    const b = await scopeWorkspaceId({ ...common, principal: 'user:b', email: 'b@example.com', sub: 'b' }, 'workspace-local')
     expect(a).toMatch(/^[a-f0-9]{64}$/)
     expect(a).not.toBe(b)
-    expect(await scopeWorkspaceId({ ...common, email: 'a@example.com', sub: 'a' }, 'workspace-local')).toBe(a)
+    expect(await scopeWorkspaceId({ ...common, principal: 'user:a', email: 'a@example.com', sub: 'a' }, 'workspace-local')).toBe(a)
   })
 })

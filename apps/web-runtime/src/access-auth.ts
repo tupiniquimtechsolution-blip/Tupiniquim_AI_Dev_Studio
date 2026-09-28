@@ -5,8 +5,11 @@ export interface AccessAuthConfig {
 }
 
 export interface AccessIdentity {
-  email: string
-  sub: string
+  kind: 'USER' | 'SERVICE'
+  principal: string
+  email: string | null
+  sub: string | null
+  commonName: string | null
   issuer: string
   audience: string[]
 }
@@ -23,7 +26,7 @@ export const accessAuthReadiness = (config: AccessAuthConfig): { state: 'ANONYMO
 }
 
 type AccessJwtHeader = { alg?: unknown; kid?: unknown }
-type AccessJwtPayload = { iss?: unknown; aud?: unknown; exp?: unknown; nbf?: unknown; email?: unknown; sub?: unknown }
+type AccessJwtPayload = { iss?: unknown; aud?: unknown; exp?: unknown; nbf?: unknown; email?: unknown; sub?: unknown; common_name?: unknown }
 type JwkWithKid = JsonWebKey & { kid?: string }
 type JwksResponse = { keys?: JwkWithKid[] }
 
@@ -121,15 +124,35 @@ export const verifyAccessJwt = async (
   if (acceptedAudiences.length === 0 || !audiences.some((audience) => acceptedAudiences.includes(audience))) {
     throw new Error('Audience do JWT Access inválida.')
   }
-  if (typeof payload.email !== 'string' || payload.email.trim() === '') throw new Error('JWT Access não contém identidade de email.')
-  if (typeof payload.sub !== 'string' || payload.sub.trim() === '') throw new Error('JWT Access não contém subject.')
+  const email = typeof payload.email === 'string' && payload.email.trim() !== '' ? payload.email.trim().toLowerCase() : null
+  const sub = typeof payload.sub === 'string' && payload.sub.trim() !== '' ? payload.sub.trim() : null
+  const commonName = typeof payload.common_name === 'string' && payload.common_name.trim() !== '' ? payload.common_name.trim() : null
 
-  return {
-    email: payload.email.trim().toLowerCase(),
-    sub: payload.sub.trim(),
-    issuer,
-    audience: audiences
+  if (sub !== null && email !== null) {
+    return {
+      kind: 'USER',
+      principal: `user:${sub}`,
+      email,
+      sub,
+      commonName,
+      issuer,
+      audience: audiences
+    }
   }
+
+  if (commonName !== null) {
+    return {
+      kind: 'SERVICE',
+      principal: `service:${commonName}`,
+      email,
+      sub,
+      commonName,
+      issuer,
+      audience: audiences
+    }
+  }
+
+  throw new Error('JWT Access não contém principal de usuário nem service token.')
 }
 
 export const authorizeAccessRequest = async (
@@ -161,7 +184,7 @@ export const authorizeAccessRequest = async (
 }
 
 export const scopeWorkspaceId = async (identity: AccessIdentity, clientWorkspaceId: string): Promise<string> => {
-  const source = `${identity.issuer}\n${identity.sub}\n${clientWorkspaceId}`
+  const source = `${identity.issuer}\n${identity.principal}\n${clientWorkspaceId}`
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(source))
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }

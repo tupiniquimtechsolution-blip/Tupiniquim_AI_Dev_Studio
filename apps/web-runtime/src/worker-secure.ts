@@ -1,4 +1,4 @@
-import { accessAuthReadiness, authorizeAccessRequest, scopeWorkspaceId, type AccessAuthConfig } from './access-auth'
+import { accessAuthReadiness, authorizeAccessRequest, scopeWorkspaceId, type AccessAuthConfig, type AccessIdentity } from './access-auth'
 import fullWorker, { Sandbox, WebState } from './worker-full'
 export { Sandbox, WebState }
 
@@ -13,7 +13,7 @@ const authError = (input: { status: 401 | 403 | 503; code: string; message: stri
   }
 }, { status: input.status })
 
-const scopedRequest = async (request: Request, identity: { email: string; sub: string; issuer: string; audience: string[] }): Promise<Request> => {
+const scopedRequest = async (request: Request, identity: AccessIdentity): Promise<Request> => {
   const url = new URL(request.url)
   const clientWorkspaceId = request.headers.get('x-tupiniquim-workspace') ?? url.searchParams.get('workspace')
   if (clientWorkspaceId === null || clientWorkspaceId.trim() === '') return request
