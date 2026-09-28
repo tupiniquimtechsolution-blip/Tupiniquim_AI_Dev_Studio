@@ -46,6 +46,7 @@
   "vars": {
     "SANDBOX_TRANSPORT": "rpc",
     "WEB_ALLOW_ANONYMOUS": "true",
+    "WEB_WORKSPACE_BACKUP_ENABLED": "false",
     "WEB_RUNTIME_VERSION": "web-full-0.2.1",
     "WEB_BOOTSTRAP_REPO": "https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio.git",
     "WEB_BOOTSTRAP_REF": "integration/ai-lab-toolbox-unified"
