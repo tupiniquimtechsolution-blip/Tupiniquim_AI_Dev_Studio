@@ -119,8 +119,10 @@ export const getRemoteSandbox = (env: RemoteRuntimeConfig, workspaceId: string) 
       if (!configured()) return
       await runtimeRpc<null>(env, workspaceId, 'fs.mkdir', { path, recursive: options?.recursive === true })
     },
-    readFile: async (path: string, _options?: { encoding?: string }): Promise<{ content: string }> =>
-      runtimeRpc(env, workspaceId, 'fs.read-file', { path }),
+    readFile: async (path: string, options?: { encoding?: string }): Promise<{ content: string }> => {
+      void options
+      return runtimeRpc(env, workspaceId, 'fs.read-file', { path })
+    },
     writeFile: async (path: string, content: string): Promise<void> => {
       await runtimeRpc<null>(env, workspaceId, 'fs.write-file', { path, content })
     },
