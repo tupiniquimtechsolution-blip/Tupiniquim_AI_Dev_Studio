@@ -3,14 +3,14 @@ export const WEB_RUNTIME = 'workers-ai' as const
 
 export const WEB_MODELS = [
   {
-    id: '@cf/moonshotai/kimi-k2.6',
-    displayName: 'Moonshot Kimi K2.6',
+    id: '@cf/zai-org/glm-4.7-flash',
+    displayName: 'Zhipu GLM-4.7-Flash',
     capabilities: ['chat', 'plan', 'research', 'coding'],
     default: true
   },
   {
-    id: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-    displayName: 'Meta Llama 3.3 70B Instruct FP8 Fast',
+    id: '@cf/google/gemma-4-26b-a4b-it',
+    displayName: 'Google Gemma 4 26B A4B IT',
     capabilities: ['chat', 'research', 'coding'],
     default: false
   }
