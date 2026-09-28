@@ -16,8 +16,8 @@ export interface AgentLoadoutDependencies {
 
 export const validateAgentLoadout = (loadout: AgentLoadout, deps: AgentLoadoutDependencies): AgentLoadout => {
   if (loadout.projectId.trim() === '' || loadout.agentId.trim() === '') throw new Error('Agent loadout requires projectId and agentId.')
-  if (loadout.provider === 'ollama' && (loadout.model === null || loadout.model.trim() === '')) {
-    throw new Error('Ollama agent loadout requires an explicit model.')
+  if (loadout.provider !== 'codex-app-server' && (loadout.model === null || loadout.model.trim() === '')) {
+    throw new Error('Model-backed agent loadout requires an explicit model.')
   }
   if (loadout.provider === 'codex-app-server' && loadout.model !== null) {
     throw new Error('Codex agent loadout must not embed a local model.')
