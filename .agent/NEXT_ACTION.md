@@ -1,61 +1,80 @@
 # Próxima ação
 
-Master Wave: **1 (EM ANDAMENTO)**.
+Atualizado em: 2026-09-28
 
-Wave 16: **FECHADA** com `checkpoint/wave-16` confirmado no commit `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`.
+## Foco atual
 
-Wave 17: **DOGFOOD/QA FINAL ATIVO** — Issue #24.
+**Web Full — desbloqueio de produção Cloudflare e certificação funcional real.**
 
-## Agora
+Branch canônica:
+`integration/ai-lab-toolbox-unified`
 
-Na máquina Windows F:, sincronizar a branch:
+Issue canônica:
+#53 — Web P0: Cloudflare Containers entitlement/token blocks production deploy
 
-`wave-17/master-wave-1-dogfood-qa`
+## Estado já comprovado
 
-Registrar antes de qualquer execução:
+- código Web P0 integrado;
+- Cloud Quality GREEN;
+- Workers AI separado de Ollama;
+- modelo Web padrão + catálogo compatível;
+- workspace auto-bootstrap;
+- persistência R2 implementada;
+- Cloudflare Access implementado;
+- Service Auth implementado;
+- Product Smoke implementado;
+- terminal Web alinhado ao runtime real.
 
-```powershell
-git status --short
-git branch --show-current
-git rev-parse HEAD
-git rev-parse origin/wave-17/master-wave-1-dogfood-qa
-```
+## Próxima sequência
 
-Depois executar os gates automatizados no mesmo HEAD:
+### 1. Desbloquear Containers/Sandbox na Cloudflare
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\pnpm-f.ps1" validate
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\pnpm-f.ps1" test:e2e
-```
+Na mesma account usada pelo build:
+- confirmar Workers Paid;
+- confirmar Containers entitlement;
+- confirmar credencial do build;
+- rerodar `wrangler deploy --config wrangler.jsonc`.
 
-Se ambos estiverem GREEN, executar o dogfood manual integrado definido na Issue #24:
+Critério:
+`/containers/me` não pode falhar.
 
-1. startup/workspace real;
-2. conversa/sessão;
-3. multi-provider explícito;
-4. restart/recovery;
-5. workspace A → B → A;
-6. proposal/EXPIRED;
-7. privacidade/persistência;
-8. UX/estado.
+### 2. Ativar persistência R2
 
-## Regra de achados
+Seguir `docs/WEB/WORKSPACE_R2_PERSISTENCE.md`.
 
-Não corrigir silenciosamente durante a coleta.
+Não ativar `WEB_WORKSPACE_BACKUP_ENABLED=true` sem bucket, vars e secrets completos.
 
-Classificar cada achado como:
+### 3. Ativar Cloudflare Access
 
-- PRODUCTION BUG
-- E2E/HARNESS BUG
-- UX BUG
-- DOCUMENTATION GAP
-- ENVIRONMENT
-- OUT OF SCOPE
+Seguir `docs/WEB/CLOUDFLARE_ACCESS.md`.
 
-Para bloqueios reais, registrar reprodução e somente depois criar correção mínima com testes e nova auditoria.
+Produção exige:
+`WEB_ALLOW_ANONYMOUS=false`.
 
-## Condição de fechamento
+### 4. Executar Product Smoke
 
-A Master Wave 1 só pode ser encerrada depois que a Issue #24 estiver GREEN, sem bloqueios críticos/altos abertos, com gates Windows F: aprovados e documentação final auditada.
+Workflow:
+`Web Product Smoke`
 
-Master Wave 2 permanece **NÃO INICIADA** até esse fechamento.
+Primeiro:
+`production_ready=false`
+
+Depois da configuração R2 + Access:
+`production_ready=true`
+
+### 5. Promover somente com evidência
+
+Não declarar Web production-ready enquanto faltar qualquer um:
+- deploy real;
+- chat Workers AI;
+- workspace;
+- editor;
+- terminal;
+- checkpoint R2;
+- auth Access;
+- reload/recovery;
+- smoke GREEN.
+
+## Trilhas independentes
+
+Windows/USB físico permanecem certificados por gates próprios e não bloqueiam a publicação Web quando os gates Web estiverem GREEN.
