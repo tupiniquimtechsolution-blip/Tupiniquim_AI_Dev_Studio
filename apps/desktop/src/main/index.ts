@@ -936,6 +936,9 @@ else {
       callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': ["default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:*"] } })
     })
     const choice = await providerPreferences.load()
+    if (choice.provider === 'cloudflare-workers-ai') {
+      throw new Error('Preferência Web de provider não é válida no runtime Desktop.')
+    }
     selectedAgentProvider = choice.provider
     persistedModelChoice = choice.model
     ollamaAgent.restoreModelChoice(choice.model)
