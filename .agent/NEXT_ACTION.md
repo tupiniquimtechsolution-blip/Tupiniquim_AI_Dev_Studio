@@ -1,72 +1,68 @@
 # Próxima ação
 
-Atualizado em: 2026-09-28
+Atualizado em: 2026-09-29
 
 ## Foco atual
 
-**Certificar o Web Free já implantado.**
+**Web Phase 2 — conectar e certificar o Tupiniquim Remote Runtime via Cloudflare Tunnel.**
 
-Branch:
-`integration/ai-lab-toolbox-unified`
+Issue canônica:
+#68
 
-Issue:
-#53
+## Estado comprovado antes desta fase
 
-## Estado comprovado
-
-- Containers pagos removidos;
-- Workers Build GREEN;
+- Cloudflare Free deploy GREEN;
 - Cloud Quality GREEN;
-- Workers AI gratuito configurado;
-- GLM-4.7-Flash como default;
-- Remote Runtime implementado;
-- Web Product Smoke dispara por push;
-- ausência de URL pública agora aparece como blocker explícito.
+- Web Product Smoke cloud-only GREEN;
+- Workers AI gratuito funcional;
+- modelo padrão `@cf/zai-org/glm-4.7-flash`;
+- chat e recovery certificados;
+- Issue #53 concluída.
 
 ## Próxima sequência
 
-### 1. Registrar o hostname público
+### 1. Iniciar Runtime Gateway no Windows
 
-Configurar no GitHub:
+Com o repositório local atualizado:
 
-`WEB_SMOKE_BASE_URL=https://<hostname-público-real>`
+`pnpm runtime:gateway`
 
-A URL deve ser o workers.dev ou custom domain real do Worker.
+Confirmar:
+- health local;
+- workspace confinement;
+- runtime status;
+- nenhuma exposição de shell fora das políticas.
 
-Não inventar hostname.
+### 2. Publicar por Cloudflare Tunnel
 
-### 2. Reexecutar Web Product Smoke
+Objetivo:
+- expor somente o Runtime Gateway;
+- HTTPS/WSS;
+- sem abrir portas no roteador;
+- sem Cloudflare Containers pagos.
 
-O próximo push na branch dispara automaticamente.
+### 3. Configurar o Web
 
-Também pode ser executado manualmente com `base_url`.
+Configurar:
+- `WEB_REMOTE_RUNTIME_ENABLED=true`;
+- URL HTTPS/WSS do gateway;
+- identidade/token sem hardcode.
 
-Primeiro:
-`production_ready=false`
+### 4. Reexecutar Web Product Smoke
 
-### 3. Validar o Web cloud-only
-
-Critérios:
-- health 2xx;
-- UI abre;
-- provider correto;
-- modelo gratuito correto;
-- Enviar habilita;
-- Workers AI responde;
-- sessão recupera após reload;
-- terminal/Git/filesystem aparecem offline quando Gateway não está conectado.
-
-### 4. Conectar Remote Runtime opcional
-
-Depois do smoke cloud-only:
-- iniciar `pnpm runtime:gateway` no Windows;
-- expor por Cloudflare Tunnel;
-- configurar URL/token do gateway;
-- repetir smoke com filesystem/Git/terminal/build/test.
+Certificar:
+- workspace list/read/write;
+- Git;
+- terminal;
+- comando real;
+- build/test;
+- recovery;
+- runtime OFFLINE quando gateway cair;
+- chat Workers AI continua funcional independentemente do gateway.
 
 ## Não fazer
 
-- não reintroduzir Cloudflare Containers;
-- não migrar para plano pago;
-- não esconder falha de smoke;
-- não marcar SKIPPED/BLOCKED como PASS.
+- não reintroduzir Containers pagos;
+- não expor shell público irrestrito;
+- não versionar tokens;
+- não mascarar runtime offline como READY.
