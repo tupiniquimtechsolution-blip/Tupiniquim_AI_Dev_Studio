@@ -1,12 +1,13 @@
 # Status
 
-Atualizado em: 2026-09-28
+Atualizado em: 2026-09-29
 
 ## Estado operacional atual
 
 - Estratégia: **CLOUD-FIRST / ZERO-COST-FIRST**, com GitHub como fonte de verdade.
 - Branch canônica: `integration/ai-lab-toolbox-unified`.
-- HEAD operacional auditado: `d0b59c5ece7f001667e2318833d65915e36dccae`.
+- Candidato Web cloud-only certificado: `aee4814bf6e8fecdf1bbcc74cff16e7b62c374bb`.
+- URL pública: `https://tupiniquim-dev-ai-web.tupiniquim-techsolution.workers.dev`.
 - Cloudflare Containers pagos foram removidos da arquitetura Web.
 - Cloudflare Free hospeda UI/Worker/Workers AI/Durable state.
 - Execução de SO é fornecida pelo **Tupiniquim Remote Runtime** opcional no hardware do usuário.
@@ -20,77 +21,56 @@ Atualizado em: 2026-09-28
 ### CI
 **GREEN**
 
-Cloud Quality permanece GREEN no fluxo de integração.
+Cloud Quality run `36546104298`: **SUCCESS**.
 
 ### Deploy Cloudflare
 **GREEN**
 
-O blocker antigo `/containers/me` foi eliminado.
-
-Evidência recente:
-- Workers Build do SHA `d0b59c5ece7f001667e2318833d65915e36dccae`: **SUCCESS**
-- Build ID: `7f4a7a95-3cca-471a-8d5f-456f04298186`
-- Version ID: `c6500336-9110-479a-ab59-4435b1c41bdc`
+Workers Build do candidato:
+- Build ID: `b75fea78-0569-4237-9c5d-d2dc7ec1c32b`
+- Version ID: `7dfdc1aa-90a0-4456-9c44-98a635e1e929`
+- conclusão: **SUCCESS**
 
 ### Web Product Smoke
-**AUTOMAÇÃO FUNCIONAL / TARGET BLOQUEADO POR URL AUSENTE**
+**GREEN — CLOUD-ONLY**
 
-Workflow:
-`.github/workflows/web-product-smoke.yml`
+Run:
+`36546098267`
 
-Gatilho canônico:
-- push em `integration/ai-lab-toolbox-unified`;
-- execução manual opcional.
+Playwright:
+- health/functional readiness: PASS;
+- UI Web Full + workspace/model bootstrap + chat + session recovery: PASS;
+- workspace/R2/Remote Runtime: SKIPPED porque o Remote Runtime ainda não está conectado.
 
-Evidência:
-- run `36477142690` disparado por push;
-- job `smoke-target`: FAIL/BLOCKED;
-- motivo: `WEB_SMOKE_BASE_URL` vazio;
-- `live-web-smoke`: SKIPPED por dependência do target.
+Artifact:
+- `web-product-smoke-aee4814bf6e8fecdf1bbcc74cff16e7b62c374bb`
+- ID: `11022029029`
+- SHA256: `71e70b5556fe2ecc6354c2bac401b9c299b5ba4b7b0ccd1ead417d5390af9a64`
 
-Isso não é falha de produto nem de build. É ausência do hostname público real no GitHub.
+Issue #53 foi encerrada como concluída.
 
 ### Remote Runtime
 **IMPLEMENTADO / NÃO CONFIGURADO**
 
-Capacidades quando conectado:
+Issue canônica da próxima fase:
+#68 — conectar e certificar Tupiniquim Remote Runtime via Cloudflare Tunnel.
+
+Capacidades a certificar quando conectado:
 - workspace;
 - filesystem;
 - Git;
 - terminal;
 - build;
 - testes;
-- persistência local.
-
-Sem gateway conectado:
-- chat/Workers AI continuam disponíveis;
-- capacidades de SO ficam explicitamente offline/fail-closed.
-
-## Próximo gate único
-
-Registrar uma URL pública real HTTPS em:
-
-`vars.WEB_SMOKE_BASE_URL`
-
-ou informar `base_url` manualmente ao workflow.
-
-Depois disso o smoke deve provar:
-1. `/api/health`;
-2. `runtime=cloudflare-edge`;
-3. `ai=workers-ai`;
-4. provider `cloudflare-workers-ai`;
-5. modelo padrão `@cf/zai-org/glm-4.7-flash`;
-6. chat real;
-7. resposta real;
-8. reload/recovery;
-9. capacidades de SO offline enquanto Remote Runtime não estiver conectado.
+- recovery;
+- fail-closed quando runtime estiver offline.
 
 ## Classificação atual
 
 - CODE: GREEN
 - CI: GREEN
-- CLOUDFLARE DEPLOY: GREEN
+- CLOUDFLARE FREE DEPLOY: GREEN
+- LIVE WEB CLOUD-ONLY SMOKE: GREEN
 - CONTAINERS PAID: REMOVIDO
-- LIVE WEB SMOKE: BLOCKED — PUBLIC URL NOT REGISTERED
 - REMOTE RUNTIME: IMPLEMENTED / NOT CONFIGURED
 - NOVA MENSALIDADE OBRIGATÓRIA: ZERO dentro das franquias Free
