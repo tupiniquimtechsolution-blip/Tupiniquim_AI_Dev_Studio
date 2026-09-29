@@ -1,61 +1,65 @@
 # Tarefa atual
 
-Atualizado em: 2026-09-28
+Atualizado em: 2026-09-29
 
 ## Objetivo
 
-Levar o Tupiniquim Dev AI Web Free de:
-
-`DEPLOY GREEN / SMOKE BLOCKED BY PUBLIC URL`
-
-para:
-
-`LIVE WEB SMOKE GREEN`
-
-sem custo recorrente obrigatório novo.
+Conectar e certificar o **Tupiniquim Remote Runtime** no Web Free já certificado.
 
 ## Fonte de verdade
 
 - Branch: `integration/ai-lab-toolbox-unified`
-- Issue: #53
-- Workflow: `.github/workflows/web-product-smoke.yml`
+- Issue: #68
+- URL Web: `https://tupiniquim-dev-ai-web.tupiniquim-techsolution.workers.dev`
+- Smoke workflow: `.github/workflows/web-product-smoke.yml`
 
-## Arquitetura atual
+## Estado de entrada
 
-Cloudflare Free:
-- Worker;
-- Assets;
-- Workers AI;
-- Durable state.
-
-Runtime opcional:
-- Tupiniquim Remote Runtime no hardware do usuário.
-
-Modelo padrão:
-`@cf/zai-org/glm-4.7-flash`
-
-## Blocker atual
-
-A URL pública real do Worker ainda não está registrada em:
-
-`vars.WEB_SMOKE_BASE_URL`
+Candidato cloud-only:
+`aee4814bf6e8fecdf1bbcc74cff16e7b62c374bb`
 
 Evidência:
-- Web Product Smoke run `36477142690`;
-- `smoke-target` falhou corretamente;
-- erro: `LIVE_WEB_SMOKE_BLOCKED`;
-- Workers Build do mesmo SHA ficou GREEN.
+- Cloud Quality: GREEN;
+- Workers Build: GREEN;
+- Live Web Smoke: GREEN;
+- chat/recovery: PASS;
+- Remote Runtime test: SKIPPED por gateway não configurado.
 
-## Definition of Done desta tarefa
+## Trabalho atual
 
-- hostname público real registrado;
-- health passa;
-- UI abre;
-- provider/model corretos;
-- chat real passa;
-- resposta Workers AI passa;
-- reload/recovery passa;
-- capacidades Remote Runtime ficam explicitamente OFFLINE quando não configuradas;
-- Issue #53 atualizada com exact SHA, URL e evidências.
+### Runtime Gateway
+- iniciar localmente no Windows;
+- validar health;
+- validar confinement;
+- validar identidade/token.
 
-A conexão do Runtime Gateway local é fase seguinte e independente do smoke cloud-only.
+### Cloudflare Tunnel
+- publicar gateway em hostname HTTPS/WSS;
+- não abrir portas;
+- manter custo obrigatório zero.
+
+### Web
+- ativar `WEB_REMOTE_RUNTIME_ENABLED`;
+- configurar URL/token do gateway;
+- refletir READY/OFFLINE corretamente.
+
+### Certificação
+Reexecutar smoke com:
+- workspace;
+- filesystem;
+- Git;
+- terminal;
+- build/test;
+- recovery;
+- fail-closed offline.
+
+## Definition of Done
+
+- Remote Runtime conectado;
+- Web reconhece READY;
+- capacidades de SO passam no smoke;
+- queda do gateway produz OFFLINE/fail-closed;
+- chat cloud continua funcionando;
+- Cloud Quality permanece GREEN;
+- Web Product Smoke permanece GREEN;
+- Issue #68 fechada com evidência em exact SHA.
