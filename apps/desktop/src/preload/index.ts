@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { ipcChannels, type AIEvent, type StudioApi, type TerminalDataEvent, type WorkspaceWriteProposal } from '@tupiniquim/contracts'
+import { controlCenterIpcChannels, ipcChannels, type AIEvent, type ControlCenterDesktopApi, type StudioApi, type TerminalDataEvent, type WorkspaceWriteProposal } from '@tupiniquim/contracts'
 
 const api: StudioApi = {
   system: { info: () => ipcRenderer.invoke(ipcChannels.systemInfo) },
@@ -86,4 +86,16 @@ const api: StudioApi = {
   }
 }
 
+const controlCenter: ControlCenterDesktopApi = {
+  status: () => ipcRenderer.invoke(controlCenterIpcChannels.status),
+  inspectPortable: (input) => ipcRenderer.invoke(controlCenterIpcChannels.portableInspect, input),
+  runToolboxGate: (input) => ipcRenderer.invoke(controlCenterIpcChannels.toolboxRun, input),
+  listSkills: (input) => ipcRenderer.invoke(controlCenterIpcChannels.skills, input),
+  setSkillEnabled: (input) => ipcRenderer.invoke(controlCenterIpcChannels.skillSetEnabled, input),
+  listAgents: () => ipcRenderer.invoke(controlCenterIpcChannels.agentCatalog),
+  listAgentLoadouts: (input) => ipcRenderer.invoke(controlCenterIpcChannels.agentLoadouts, input),
+  putAgentLoadout: (input) => ipcRenderer.invoke(controlCenterIpcChannels.agentLoadoutPut, input)
+}
+
 contextBridge.exposeInMainWorld('studio', api)
+contextBridge.exposeInMainWorld('controlCenter', controlCenter)

@@ -13,8 +13,12 @@ describe('TerminalAdapter', () => {
   it.runIf(isWindows)('executa uma sessão ConPTY real', async () => {
 
     const temp = process.env.TEMP ?? process.env.TMP ?? os.tmpdir()
-    if (temp === undefined || path.parse(temp).root.toUpperCase() !== 'F:\\')
-      throw new Error('TEMP de testes precisa estar em F:.')
+    const expectedPortableRoot = process.env.TUPINIQUIM_PORTABLE_DRIVE_ROOT?.trim()
+    const expectedRoot = expectedPortableRoot
+      ? path.parse(expectedPortableRoot).root.toUpperCase()
+      : 'F:\\'
+    if (temp === undefined || path.parse(temp).root.toUpperCase() !== expectedRoot)
+      throw new Error(`TEMP de testes precisa estar na unidade portátil ${expectedRoot}`)
     fixture = await mkdtemp(path.join(temp, 'tupiniquim-pty-'))
     const events: TerminalEvent[] = []
     let resolveOutput: (() => void) | undefined

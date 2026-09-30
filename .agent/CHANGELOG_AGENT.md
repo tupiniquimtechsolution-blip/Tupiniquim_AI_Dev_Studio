@@ -1,5 +1,25 @@
 # Changelog do Agente
 
+## 2026-09-30 — Estabilização Release Green (Web hotfix + auditoria canônica)
+
+- fix(web-ai): `ai-text.ts` compartilhado normaliza respostas OpenAI-compatible
+  do Workers AI (`choices[0].message.content`, delta, text, aninhado em result);
+  `reasoning_content`/`usage`/`model` nunca renderizados; fallback seguro.
+- fix(web-runtime): `gateLockReason()` — gates continuam fail-closed (READY
+  obrigatório) com mensagens distintas por DISABLED/MISCONFIGURED/OFFLINE.
+- fix(web-ui): drawers Terminal/Git/Files e Control Center (Web) explicam o
+  estado real do runtime com retry sem reload e status sanitizado
+  (estado/transporte/plataforma/capacidades; jamais token/URL). Desktop intacto.
+- test: +18 unit (web-ai-text, web-remote-runtime); guard de TEMP com mensagem
+  correta por plataforma (contrato F:\ preservado no win32).
+- Descoberta de auditoria: as "22+1 falhas pré-existentes" de integration/
+  security eram TEMP indefinido na invocação local — com TEMP=/tmp:
+  integration 104/104 e security 55/55; CI ubuntu sempre esteve verde.
+- docs: RELEASE_GREEN_AUDIT / RELEASE_GREEN_CHECKLIST / KNOWN_LIMITATIONS /
+  RUNBOOK / ROLLBACK; .agent sincronizado com o estado real.
+- Contexto anterior desta janela: tema claro/escuro/system (51c1818) e
+  toolchain Cloudflare (#79, 4f32f35) já mergeados — nenhum retrabalho.
+
 ## 2026-09-12 — Wave 16 Inc4 — conclusão técnica e gate final Windows F: (docs-only)
 
 Alteração documental de fechamento pré-merge. Nenhum `.ts`, `.tsx`, `.js`, package,

@@ -1,0 +1,9 @@
+FROM docker.io/cloudflare/sandbox:0.12.10-python
+
+USER root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ripgrep \
+  && npm install -g pnpm@11.16.0 typescript \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace

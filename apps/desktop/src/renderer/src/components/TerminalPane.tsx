@@ -3,7 +3,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { CirclePlay, Square } from 'lucide-react'
 
-export const TerminalPane = ({ workspaceReady }: { workspaceReady: boolean }): React.JSX.Element => {
+export const TerminalPane = ({ workspaceReady, platform }: { workspaceReady: boolean; platform?: string | null }): React.JSX.Element => {
   const hostRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
@@ -69,7 +69,7 @@ export const TerminalPane = ({ workspaceReady }: { workspaceReady: boolean }): R
     <section className="terminal-shell">
       <header className="terminal-toolbar">
         <span className={`state-dot ${state}`} />
-        <span>{state === 'running' ? 'PowerShell · ConPTY' : state === 'error' ? 'Falha no terminal' : 'Terminal parado'}</span>
+        <span>{state === 'running' ? ((platform === 'cloudflare-edge' || platform === 'cloudflare-sandbox') ? 'Shell · Tupiniquim Remote Runtime' : 'PowerShell · ConPTY') : state === 'error' ? 'Falha no terminal' : 'Terminal parado'}</span>
         <div className="spacer" />
         {state === 'running'
           ? <button className="icon-button" onClick={() => void stop()} title="Encerrar terminal"><Square size={14} /></button>

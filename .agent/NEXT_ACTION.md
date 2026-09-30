@@ -1,61 +1,19 @@
-# Próxima ação
+# Next Action
 
-Master Wave: **1 (EM ANDAMENTO)**.
+Somente ações futuras reais (donos indicados):
 
-Wave 16: **FECHADA** com `checkpoint/wave-16` confirmado no commit `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`.
-
-Wave 17: **DOGFOOD/QA FINAL ATIVO** — Issue #24.
-
-## Agora
-
-Na máquina Windows F:, sincronizar a branch:
-
-`wave-17/master-wave-1-dogfood-qa`
-
-Registrar antes de qualquer execução:
-
-```powershell
-git status --short
-git branch --show-current
-git rev-parse HEAD
-git rev-parse origin/wave-17/master-wave-1-dogfood-qa
-```
-
-Depois executar os gates automatizados no mesmo HEAD:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\pnpm-f.ps1" validate
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\pnpm-f.ps1" test:e2e
-```
-
-Se ambos estiverem GREEN, executar o dogfood manual integrado definido na Issue #24:
-
-1. startup/workspace real;
-2. conversa/sessão;
-3. multi-provider explícito;
-4. restart/recovery;
-5. workspace A → B → A;
-6. proposal/EXPIRED;
-7. privacidade/persistência;
-8. UX/estado.
-
-## Regra de achados
-
-Não corrigir silenciosamente durante a coleta.
-
-Classificar cada achado como:
-
-- PRODUCTION BUG
-- E2E/HARNESS BUG
-- UX BUG
-- DOCUMENTATION GAP
-- ENVIRONMENT
-- OUT OF SCOPE
-
-Para bloqueios reais, registrar reprodução e somente depois criar correção mínima com testes e nova auditoria.
-
-## Condição de fechamento
-
-A Master Wave 1 só pode ser encerrada depois que a Issue #24 estiver GREEN, sem bloqueios críticos/altos abertos, com gates Windows F: aprovados e documentação final auditada.
-
-Master Wave 2 permanece **NÃO INICIADA** até esse fechamento.
+1. [Mantenedor] Revisar e mergear PR #80 (cloud-quality PASS; único check
+   vermelho é o Workers Builds externo do dashboard — RG-07).
+2. [Automático] Confirmar Web Product Smoke verde no SHA de merge.
+3. [Operador Cloudflare + host local] RG-05: habilitar Remote Runtime em
+   produção seguindo docs/RELEASE/RUNBOOK.md §2; validar health READY e
+   smoke de terminal/Git/filesystem/gates.
+4. [Operador Cloudflare] RG-08: impor Cloudflare Access
+   (docs/WEB/CLOUDFLARE_ACCESS.md); validar productionReady=true e smoke
+   com WEB_SMOKE_REQUIRE_PRODUCTION_READY=true.
+5. [Operador Cloudflare] RG-07: corrigir/limitar Workers Builds do dashboard
+   para branches de PR.
+6. [Host Windows F:] RG-09: executar certificação desktop
+   (windows-certification) no ambiente alvo.
+7. Após 1–6: declarar RELEASE_GREEN com a matriz de
+   docs/RELEASE/RELEASE_GREEN_CHECKLIST.md 100% PASS/NOT_APPLICABLE.

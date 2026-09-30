@@ -19,3 +19,7 @@ Thumbs.db
 
 
 release/
+
+# Artefatos de dry-run do Wrangler (validação sem deploy)
+.wrangler-dry-run/
+.wrangler/

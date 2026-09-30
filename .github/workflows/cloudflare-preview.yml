@@ -27,6 +27,19 @@ jobs:
     environment: cloud-preview
     steps:
       - uses: actions/checkout@v4
+      # Mesma toolchain do restante do CI: Node 24 + pnpm 11.16.0 +
+      # lockfile congelado, para que a wrangler-action use o Wrangler
+      # local pinado (4.144.0) em vez de resolver uma versão flutuante.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
       - name: Require Cloudflare credentials
         shell: bash
         env:
@@ -35,19 +48,24 @@ jobs:
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || (echo 'Missing CLOUDFLARE_API_TOKEN' && exit 1)
           test -n "$CLOUDFLARE_ACCOUNT_ID" || (echo 'Missing CLOUDFLARE_ACCOUNT_ID' && exit 1)
+      # Supply chain: wrangler-action pinada por SHA imutável (# v4.1.3).
+      # `packageManager: pnpm` faz a action reutilizar o Wrangler instalado
+      # pelo lockfile (4.144.0) — fonte única de versão no package.json.
       - name: Deploy preview control plane
         if: ${{ inputs.target == 'preview' }}
-        uses: cloudflare/wrangler-action@v4
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: pnpm
           command: deploy --config cloudflare/wrangler.jsonc
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
       - name: Deploy Master Wave environment
         if: ${{ inputs.target != 'preview' }}
-        uses: cloudflare/wrangler-action@v4
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: pnpm
           command: deploy --config cloudflare/wrangler.jsonc --env ${{ inputs.target }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
