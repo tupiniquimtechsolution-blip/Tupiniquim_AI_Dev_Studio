@@ -8,6 +8,8 @@ export default tseslint.config(
     ignores: [
       'out/**',
       'dist/**',
+      '.wrangler-dry-run/**',
+      '.wrangler/**',
       'coverage/**',
       '.pnpm/**',
       'playwright-report/**',
