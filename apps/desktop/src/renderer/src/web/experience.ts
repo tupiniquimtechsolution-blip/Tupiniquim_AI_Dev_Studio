@@ -96,16 +96,21 @@ export interface ExecutionRuntimeView {
 
 export const RUNTIME_LOCK_MESSAGE = 'Conecte o Runtime Local para usar terminal, Git e filesystem.'
 
+/**
+ * Cada estado tem mensagem própria (fail-closed intacto): a UI nunca deve
+ * apresentar o mesmo erro genérico para DISABLED/MISCONFIGURED/OFFLINE —
+ * isso fazia todos os fluxos parecerem quebrados em produção.
+ */
 export const executionRuntimeView = (state: string | null | undefined): ExecutionRuntimeView => {
   switch (state) {
     case 'READY':
       return { state: 'READY', label: 'Runtime Local — Online', detail: 'Files, Git, terminal, build e testes liberados no seu hardware.', tone: 'ok', osCapabilities: true }
     case 'OFFLINE':
-      return { state: 'OFFLINE', label: 'Runtime Local — Offline', detail: RUNTIME_LOCK_MESSAGE, tone: 'warn', osCapabilities: false }
+      return { state: 'OFFLINE', label: 'Runtime Local — Offline', detail: 'O Tunnel está configurado, mas o gateway não respondeu. Inicie o Runtime Local ou verifique o túnel; depois use "Verificar novamente".', tone: 'warn', osCapabilities: false }
     case 'MISCONFIGURED':
       return { state: 'MISCONFIGURED', label: 'Runtime Local — Configuração incompleta', detail: 'Revise URL/token do gateway no Control Center. Nenhum fallback silencioso é aplicado.', tone: 'danger', osCapabilities: false }
     default:
-      return { state: 'DISABLED', label: 'Execution — Cloud', detail: RUNTIME_LOCK_MESSAGE, tone: 'muted', osCapabilities: false }
+      return { state: 'DISABLED', label: 'Execution — Cloud', detail: 'Execução local desativada nesta implantação. Chat e Workers AI continuam disponíveis; terminal, Git, filesystem e gates exigem o Runtime Local.', tone: 'muted', osCapabilities: false }
   }
 }
 
