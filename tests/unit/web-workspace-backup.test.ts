@@ -7,8 +7,8 @@ import {
   workspaceBackupReadiness
 } from '../../apps/web-runtime/src/workspace-backup'
 
-describe('Web workspace backup configuration', () => {
-  it('fica fail-closed quando o backup não foi habilitado explicitamente', () => {
+describe('Web workspace local backup configuration', () => {
+  it('fica fail-closed quando o checkpoint local não foi habilitado explicitamente', () => {
     expect(workspaceBackupReadiness({})).toEqual({
       state: 'DISABLED',
       configured: false,
@@ -16,22 +16,20 @@ describe('Web workspace backup configuration', () => {
     })
   })
 
-  it('lista configuração/secrets ausentes sem expor valores', () => {
-    expect(workspaceBackupReadiness({ WEB_WORKSPACE_BACKUP_ENABLED: 'true' })).toEqual({
-      state: 'MISCONFIGURED',
-      configured: false,
-      missing: ['BACKUP_BUCKET_NAME', 'CLOUDFLARE_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']
-    })
+  it('fica READY sem credenciais R2 quando o backup local do Remote Runtime está habilitado', () => {
+    expect(workspaceBackupReadiness({
+      WEB_WORKSPACE_BACKUP_ENABLED: 'true'
+    })).toEqual({ state: 'READY', configured: true, missing: [] })
   })
 
-  it('fica READY somente com o conjunto completo de configuração', () => {
+  it('não trata valores diferentes de true como configuração válida', () => {
     expect(workspaceBackupReadiness({
-      WEB_WORKSPACE_BACKUP_ENABLED: 'true',
-      BACKUP_BUCKET_NAME: 'tupiniquim-dev-ai-web-workspaces',
-      CLOUDFLARE_ACCOUNT_ID: 'account',
-      R2_ACCESS_KEY_ID: 'configured',
-      R2_SECRET_ACCESS_KEY: 'configured'
-    })).toEqual({ state: 'READY', configured: true, missing: [] })
+      WEB_WORKSPACE_BACKUP_ENABLED: 'false'
+    })).toEqual({
+      state: 'DISABLED',
+      configured: false,
+      missing: ['WEB_WORKSPACE_BACKUP_ENABLED']
+    })
   })
 
   it('mantém nomes/TTL/marker determinísticos e isolados por workspace', () => {
