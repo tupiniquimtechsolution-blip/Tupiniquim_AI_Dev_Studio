@@ -2,9 +2,13 @@
 
 Somente ações futuras reais (donos indicados):
 
-1. [Mantenedor] Revisar e mergear PR #80 (cloud-quality PASS; único check
-   vermelho é o Workers Builds externo do dashboard — RG-07).
-2. [Automático] Confirmar Web Product Smoke verde no SHA de merge.
+1. FEITO: PR #80 merged (61ae3d5); deploy de produção verde (Version ID).
+2. [Mantenedor — 1 clique] Re-run failed jobs no run 36762440741 do Web
+   Product Smoke (o 1º run perdeu a corrida contra o deploy; o spec agora
+   valida o parser). Alternativa: dispatch manual do workflow.
+2b. [Mantenedor] Criar branch release/release-green-stabilization a partir
+   da integration pós-merge para RG-05/RG-08/RG-09 (esta sessão é fixa na
+   branch arena e não pode criar branches).
 3. [Operador Cloudflare + host local] RG-05: habilitar Remote Runtime em
    produção seguindo docs/RELEASE/RUNBOOK.md §2; validar health READY e
    smoke de terminal/Git/filesystem/gates.
