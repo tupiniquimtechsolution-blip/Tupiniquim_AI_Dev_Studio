@@ -52,6 +52,22 @@ const waitForWebWorkspace = async (page: Page): Promise<void> => {
   await expect(page.locator('.statusbar')).toContainText('/workspace')
 }
 
+/**
+ * Web Product Experience: a raiz `/` apresenta a landing pública no primeiro
+ * acesso; o Studio chat-first abre após a entrada explícita (CTA
+ * "Abrir Studio") e a raiz passa a levar direto ao Studio nas visitas
+ * seguintes (flag local — mesma semântica de recovery anterior, quando `/`
+ * já era a superfície autenticada).
+ */
+const enterStudio = async (page: Page): Promise<void> => {
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  const openStudio = page.getByRole('button', { name: 'Abrir Studio', exact: true }).first()
+  const studioBrand = page.locator('.web-studio .brand')
+  await expect(openStudio.or(studioBrand).first()).toBeVisible()
+  if (await openStudio.isVisible()) await openStudio.click()
+  await expect(studioBrand).toContainText('Tupiniquim')
+}
+
 test.describe.configure({ mode: 'serial' })
 
 test('health diferencia funcional de production-ready sem PASS fictício', async ({ request }) => {
@@ -115,9 +131,21 @@ test('workspace RPC escreve, lê e cria checkpoint com isolamento por workspace'
   }
 })
 
-test('UI Web Full inicializa workspace/modelo, conversa e recupera sessão; terminal quando o Remote Runtime está online', async ({ page, request }) => {
+test('landing pública apresenta o produto e leva ao onboarding conversacional', async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' })
-  await expect(page.locator('.brand')).toContainText('Tupiniquim')
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Do pedido ao código executável')
+  await expect(page.getByRole('link', { name: 'Como funciona' }).first()).toBeVisible()
+  await page.getByRole('button', { name: 'Começar', exact: true }).first().click()
+  await expect(page.getByRole('heading', { name: 'Boas-vindas ao Studio.' })).toBeVisible()
+  await page.getByRole('button', { name: 'Vamos lá' }).click()
+  await expect(page.getByRole('heading', { name: 'Como você pretende usar o Studio?' })).toBeVisible()
+  await page.getByRole('button', { name: 'Programação', exact: false }).click()
+  await expect(page.getByRole('heading', { name: 'Qual o seu nível hoje?' })).toBeVisible()
+})
+
+test('UI Web Full inicializa workspace/modelo, conversa e recupera sessão; terminal quando o Remote Runtime está online', async ({ page, request }) => {
+  await enterStudio(page)
+  await expect(page.locator('.web-studio .brand')).toContainText('Tupiniquim')
   await waitForWebWorkspace(page)
 
   const provider = page.getByLabel('Provedor de IA')
