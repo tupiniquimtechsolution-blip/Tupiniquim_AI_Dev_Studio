@@ -7,3 +7,12 @@ allowBuilds:
   electron-winstaller: false
   esbuild: true
   node-pty: true
+  # Runtime oficial da Cloudflare usado pelo Wrangler local (postinstall
+  # baixa o binário da plataforma; necessário para `wrangler dev`).
+  workerd: true
+
+# Pins exatos da toolchain de deploy (docs/WEB/CLOUDFLARE_TOOLCHAIN.md):
+# upgrades apenas via PR isolado.
+minimumReleaseAgeExclude:
+  - miniflare@5.20260926.1-alpha
+  - wrangler@4.144.0
