@@ -95,7 +95,6 @@ const workspacePersistenceStatus = (env: Env): JsonRecord => {
 const restoreWorkspaceCheckpoint = async (env: Env, workspaceId: string, sandbox: ReturnType<typeof sandboxFor>): Promise<JsonRecord> => {
   const readiness = workspaceBackupReadiness(env)
   if (readiness.state === 'DISABLED') return { state: 'DISABLED', configured: false }
-  if (readiness.state === 'MISCONFIGURED') return { state: 'MISCONFIGURED', configured: false, missing: readiness.missing }
 
   const marker = await sandbox.exists(WORKSPACE_RESTORE_MARKER)
   if (marker.exists) return { state: 'ALREADY_INITIALIZED', configured: true }
@@ -111,9 +110,6 @@ const restoreWorkspaceCheckpoint = async (env: Env, workspaceId: string, sandbox
 const createWorkspaceCheckpoint = async (env: Env, workspaceId: string, sandbox: ReturnType<typeof sandboxFor>): Promise<JsonRecord> => {
   const readiness = workspaceBackupReadiness(env)
   if (readiness.state === 'DISABLED') return { state: 'DISABLED', configured: false }
-  if (readiness.state === 'MISCONFIGURED') {
-    throw new Error(`Workspace backup habilitado, mas incompleto: ${readiness.missing.join(', ')}`)
-  }
 
   const backup = await sandbox.createBackup({
     dir: '/workspace',
