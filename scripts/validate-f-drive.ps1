@@ -1,12 +1,13 @@
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\portable-layout.ps1"
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$ExpectedRoot = 'F:\CODEX\Tupiniquim-AI-Dev-Studio'
-if (-not $ProjectRoot.Equals($ExpectedRoot, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Projeto fora de $ExpectedRoot." }
+$Layout = Get-TupiniquimPortableLayout -ProjectRoot $ProjectRoot
+$ExpectedRoot = $Layout.ProjectRoot
 
 $required = @(
-  'F:\CODEX\programas\nodejs\node.exe',
-  'F:\CODEX\programas\pnpm\pnpm.cmd'
+  (Join-Path $Layout.NodeRoot 'node.exe'),
+  (Join-Path $Layout.PnpmRoot 'pnpm.cmd')
 )
 foreach ($path in $required) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Componente obrigatório local não encontrado: $path" }
@@ -17,9 +18,9 @@ $forbidden = @(
   (Join-Path $env:LOCALAPPDATA 'Tupiniquim AI Dev Studio')
 )
 foreach ($path in $forbidden) {
-  if (Test-Path -LiteralPath $path) { throw "Artefato do projeto encontrado fora de F:\CODEX: $path" }
+  if (Test-Path -LiteralPath $path) { throw "Artefato do projeto encontrado fora de $($Layout.CodexRoot): $path" }
 }
 
 git -c "safe.directory=$ExpectedRoot" check-ignore -q .env.local
 if ($LASTEXITCODE -ne 0) { throw '.env.local não está ignorado pelo Git.' }
-Write-Host 'Regra F:\CODEX-only e componentes locais validados.'
+Write-Host "Layout portátil validado em $($Layout.CodexRoot)."
