@@ -34,7 +34,7 @@ Atualizado em: 2026-09-30. Regras: resultado ∈ {PASS, FAIL, BLOCKED, NOT_APPLI
 | Item | Resultado | Evidência |
 |---|---|---|
 | Homepage/Landing, Onboarding, Studio, navegação, reload, recovery, tema | **PASS** (base 4f32f35) | Web Product Smoke success (spec `tests/web-smoke/web-full.spec.ts` cobre landing→onboarding→studio, tema com persistência, recovery de sessão) |
-| Chat Workers AI (sem JSON bruto) | **NEEDS_VALIDATION → smoke pós-merge do #80** | Correção está no PR; smoke dispara no push da integration |
+| Chat Workers AI (sem JSON bruto) | **NEEDS_VALIDATION** | #80 merged e implantado (Version ID @ 61ae3d5); 1º smoke perdeu a corrida do deploy (timeline no audit RG-10); rerun = 1 clique do mantenedor; o spec agora assere ausência de payload bruto |
 | Terminal / Git / filesystem / gates Toolbox | **BLOCKED** | Runtime `DISABLED` em produção (RG-05); UI agora explica o estado |
 | Health/observabilidade | **PASS** | `/api/health` responde com estados verdadeiros (nunca mascarados) |
 | Persistência (Durable Objects + R2) | **PASS** | health `workspacePersistence: READY`; suites de persistence/recovery 104/104 |
@@ -50,7 +50,7 @@ Atualizado em: 2026-09-30. Regras: resultado ∈ {PASS, FAIL, BLOCKED, NOT_APPLI
 
 1. Runtime remoto DISABLED em produção (RG-05 — externo).
 2. Access `productionReady=false` (RG-08 — externo).
-3. Smoke do delta do PR #80 ainda não rodou (roda no merge).
+3. Smoke do delta do PR #80: rerun pendente (RG-10 — corrida de deploy; ação de 1 clique).
 4. Certificação Windows não executada nesta janela (RG-09).
 
 Estado honesto atual: **RELEASE_CANDIDATE_READY** (todo o corrigível está corrigido, gates executáveis 100% PASS, bloqueios restantes são externos e documentados com passo mínimo e teste de validação).

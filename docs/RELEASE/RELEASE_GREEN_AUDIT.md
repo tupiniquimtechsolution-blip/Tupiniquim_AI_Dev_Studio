@@ -1,6 +1,6 @@
 # Release Green Audit — inventário canônico
 
-Atualizado em: 2026-09-30 · HEAD auditado: branch de estabilização sobre `integration/ai-lab-toolbox-unified` @ `4f32f35` (PR #80 aberto).
+Atualizado em: 2026-09-30 · **PR #80 MERGED** → integration @ `61ae3d5`. Deploy de produção do merge SHA: Workers Builds **SUCCESS com Version ID** às 19:00:29Z (parser novo no ar).
 Metodologia: Agenor — *BUILD PASSOU ≠ PRODUTO FUNCIONA; CI GREEN ≠ RELEASE GREEN*. Toda linha tem evidência verificável.
 Documentos irmãos: `RELEASE_GREEN_CHECKLIST.md` (matriz de gates), `KNOWN_LIMITATIONS.md`, `RUNBOOK.md`, `ROLLBACK.md`, além dos históricos `FINAL_RELEASE_AUDIT.md`/`RELEASE_GREEN_GATE_MATRIX.md` (waves anteriores — preservados).
 
@@ -17,7 +17,7 @@ Documentos irmãos: `RELEASE_GREEN_CHECKLIST.md` (matriz de gates), `KNOWN_LIMIT
 | RG-07 | CI/CD externo | Check "Workers Builds: tupiniquim-dev-ai-web" vermelho em branches de PR | Check-runs por SHA: branches não-produção 4/4 FAIL (2dfd4b6, 1e59fa8, dcde40d, efd5552) — incluindo `1e59fa8`, cuja árvore é BYTE-IDÊNTICA à de `4f32f35` (merge de diff vazio) que passou na integration ⇒ a falha é função da branch, não do código. Integration: FAIL pré-#79 (dbfb175, 51c1818) → **SUCCESS pós-#79 com Version ID** (deploy de produção validado pelo smoke). Check NÃO é required (mergeState CLEAN com ele vermelho). | MEDIUM | CI_CD (config de branch no dashboard) | Ruído visual em PRs; zero impacto no gate canônico | **Produção: FIXED (pelo #79)** · **Builds de branch de PR: NOT_APPLICABLE como gate de release** | Dono da conta Cloudflare | Dashboard → Workers & Pages → tupiniquim-dev-ai-web → Settings → Builds → Branch control: desabilitar builds de branches não-produção (ou restringir à integration). O repositório não controla essa configuração. | PRs sem o check vermelho OU política registrada de ignorá-lo em branches; build da integration permanece verde com Version ID |
 | RG-08 | Segurança/Acesso | `auth.state=ANONYMOUS_TEST`, `productionReady=false` em produção | `/api/health` real | HIGH p/ produção pública | CONFIG_MISSING / EXTERNAL_DEPENDENCY | Superfície sem Cloudflare Access | **BLOCKED_EXTERNAL** | Operador Cloudflare (Access) | `docs/WEB/CLOUDFLARE_ACCESS.md` (já documentado) | Health `productionReady=true`; smoke com `WEB_SMOKE_REQUIRE_PRODUCTION_READY=true` |
 | RG-09 | Desktop | Electron não executável no sandbox Linux desta sessão | `pnpm dev`/e2e exigem display+Windows cert (host F:) | MEDIUM | ENVIRONMENT | Certificação desktop não reproduzível aqui | **BLOCKED_ENVIRONMENT** | Host Windows certificado (workflows `windows-certification`, `ci.yml`) | — | e2e desktop PASS no host alvo |
-| RG-10 | Web smoke real | Smoke de browser em ambiente implantado | Workflow **Web Product Smoke: success @ 4f32f35** (base atual); falha isolada em 51c1818 foi sucedida por sucesso em 4f32f35 | — | — | — | **ALREADY_GREEN** (base) / **NEEDS_VALIDATION** para o delta do PR #80 (dispara no push pós-merge) | Merge do #80 | — | Web Product Smoke success no SHA de merge |
+| RG-10 | Web smoke real | Smoke de browser no SHA de merge | Run 36762440741: FAIL por **corrida de deploy comprovada por timeline** — smoke executou 18:59:09→19:00:32 contra a versão antiga; o deploy novo concluiu 19:00:29. Rerun/dispatch retornam HTTP 403 para o token desta sessão (sem actions:write). Base 4f32f35: smoke SUCCESS. | HIGH | ENVIRONMENT (corrida) + permissão de CI | Parser sem validação browser no deploy novo (backend comprovadamente implantado pelo Version ID do merge SHA; o smoke agora assere ausência de payload bruto) | **NEEDS_VALIDATION** | Mantenedor: 1 clique em "Re-run failed jobs" no run 36762440741 (ou dispatch do Web Product Smoke) | — | Web Product Smoke SUCCESS pós-deploy; passo de chat sem `choices/usage/reasoning_content` |
 | RG-11 | Web/UI | Tema claro/escuro/system + transições | Merged em `51c1818`; smoke (inclui teste de tema) success em `4f32f35` | — | — | — | **ALREADY_GREEN** | — | — | — |
 | RG-12 | Toolchain Cloudflare | Sandbox/Containers removidos; Wrangler 4.144.0 pinado; action por SHA | PR #79 merged (`4f32f35`); `tests/unit/cloudflare-toolchain.test.ts` 11/11 | — | — | — | **ALREADY_GREEN** | — | — | — |
 | RG-13 | Testes condicionais | 4 testes skipped (codex-app-server×2, research×1, terminal×1) | Skips condicionais por binário/rede/pty indisponíveis | INFO | ENVIRONMENT | — | **NOT_APPLICABLE** neste ambiente (executam onde a dependência existe) | — | — | Executar no host de certificação |
@@ -36,8 +36,8 @@ Documentos irmãos: `RELEASE_GREEN_CHECKLIST.md` (matriz de gates), `KNOWN_LIMIT
 
 ## Caminho determinístico para RELEASE_GREEN
 
-1. Merge do PR #80 (cloud-quality PASS; o check Workers Builds em branch de PR está classificado como NOT_APPLICABLE com evidência — RG-07).
-2. Web Product Smoke verde no SHA de merge (automático no push).
+1. ~~Merge do PR #80~~ **FEITO** (`61ae3d5`; cloud-quality PASS; deploy de produção verde com Version ID).
+2. Re-executar Web Product Smoke (mantenedor: re-run do run 36762440741) — o primeiro run perdeu a corrida contra o deploy.
 3. RG-05: executar RUNBOOK §Runtime Local → health READY → smoke terminal/Git/FS/gates.
 4. RG-08: ativar Access → health `productionReady=true` → smoke com produção exigida.
 5. RG-09: rodar certificação Windows no host F:.
