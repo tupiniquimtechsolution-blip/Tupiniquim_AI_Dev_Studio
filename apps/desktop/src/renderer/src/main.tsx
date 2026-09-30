@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './styles.css'
+import { initThemeController, WEB_THEME_KEY, DESKTOP_THEME_KEY } from './theme'
 
 const root = document.getElementById('root')
 if (root === null) throw new Error('Elemento raiz não encontrado.')
@@ -8,6 +9,16 @@ if (root === null) throw new Error('Elemento raiz não encontrado.')
 const hasDesktopBridge = typeof window.studio !== 'undefined'
   && typeof window.controlCenter !== 'undefined'
   && typeof window.googleTasks !== 'undefined'
+
+// Tema aplicado ANTES de qualquer render (evita flash de tema — a CSP
+// proíbe scripts inline, então a aplicação vive no bundle principal).
+// Web: padrão SYSTEM (segue o SO). Desktop: padrão DARK (preserva o
+// workbench escuro certificado; usuário pode optar por claro/sistema).
+initThemeController(
+  hasDesktopBridge
+    ? { storageKey: DESKTOP_THEME_KEY, fallback: 'DARK' }
+    : { storageKey: WEB_THEME_KEY, fallback: 'SYSTEM' }
+)
 
 const renderFatal = (error: unknown): void => {
   const message = error instanceof Error ? error.message : 'Falha desconhecida ao iniciar o Tupiniquim Dev AI.'
