@@ -1,7 +1,7 @@
 # Web Product Smoke Gate
 
-Status: GATE IMPLEMENTADO / DEPLOY CLOUD FREE ATIVO / SMOKE PÚBLICO PENDENTE  
-Data: 2026-09-28
+Status: FUNCTIONAL SMOKE GREEN / PRODUCTION-READY GATE PENDENTE  
+Data: 2026-09-30
 
 ## Propósito
 
@@ -30,9 +30,11 @@ Mesmo nesse modo, `MISCONFIGURED` falha.
 Exige:
 - `auth.state=ACCESS_READY`;
 - `auth.productionReady=true`;
+- Remote Runtime `READY`, configurado e online;
+- capability `local-persistence` anunciada pelo gateway;
 - `workspacePersistence.state=READY`;
 - `workspacePersistence.configured=true`;
-- checkpoint R2 real retornando `SNAPSHOT`.
+- checkpoint local real retornando `SNAPSHOT`.
 
 ## Fluxo testado
 
@@ -68,7 +70,7 @@ O Worker não confia nesses dois headers diretamente. Depois que o Access autori
 
 ## WebSocket
 
-O terminal usa `/ws/terminal`. A aplicação Access deve apontar para o hostname público/self-hosted e não para Worker destination enquanto a limitação cloudflare/cloudflare-docs#31885 estiver vigente.
+O terminal usa `/ws/terminal`. A configuração Access deve proteger todas as superfícies públicas do Worker usadas em produção e smoke, incluindo workers.dev/previews quando permanecerem habilitados. O gate deve ser comprovado no estado atual da conta Cloudflare.
 
 ## Como executar
 
@@ -104,8 +106,8 @@ instalar Chromium e iniciar Playwright.
 
 ## O que este gate ainda não prova sozinho
 
-No modo zero-custo, o runtime executável é opcional. Chat/Workers AI devem funcionar sem gateway; filesystem/Git/terminal só recebem PASS quando o Tupiniquim Remote Runtime estiver READY. Persistência local do gateway e eventual R2 devem ser certificadas separadamente.
+No modo funcional cloud-only, o runtime executável é opcional. Para `production_ready=true`, o Remote Runtime deve estar READY e a persistência local precisa passar checkpoint/restore real. R2 permanece extensão opcional de redundância e não participa desse PASS.
 
-## Blocker atual
+## Blockers atuais para production-ready
 
-O blocker `/containers/me` foi eliminado pela arquitetura zero-custo. O gate atual é descobrir/usar o hostname público `workers.dev`/Version URL e executar este smoke no exact SHA.
+O smoke funcional público já está GREEN. Restam: Cloudflare Access em modo produção, Remote Runtime via Tunnel estável, checkpoint/restore local real e execução do smoke com `production_ready=true`.
