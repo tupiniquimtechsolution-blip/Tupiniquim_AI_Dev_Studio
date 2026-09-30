@@ -1,14 +1,20 @@
+. "$PSScriptRoot\portable-layout.ps1"
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-if ($ProjectRoot -ine 'F:\CODEX\Tupiniquim-AI-Dev-Studio') { throw 'REQUIRES_WINDOWS_GATE: clone em F:\CODEX\Tupiniquim-AI-Dev-Studio.' }
-$ProgramsRoot = 'F:\CODEX\programas'
-$DataRoot = 'F:\CODEX\Tupiniquim-AI-Dev-Studio.data'
-$CacheRoot = Join-Path $DataRoot 'cache'
-$env:TEMP = Join-Path $DataRoot 'tmp'
+$Layout = Get-TupiniquimPortableLayout -ProjectRoot $ProjectRoot
+$PortableDriveName = $Layout.DriveName
+$PortableDriveRoot = $Layout.DriveRoot
+$CodexRoot = $Layout.CodexRoot
+$ProgramsRoot = $Layout.ProgramsRoot
+$DataRoot = $Layout.DataRoot
+$CacheRoot = $Layout.CacheRoot
+$env:TEMP = $Layout.TempRoot
 $env:TMP = $env:TEMP
-$env:PNPM_HOME = Join-Path $ProgramsRoot 'pnpm'
+$env:TUPINIQUIM_PORTABLE_DRIVE_ROOT = $PortableDriveRoot
+$env:PNPM_HOME = $Layout.PnpmRoot
 $env:npm_config_cache = Join-Path $CacheRoot 'npm'
-$env:npm_config_store_dir = 'F:\CODEX\.pnpm-store'
+$env:npm_config_store_dir = $Layout.PnpmStoreRoot
+$env:PNPM_STORE_DIR = $Layout.PnpmStoreRoot
 $env:ELECTRON_CACHE = Join-Path $CacheRoot 'electron'
 $env:ELECTRON_BUILDER_CACHE = Join-Path $CacheRoot 'electron-builder'
 $env:PLAYWRIGHT_BROWSERS_PATH = Join-Path $CacheRoot 'playwright'
