@@ -7,6 +7,7 @@ import { ControlCenter } from '../components/ControlCenter'
 import { FileTree } from '../components/FileTree'
 import { GitReviewPane } from '../components/GitReviewPane'
 import { ProposalProvenance } from '../components/ProposalProvenance'
+import { ThemeToggle } from '../components/ThemeToggle'
 import { GoogleTasksDock } from '../GoogleTasksDock'
 import {
   RUNTIME_LOCK_MESSAGE,
@@ -458,6 +459,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
             <button className={tool === 'git' ? 'active' : ''} title="Revisão Git" aria-pressed={tool === 'git'} onClick={() => openTool('git')}><GitBranch size={15} aria-hidden="true" /><span>Git</span></button>
             <button className={tool === 'activity' ? 'active' : ''} title="Atividade da sessão" aria-pressed={tool === 'activity'} onClick={() => openTool('activity')}><Activity size={15} aria-hidden="true" /><span>Atividade</span></button>
           </nav>
+          <ThemeToggle />
           <button className="ws-icon-btn" title="Control Center" onClick={() => setShowControlCenter(true)}><ShieldCheck size={16} aria-hidden="true" /></button>
           <button className="ws-icon-btn" title="Workbench completo (editor, explorer e deck)" onClick={() => onNavigate('workbench')}><LayoutPanelLeft size={16} aria-hidden="true" /></button>
           <button className="ws-icon-btn" title="Refazer onboarding" onClick={() => onNavigate('onboarding')}><Settings2 size={16} aria-hidden="true" /></button>

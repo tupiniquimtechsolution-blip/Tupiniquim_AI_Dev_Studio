@@ -1,4 +1,5 @@
 import { ArrowRight, Bot, Braces, CheckCircle2, Cloud, Cpu, ExternalLink, FileCode2, GitBranch, Layers, Lock, MonitorSmartphone, ShieldCheck, Sparkles, TerminalSquare, Workflow } from 'lucide-react'
+import { ThemeToggle } from '../components/ThemeToggle'
 import type { WebRoute } from './experience'
 
 interface LandingProps {
@@ -43,6 +44,7 @@ export const Landing = ({ onNavigate }: LandingProps): React.JSX.Element => {
             <a href="https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio" target="_blank" rel="noreferrer noopener"><ExternalLink size={14} aria-hidden="true" /> GitHub</a>
           </nav>
           <div className="ld-nav-ctas">
+            <ThemeToggle />
             <button className="ld-btn ghost" onClick={() => onNavigate('studio')}>Abrir Studio</button>
             <button className="ld-btn primary" onClick={() => onNavigate('onboarding')}>Começar</button>
           </div>

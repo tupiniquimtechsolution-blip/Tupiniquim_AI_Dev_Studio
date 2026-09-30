@@ -1,5 +1,6 @@
 import { ArrowLeft, ArrowRight, Bot, Braces, Check, Cloud, Cpu, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
+import { ThemeToggle } from '../components/ThemeToggle'
 import type { LocalModel } from '@tupiniquim/contracts'
 import {
   WEB_MODEL_KEY,
@@ -109,6 +110,7 @@ export const Onboarding = ({ onNavigate }: OnboardingProps): React.JSX.Element =
           <span>Passo {step + 1} de {TOTAL_STEPS}</span>
           <div className="ob-progress-track" aria-hidden="true"><div className="ob-progress-fill" style={{ width: `${progress}%` }} /></div>
         </div>
+        <ThemeToggle />
         <button className="ld-btn ghost" onClick={() => onNavigate('studio')}>Pular por agora</button>
       </header>
 
