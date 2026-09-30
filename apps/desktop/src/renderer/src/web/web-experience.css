@@ -4,13 +4,16 @@
  *
  * Direção: clean SaaS/AI product. Neutrals, contraste alto, bordas leves,
  * radius consistente, sombras discretas, spacing generoso.
- * Tokens locais derivam da identidade existente (acento verde da marca
- * Carbono/Floresta — ver .agent/DESIGN_SYSTEM.md) adaptados para superfícies
- * claras. Artefatos técnicos (plano, proposta, terminal, Control Center)
- * permanecem escuros de propósito: evidência técnica tem linguagem própria.
+ *
+ * TEMA: tokens claros em :root / [data-theme="light"]; equivalentes escuros
+ * em [data-theme="dark"]. O atributo é aplicado no <html> pelo
+ * ThemeController (LIGHT | DARK | SYSTEM) — nenhuma condição de tema em JSX.
+ * Sem preto/branco puros em grandes superfícies; identidade verde Tupiniquim
+ * preservada nos dois temas (sem neon).
  */
 
-:root {
+:root,
+:root[data-theme='light'] {
   --wx-bg: #f6f7f9;
   --wx-surface: #ffffff;
   --wx-raised: #fbfcfd;
@@ -21,20 +24,58 @@
   --wx-accent: #0e8f62;
   --wx-accent-strong: #0b7350;
   --wx-accent-soft: #e6f6ef;
+  --wx-on-accent: #ffffff;
+  --wx-on-accent-soft: #0c3f2d;
   --wx-warn: #9a6b12;
   --wx-warn-soft: #fdf3df;
   --wx-danger: #b3383f;
   --wx-danger-soft: #fdeaea;
+  --wx-veil: rgb(246 247 249 / 92%);
+  --wx-backdrop: rgb(16 20 24 / 32%);
+  --wx-editor-bg: #fbfcfd;
   --wx-radius: 12px;
   --wx-radius-lg: 18px;
   --wx-shadow: 0 1px 2px rgb(16 20 24 / 5%), 0 8px 24px rgb(16 20 24 / 6%);
+  --wx-shadow-soft: 0 1px 2px rgb(16 20 24 / 4%);
+  --wx-shadow-strong: -12px 0 40px rgb(16 20 24 / 14%);
 }
+
+:root[data-theme='dark'] {
+  --wx-bg: #101417;
+  --wx-surface: #171d22;
+  --wx-raised: #1c2329;
+  --wx-text: #e9eef2;
+  --wx-muted: #9aa7b1;
+  --wx-line: #262e35;
+  --wx-line-strong: #354049;
+  --wx-accent: #1fae7c;
+  --wx-accent-strong: #4ecf9f;
+  --wx-accent-soft: #17352a;
+  --wx-on-accent: #06251b;
+  --wx-on-accent-soft: #b9ecd4;
+  --wx-warn: #e2b46b;
+  --wx-warn-soft: #322610;
+  --wx-danger: #e78891;
+  --wx-danger-soft: #3a2023;
+  --wx-veil: rgb(16 20 23 / 88%);
+  --wx-backdrop: rgb(4 6 8 / 55%);
+  --wx-editor-bg: #1e1e1e;
+  --wx-shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px rgb(0 0 0 / 32%);
+  --wx-shadow-soft: 0 1px 2px rgb(0 0 0 / 25%);
+  --wx-shadow-strong: -12px 0 40px rgb(0 0 0 / 45%);
+}
+
+:root[data-theme='light'] { color-scheme: light; }
+:root[data-theme='dark'] { color-scheme: dark; }
+
+/* Fundo do documento acompanha o tema na superfície Web (evita flash e
+   bordas de overscroll com cor divergente). */
+:root[data-theme='light'] body, :root[data-theme='dark'] body { background: var(--wx-bg); }
 
 .tqs-landing, .tqs-onboarding, .web-studio, .wx-route-loading {
   height: 100%;
   background: var(--wx-bg);
   color: var(--wx-text);
-  color-scheme: light;
   font-family: Inter, "Segoe UI Variable", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
@@ -60,16 +101,16 @@
 /* ── Botões compartilhados ─────────────────────────────────────────────── */
 .ld-btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--wx-line-strong); border-radius: 10px; background: var(--wx-surface); color: var(--wx-text); font: inherit; font-size: 14px; font-weight: 600; padding: 9px 16px; cursor: pointer; }
 .ld-btn:hover { border-color: var(--wx-accent); }
-.ld-btn.primary { background: var(--wx-accent); border-color: var(--wx-accent); color: #ffffff; }
+.ld-btn.primary { background: var(--wx-accent); border-color: var(--wx-accent); color: var(--wx-on-accent); }
 .ld-btn.primary:hover { background: var(--wx-accent-strong); border-color: var(--wx-accent-strong); }
 .ld-btn.ghost { background: transparent; }
 .ld-btn.lg { padding: 12px 22px; font-size: 15px; border-radius: 12px; }
 
 /* ── Landing: navbar ───────────────────────────────────────────────────── */
-.ld-nav { position: sticky; top: 0; z-index: 30; background: rgb(246 247 249 / 92%); backdrop-filter: blur(8px); border-bottom: 1px solid var(--wx-line); }
+.ld-nav { position: sticky; top: 0; z-index: 30; background: var(--wx-veil); backdrop-filter: blur(8px); border-bottom: 1px solid var(--wx-line); }
 .ld-nav-inner { max-width: 1180px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 24px; }
 .ld-brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
-.ld-brand-mark { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; background: var(--wx-accent); color: #ffffff; }
+.ld-brand-mark { width: 32px; height: 32px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 9px; background: var(--wx-accent); color: var(--wx-on-accent); }
 .ld-brand-name { font-size: 15px; letter-spacing: -.01em; white-space: nowrap; }
 .ld-brand-name strong { font-weight: 750; }
 .ld-links { display: flex; align-items: center; gap: 22px; margin: 0 auto; }
@@ -97,12 +138,12 @@
 .ld-preview-body { padding: 20px; display: grid; gap: 14px; }
 .ld-msg span { display: block; font-size: 10.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--wx-muted); margin-bottom: 5px; }
 .ld-msg p { margin: 0; padding: 12px 14px; border-radius: 12px; font-size: 13.5px; line-height: 1.55; }
-.ld-msg.user p { background: var(--wx-accent-soft); color: #0c3f2d; }
+.ld-msg.user p { background: var(--wx-accent-soft); color: var(--wx-on-accent-soft); }
 .ld-msg.ai p { background: var(--wx-bg); border: 1px solid var(--wx-line); }
 .ld-preview-plan { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 1px dashed var(--wx-line-strong); border-radius: 10px; color: var(--wx-warn); background: var(--wx-warn-soft); font-size: 12.5px; }
 .ld-preview-plan em { font-style: normal; font-family: "JetBrains Mono", Consolas, monospace; font-size: 11.5px; }
 .ld-preview-composer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--wx-line); border-radius: 12px; color: var(--wx-muted); font-size: 13px; }
-.ld-preview-send { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; background: var(--wx-accent); color: #ffffff; font-size: 12px; font-weight: 650; }
+.ld-preview-send { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px; background: var(--wx-accent); color: var(--wx-on-accent); font-size: 12px; font-weight: 650; }
 
 /* ── Landing: trust strip ──────────────────────────────────────────────── */
 .ld-trust { border-block: 1px solid var(--wx-line); background: var(--wx-surface); }
@@ -132,7 +173,7 @@
 
 .ld-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
 .ld-steps li { display: grid; gap: 12px; border: 1px solid var(--wx-line); border-radius: var(--wx-radius-lg); background: var(--wx-raised); padding: 22px; }
-.ld-step-n { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--wx-accent); color: #ffffff; font-weight: 750; font-size: 14px; }
+.ld-step-n { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--wx-accent); color: var(--wx-on-accent); font-weight: 750; font-size: 14px; }
 .ld-steps h3 { margin: 0 0 6px; font-size: 15.5px; }
 .ld-steps p { margin: 0; color: var(--wx-muted); font-size: 13.5px; line-height: 1.6; }
 
@@ -155,7 +196,7 @@
 
 /* ── Onboarding ────────────────────────────────────────────────────────── */
 .tqs-onboarding { display: flex; flex-direction: column; }
-.ob-top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 24px; padding: 14px 24px; background: rgb(246 247 249 / 94%); backdrop-filter: blur(8px); border-bottom: 1px solid var(--wx-line); }
+.ob-top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 24px; padding: 14px 24px; background: var(--wx-veil); backdrop-filter: blur(8px); border-bottom: 1px solid var(--wx-line); }
 .ob-progress { flex: 1; max-width: 380px; margin: 0 auto; display: grid; gap: 6px; }
 .ob-progress > span { font-size: 12px; color: var(--wx-muted); font-weight: 600; }
 .ob-progress-track { height: 5px; border-radius: 999px; background: var(--wx-line); overflow: hidden; }
@@ -194,7 +235,7 @@
 .web-studio { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
 .ws-topbar { display: flex; align-items: center; gap: 14px; padding: 10px 18px; background: var(--wx-surface); border-bottom: 1px solid var(--wx-line); flex-wrap: wrap; }
 .web-studio .brand { display: flex; align-items: center; gap: 9px; }
-.ws-brand-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: var(--wx-accent); color: #ffffff; }
+.ws-brand-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: var(--wx-accent); color: var(--wx-on-accent); }
 .web-studio .brand strong { font-size: 14px; letter-spacing: -.01em; }
 .ws-brand-sub { color: var(--wx-muted); font-size: 8.5px; font-weight: 700; letter-spacing: .16em; }
 .web-studio .project-switcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--wx-line); border-radius: 9px; background: var(--wx-raised); color: var(--wx-text); font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; cursor: pointer; }
@@ -225,7 +266,7 @@
 .ws-empty.error h1 { font-size: 20px; }
 .ws-empty-orb { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; background: var(--wx-accent-soft); color: var(--wx-accent-strong); }
 .ws-suggestions { margin-top: 22px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; width: 100%; max-width: 620px; }
-.ws-suggestions button { display: grid; gap: 5px; text-align: left; border: 1px solid var(--wx-line); border-radius: var(--wx-radius); background: var(--wx-surface); padding: 16px 18px; font: inherit; color: inherit; cursor: pointer; box-shadow: 0 1px 2px rgb(16 20 24 / 4%); }
+.ws-suggestions button { display: grid; gap: 5px; text-align: left; border: 1px solid var(--wx-line); border-radius: var(--wx-radius); background: var(--wx-surface); padding: 16px 18px; font: inherit; color: inherit; cursor: pointer; box-shadow: var(--wx-shadow-soft); }
 .ws-suggestions button:hover { border-color: var(--wx-accent); }
 .ws-suggestions strong { font-size: 14.5px; }
 .ws-suggestions span { color: var(--wx-muted); font-size: 13px; line-height: 1.5; }
@@ -237,7 +278,7 @@
 .web-studio .agent-message p { margin: 0; padding: 13px 16px; border-radius: 14px; background: var(--wx-surface); border: 1px solid var(--wx-line); color: var(--wx-text); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .web-studio .agent-message.user { justify-self: end; }
 .web-studio .agent-message.user .message-label { text-align: right; color: var(--wx-accent-strong); }
-.web-studio .agent-message.user p { background: var(--wx-accent-soft); border-color: transparent; color: #0c3f2d; }
+.web-studio .agent-message.user p { background: var(--wx-accent-soft); border-color: transparent; color: var(--wx-on-accent-soft); }
 .web-studio .agent-message.error p { background: var(--wx-danger-soft); border-color: transparent; color: var(--wx-danger); }
 .web-studio .agent-message.error .message-label { color: var(--wx-danger); }
 .web-studio .stream-caret { color: var(--wx-accent-strong); }
@@ -256,14 +297,14 @@
 .ws-composer textarea::placeholder { color: var(--wx-muted); }
 .ws-composer-row { display: flex; align-items: center; gap: 12px; padding: 6px 10px 10px 16px; }
 .ws-availability { color: var(--wx-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ws-send { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 10px; background: var(--wx-accent); color: #ffffff; font: inherit; font-size: 13.5px; font-weight: 650; padding: 9px 16px; cursor: pointer; }
+.ws-send { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 10px; background: var(--wx-accent); color: var(--wx-on-accent); font: inherit; font-size: 13.5px; font-weight: 650; padding: 9px 16px; cursor: pointer; }
 .ws-send:hover:not(:disabled) { background: var(--wx-accent-strong); }
 .ws-send:disabled { opacity: .45; cursor: default; }
 .ws-composer-hint { max-width: 780px; margin: 8px auto 0; color: var(--wx-muted); font-size: 11.5px; text-align: center; }
 
 /* ── Drawers (progressive disclosure) ──────────────────────────────────── */
-.ws-drawer-backdrop { position: fixed; inset: 0; z-index: 40; background: rgb(16 20 24 / 32%); display: flex; justify-content: flex-end; }
-.ws-drawer { width: min(560px, 100%); height: 100%; display: flex; flex-direction: column; background: var(--wx-surface); border-left: 1px solid var(--wx-line); box-shadow: -12px 0 40px rgb(16 20 24 / 14%); }
+.ws-drawer-backdrop { position: fixed; inset: 0; z-index: 40; background: var(--wx-backdrop); display: flex; justify-content: flex-end; }
+.ws-drawer { width: min(560px, 100%); height: 100%; display: flex; flex-direction: column; background: var(--wx-surface); border-left: 1px solid var(--wx-line); box-shadow: var(--wx-shadow-strong); }
 .ws-drawer.wide { width: min(760px, 100%); }
 @media (prefers-reduced-motion: no-preference) {
   .ws-drawer { animation: ws-drawer-in .22s ease; }
@@ -289,7 +330,7 @@
 .web-studio .ws-files-tree .tree-row.selected { background: var(--wx-accent-soft); color: var(--wx-accent-strong); }
 .web-studio .ws-files-tree .tree-row svg { color: var(--wx-muted); }
 .ws-files-empty { height: 100%; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--wx-muted); font-size: 13px; padding: 20px; text-align: center; }
-.ws-files-editor { min-height: 0; display: flex; flex-direction: column; background: #1e1e1e; }
+.ws-files-editor { min-height: 0; display: flex; flex-direction: column; background: var(--wx-editor-bg); }
 .ws-files-editor-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--wx-surface); border-bottom: 1px solid var(--wx-line); font-size: 12.5px; font-weight: 600; }
 .ws-files-editor-head span { margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -307,8 +348,8 @@
 
 /* ── Workbench host (superfície clássica) ──────────────────────────────── */
 .wx-workbench-host { position: relative; height: 100%; }
-.wx-back-to-chat { position: fixed; z-index: 60; right: 16px; bottom: 34px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #285a47; border-radius: 999px; background: #173527; color: #bff6dd; font: inherit; font-size: 12px; font-weight: 650; padding: 8px 14px; cursor: pointer; box-shadow: 0 8px 24px rgb(0 0 0 / 35%); }
-.wx-back-to-chat:hover { background: #1b4030; }
+.wx-back-to-chat { position: fixed; z-index: 60; right: 16px; bottom: 34px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--wx-accent); border-radius: 999px; background: var(--wx-accent-soft); color: var(--wx-on-accent-soft); font: inherit; font-size: 12px; font-weight: 650; padding: 8px 14px; cursor: pointer; box-shadow: var(--wx-shadow); }
+.wx-back-to-chat:hover { background: var(--wx-accent); color: var(--wx-on-accent); }
 
 /* ── Responsividade ────────────────────────────────────────────────────── */
 @media (max-width: 1024px) {
@@ -338,4 +379,49 @@
   .web-studio .agent-message { max-width: 100%; }
   .ws-top-controls { width: 100%; justify-content: flex-start; }
   .web-studio .statusbar span:nth-child(3) { display: none; }
+}
+
+/* ============================================================
+ * Tema — seletor Sistema/Claro/Escuro
+ * Estado indicado por borda + fundo + aria-pressed (não só cor).
+ * ============================================================ */
+
+.wx-theme-toggle { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--wx-line); border-radius: 999px; background: var(--wx-surface); }
+.wx-theme-toggle button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 28px; height: 24px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--wx-muted); font: inherit; font-size: 11px; cursor: pointer; }
+.wx-theme-toggle button:hover { color: var(--wx-text); background: var(--wx-raised); }
+.wx-theme-toggle button.selected { border-color: var(--wx-accent); background: var(--wx-accent-soft); color: var(--wx-on-accent-soft); }
+.wx-theme-toggle button:focus-visible { outline: 2px solid var(--wx-accent); outline-offset: 1px; }
+
+/* ============================================================
+ * Transições de rota (Landing → Onboarding → Studio → Workbench)
+ * Enter: opacity 0→1 + translateY(4px)→0 (200ms).
+ * Exit: opacity 1→0 + translateY(0)→-2px (180ms), orquestrado pelo
+ * WebExperience segurando a rota atual até o fim do exit.
+ * Sob prefers-reduced-motion a troca é instantânea (sem animação;
+ * o JS também pula a fase de exit).
+ * ============================================================ */
+
+.wx-route { height: 100%; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .wx-route { animation: wx-route-enter .2s ease-out; }
+  .wx-route.exiting { animation: wx-route-exit .18s ease-in forwards; }
+  @keyframes wx-route-enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes wx-route-exit { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-2px); } }
+}
+
+/* ============================================================
+ * Microtransições (120–200ms) — apenas opacity/transform/background/
+ * border/color/box-shadow, propriedades explícitas (nunca `all`).
+ * ============================================================ */
+
+@media (prefers-reduced-motion: no-preference) {
+  .ld-btn, .ws-send, .ws-icon-btn, .ws-tools button, .ws-mode-switch button,
+  .wx-theme-toggle button, .ob-option, .ob-chip, .ws-suggestions button,
+  .ws-runtime-chip, .wx-back-to-chat, .ld-card, .ld-price {
+    transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
+  }
+  .ld-btn.primary:hover, .ws-send:not(:disabled):hover { transform: translateY(-1px); transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .12s ease; }
+  .ws-drawer-backdrop { animation: wx-fade-in .18s ease; }
+  @keyframes wx-fade-in { from { opacity: 0; } to { opacity: 1; } }
 }
