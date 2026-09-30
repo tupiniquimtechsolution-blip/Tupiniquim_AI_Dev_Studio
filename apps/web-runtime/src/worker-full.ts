@@ -30,10 +30,6 @@ type Env = RemoteRuntimeConfig & {
   GOOGLE_TASKS_CLIENT_ID?: string
   GOOGLE_TASKS_CLIENT_SECRET?: string
   WEB_WORKSPACE_BACKUP_ENABLED?: string
-  BACKUP_BUCKET_NAME?: string
-  CLOUDFLARE_ACCOUNT_ID?: string
-  R2_ACCESS_KEY_ID?: string
-  R2_SECRET_ACCESS_KEY?: string
 }
 
 type JsonRecord = Record<string, unknown>
