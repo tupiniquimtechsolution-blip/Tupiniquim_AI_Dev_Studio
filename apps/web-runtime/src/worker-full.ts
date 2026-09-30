@@ -9,6 +9,13 @@ import {
 } from './workspace-backup'
 import legacyWorker from './worker'
 
+/**
+ * Compatibilidade de migration APENAS (tag histórica `web-sandbox-v1` em
+ * wrangler.jsonc). O Cloudflare Sandbox pago foi aposentado: esta classe não
+ * usa o pacote @cloudflare/sandbox, não tem binding de Containers e responde
+ * sempre 410 SANDBOX_RETIRED. O runtime real é o Tupiniquim Remote Runtime
+ * local via Cloudflare Tunnel (arquitetura zero-cost).
+ */
 export class Sandbox {
   fetch(): Response {
     return Response.json({ ok: false, error: { code: 'SANDBOX_RETIRED', message: 'Cloudflare Sandbox foi substituído pelo Tupiniquim Remote Runtime.', retryable: false } }, { status: 410 })
