@@ -2,6 +2,28 @@
 
 Atualizado em: 2026-09-30
 
+## Tema Claro/Escuro/Sistema + transições (branch de trabalho sobre `integration/ai-lab-toolbox-unified`)
+
+**IMPLEMENTADO — AGUARDANDO PR/CI.**
+
+- `ThemePreference = LIGHT | DARK | SYSTEM` com persistência por superfície,
+  resolução via `prefers-color-scheme` (reativa a mudanças do SO) e aplicação
+  como `data-theme` no `<html>` antes do primeiro render (sem flash, sem
+  script inline — CSP preservada). Ver `renderer/src/theme.ts` e
+  `DESIGN_SYSTEM.md` (seções "Tema" e "Princípios de movimento").
+- Tokens: `styles.css` 100% tokenizado (45+ hexes → variáveis) com bloco
+  claro em `:root[data-theme='light']`; `web-experience.css` com `--wx-*`
+  claro/escuro. Seletor Sistema/Claro/Escuro na landing, onboarding, Studio
+  e nas Preferências do Desktop (Acento/Fundo mantidos como avançado).
+- Monaco `vs`/`vs-dark` conforme tema resolvido; terminal permanece escuro.
+- Transições de rota Web (180–200ms, opacity/translateY) sem quebrar
+  pushState/popstate/recovery; microtransições 120–200ms; tudo desativado
+  sob `prefers-reduced-motion: reduce`.
+- Testes: `tests/unit/web-theme.test.ts` (10 casos) + smoke de tema em
+  `tests/web-smoke/web-full.spec.ts`. Gate: lint/typecheck/unit/dogfood/build
+  PASS; integration (22) e security (1) com falhas pré-existentes de ambiente
+  (exigem unidade F:/TEMP Windows), idênticas ao baseline.
+
 ## Web Product Experience (branch `feat/web-clean-product-experience`)
 
 **IMPLEMENTADO — AGUARDANDO PR/CI.**
