@@ -37,27 +37,44 @@ Nesse estado:
 
 `@cf/zai-org/glm-4.7-flash`
 
-## Iniciar gateway local
+## Iniciar gateway local no Windows
 
-Defina no Windows/host local:
+O bootstrap canônico não imprime o token e o persiste protegido por DPAPI no perfil do usuário:
 
 ```powershell
-$env:TUPINIQUIM_GATEWAY_TOKEN="<token-aleatorio-forte>"
-$env:TUPINIQUIM_GATEWAY_ROOT="F:\\TupiniquimRuntime"
-pnpm runtime:gateway
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-remote-runtime-gateway.ps1
 ```
+
+Saída esperada:
+
+- `TUPINIQUIM_RUNTIME_GATEWAY_READY`;
+- `LOCAL_URL=http://127.0.0.1:43721`;
+- platform `win32`;
+- capabilities incluindo `local-persistence`;
+- `TOKEN=PROTECTED_DPAPI_NOT_PRINTED`.
 
 Default:
 - host: `127.0.0.1`;
 - porta: `43721`.
 
 O gateway não deve ser exposto diretamente por port-forwarding.
-
 ## Publicar por Tunnel
 
-Use Cloudflare Tunnel apontando o hostname do runtime para:
+Para certificação de produção use um **named Cloudflare Tunnel** com hostname DNS estável da conta. Quick Tunnel é somente para desenvolvimento/teste.
 
-`http://127.0.0.1:43721`
+Depois de autenticar o `cloudflared`, execute:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-remote-runtime-tunnel.ps1 -Hostname "runtime.seu-dominio.example" -ConfigureWorkerSecret
+```
+
+O script:
+- reutiliza/cria `tupiniquim-runtime`;
+- cria a rota DNS para o Tunnel;
+- publica somente `http://127.0.0.1:43721`;
+- valida `/health` autenticado via HTTPS;
+- opcionalmente grava `REMOTE_RUNTIME_TOKEN` no Worker via Wrangler sem imprimir o valor;
+- nunca grava o token em Git.
 
 No Worker configure:
 - `WEB_REMOTE_RUNTIME_ENABLED=true`;
