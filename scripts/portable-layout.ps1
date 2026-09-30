@@ -13,10 +13,12 @@ function Get-TupiniquimPortableLayout {
 
   $Drive = $Matches['drive'].ToUpperInvariant()
   $DriveRoot = "$Drive\"
-  $CodexRoot = Join-Path $DriveRoot 'CODEX'
-  $ProgramsRoot = Join-Path $CodexRoot 'programas'
-  $DataRoot = Join-Path $CodexRoot 'Tupiniquim-AI-Dev-Studio.data'
-  $CacheRoot = Join-Path $DataRoot 'cache'
+  # Use System.IO path composition here instead of Join-Path. Join-Path resolves
+  # PowerShell drives and would reject synthetic drive letters used by portability fixtures.
+  $CodexRoot = [IO.Path]::Combine($DriveRoot, 'CODEX')
+  $ProgramsRoot = [IO.Path]::Combine($CodexRoot, 'programas')
+  $DataRoot = [IO.Path]::Combine($CodexRoot, 'Tupiniquim-AI-Dev-Studio.data')
+  $CacheRoot = [IO.Path]::Combine($DataRoot, 'cache')
 
   [pscustomobject]@{
     ProjectRoot = $FullProjectRoot
@@ -26,9 +28,9 @@ function Get-TupiniquimPortableLayout {
     ProgramsRoot = $ProgramsRoot
     DataRoot = $DataRoot
     CacheRoot = $CacheRoot
-    TempRoot = Join-Path $DataRoot 'tmp'
-    NodeRoot = Join-Path $ProgramsRoot 'nodejs'
-    PnpmRoot = Join-Path $ProgramsRoot 'pnpm'
-    PnpmStoreRoot = Join-Path $CodexRoot '.pnpm-store'
+    TempRoot = [IO.Path]::Combine($DataRoot, 'tmp')
+    NodeRoot = [IO.Path]::Combine($ProgramsRoot, 'nodejs')
+    PnpmRoot = [IO.Path]::Combine($ProgramsRoot, 'pnpm')
+    PnpmStoreRoot = [IO.Path]::Combine($CodexRoot, '.pnpm-store')
   }
 }
