@@ -1,19 +1,17 @@
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot\portable-layout.ps1"
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$ExpectedRoot = 'F:\CODEX\Tupiniquim-AI-Dev-Studio'
-if (-not $ProjectRoot.Equals($ExpectedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
-  throw "Este projeto deve ser executado em $ExpectedRoot. Caminho atual: $ProjectRoot"
-}
+$Layout = Get-TupiniquimPortableLayout -ProjectRoot $ProjectRoot
 
-$ProgramsRoot = 'F:\CODEX\programas'
-$DataRoot = 'F:\CODEX\Tupiniquim-AI-Dev-Studio.data'
-$CacheRoot = Join-Path $DataRoot 'cache'
-$TempRoot = Join-Path $DataRoot 'tmp'
-$NodeRoot = Join-Path $ProgramsRoot 'nodejs'
+$ProgramsRoot = $Layout.ProgramsRoot
+$DataRoot = $Layout.DataRoot
+$CacheRoot = $Layout.CacheRoot
+$TempRoot = $Layout.TempRoot
+$NodeRoot = $Layout.NodeRoot
 $Node = Join-Path $NodeRoot 'node.exe'
 $Corepack = Join-Path $NodeRoot 'corepack.cmd'
-$Pnpm = Join-Path $ProgramsRoot 'pnpm\pnpm.cmd'
+$Pnpm = Join-Path $Layout.PnpmRoot 'pnpm.cmd'
 $DotnetRoot = Join-Path $ProgramsRoot 'dotnet'
 
 if (-not (Test-Path -LiteralPath $Node -PathType Leaf)) { throw "Node.js local não encontrado em $Node" }
@@ -25,11 +23,12 @@ New-Item -ItemType Directory -Force -Path $CacheRoot, $TempRoot | Out-Null
 $env:PATH = "$NodeRoot;$DotnetRoot;$env:PATH"
 $env:TEMP = $TempRoot
 $env:TMP = $TempRoot
+$env:TUPINIQUIM_PORTABLE_DRIVE_ROOT = $Layout.DriveRoot
 $env:COREPACK_HOME = Join-Path $ProgramsRoot 'corepack'
-$env:PNPM_HOME = Join-Path $ProgramsRoot 'pnpm'
+$env:PNPM_HOME = $Layout.PnpmRoot
 $env:npm_config_cache = Join-Path $ProgramsRoot 'npm-cache'
 $env:npm_config_prefix = Join-Path $ProgramsRoot 'npm-global'
-$env:PNPM_STORE_DIR = 'F:\CODEX\.pnpm-store'
+$env:PNPM_STORE_DIR = $Layout.PnpmStoreRoot
 $env:DOTNET_ROOT = $DotnetRoot
 $env:DOTNET_CLI_HOME = Join-Path $ProgramsRoot 'dotnet-cli-home'
 $env:NUGET_PACKAGES = Join-Path $ProgramsRoot 'nuget-packages'
@@ -43,4 +42,4 @@ Set-Location $ProjectRoot
 & $Pnpm install --frozen-lockfile
 if ($LASTEXITCODE -ne 0) { throw "pnpm install falhou com código $LASTEXITCODE" }
 
-Write-Host 'Bootstrap concluído. Projeto, runtimes, caches, dados e temporários permanecem em F:\CODEX.'
+Write-Host "Bootstrap concluído. Projeto, runtimes, caches, dados e temporários permanecem em $($Layout.CodexRoot)."
