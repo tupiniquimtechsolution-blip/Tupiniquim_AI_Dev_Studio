@@ -40,6 +40,23 @@ export const remoteRuntimeReadiness = (env: RemoteRuntimeConfig): RemoteRuntimeS
   return { state: 'OFFLINE', configured: true, online: false, transport: 'https-tunnel', detail: 'Gateway configurado; disponibilidade ainda não verificada.' }
 }
 
+/**
+ * Razão de bloqueio para operações que exigem Runtime READY (gates etc.).
+ * `null` quando READY. Fail-closed preservado; a mensagem apenas reflete o
+ * estado real para a UI (nunca inclui token/URL — somente nomes de variáveis
+ * no detail de MISCONFIGURED).
+ */
+export const gateLockReason = (runtime: RemoteRuntimeStatus): string | null => {
+  if (runtime.state === 'READY') return null
+  if (runtime.state === 'DISABLED') {
+    return 'Runtime Local: DESATIVADO. Esta implantação está em modo Cloud puro (WEB_REMOTE_RUNTIME_ENABLED=false); gates executam apenas no seu hardware via Runtime Local.'
+  }
+  if (runtime.state === 'MISCONFIGURED') {
+    return `Runtime Local: CONFIGURAÇÃO INCOMPLETA. ${runtime.detail ?? 'Revise a integração do gateway.'} Nenhum segredo é exibido aqui.`
+  }
+  return `Runtime Local: OFFLINE. O Tunnel está configurado, mas o gateway não respondeu${runtime.detail !== undefined ? ` (${runtime.detail})` : ''}. Abra o Control Center ou inicie o Runtime Local.`
+}
+
 const endpoint = (env: RemoteRuntimeConfig, pathname: string): URL => {
   const base = env.REMOTE_RUNTIME_URL?.trim()
   if (!base) throw new Error('REMOTE_RUNTIME_URL não configurado.')

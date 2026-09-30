@@ -1,5 +1,6 @@
+import { aiText as sharedAiText } from './ai-text'
 import { WEB_PROVIDER, resolveWebModel } from './model-catalog'
-import { getRemoteSandbox, remoteRuntimeStatus, type RemoteRuntimeConfig } from './remote-runtime'
+import { gateLockReason, getRemoteSandbox, remoteRuntimeStatus, type RemoteRuntimeConfig } from './remote-runtime'
 import {
   WORKSPACE_BACKUP_STATE_KEY,
   WORKSPACE_BACKUP_TTL_SECONDS,
@@ -58,16 +59,7 @@ const sha256 = async (value: string): Promise<string> => {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
-const aiText = (response: unknown): string => {
-  if (typeof response === 'string') return response
-  if (response !== null && typeof response === 'object') {
-    const record = response as JsonRecord
-    if (typeof record.response === 'string') return record.response
-    if (typeof record.result === 'string') return record.result
-    if (record.result !== null && typeof record.result === 'object' && typeof (record.result as JsonRecord).response === 'string') return (record.result as JsonRecord).response as string
-  }
-  return JSON.stringify(response)
-}
+const aiText = sharedAiText
 
 const stateStub = (env: Env, workspaceId: string): DurableObjectStub => env.STATE.get(env.STATE.idFromName(`workspace:${workspaceId}`))
 const stateGet = async <T>(env: Env, workspaceId: string, key: string): Promise<T | null> => {
@@ -393,7 +385,12 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
       const allowed = new Set(['quality-gates', 'dependency-audit', 'secret-scan', 'security-review', 'privacy-lgpd', 'accessibility-wcag', 'architecture-review', 'supply-chain', 'release-checklist'])
       if (!allowed.has(gateId)) return fail('UNKNOWN_GATE', 'Gate desconhecido.')
       const runtime = await remoteRuntimeStatus(env)
-      if (runtime.state !== 'READY') return fail('REMOTE_RUNTIME_OFFLINE', 'O Tupiniquim Remote Runtime precisa estar conectado para executar gates.', 503, true)
+      // Fail-closed preservado: gates só executam com Runtime READY.
+      // A mensagem reflete o estado real (DISABLED/MISCONFIGURED/OFFLINE)
+      // para a UI não parecer um erro genérico idêntico em todos os botões;
+      // o código REMOTE_RUNTIME_OFFLINE é mantido por compatibilidade.
+      const lockReason = gateLockReason(runtime)
+      if (lockReason !== null) return fail('REMOTE_RUNTIME_OFFLINE', lockReason, 503, true)
       const sandbox = await ensureWorkspace(env, workspaceId)
       const result = await sandbox.runGate(gateId)
       return ok({ gateId, state: result.state, evidence: result.evidence })
