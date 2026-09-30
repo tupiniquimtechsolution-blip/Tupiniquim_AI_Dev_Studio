@@ -4,7 +4,6 @@ import {
   parseOnboardingPreferences,
   resolveWebRoute,
   routePath,
-  RUNTIME_LOCK_MESSAGE,
   serializeOnboardingPreferences,
   studioSuggestions,
   type OnboardingPreferences
@@ -78,9 +77,20 @@ describe('executionRuntimeView', () => {
     expect(executionRuntimeView(null)).toMatchObject({ state: 'DISABLED', osCapabilities: false })
   })
 
-  it('estados sem capacidades de SO apontam para o Runtime Local', () => {
-    expect(executionRuntimeView('OFFLINE').detail).toBe(RUNTIME_LOCK_MESSAGE)
-    expect(executionRuntimeView('DISABLED').detail).toBe(RUNTIME_LOCK_MESSAGE)
+  it('estados sem capacidades de SO explicam o Runtime Local com mensagem específica por estado', () => {
+    const offline = executionRuntimeView('OFFLINE')
+    const disabled = executionRuntimeView('DISABLED')
+    const misconfigured = executionRuntimeView('MISCONFIGURED')
+    // Mensagens distintas por estado — nunca um erro genérico idêntico.
+    expect(new Set([offline.detail, disabled.detail, misconfigured.detail]).size).toBe(3)
+    expect(offline.detail).toContain('gateway não respondeu')
+    expect(disabled.detail).toContain('Chat e Workers AI continuam disponíveis')
+    expect(misconfigured.detail).toContain('Nenhum fallback silencioso')
+    // Nenhum estado revela valores de credencial ou URLs concretas
+    // (referenciar o NOME "URL/token" é permitido; o valor, nunca).
+    for (const view of [offline, disabled, misconfigured]) {
+      expect(view.detail).not.toMatch(/bearer\s|https?:\/\//i)
+    }
   })
 })
 

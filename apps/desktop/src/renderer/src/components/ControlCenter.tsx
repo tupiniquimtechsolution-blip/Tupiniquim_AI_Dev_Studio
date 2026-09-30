@@ -23,6 +23,23 @@ const controlCenterSections: Array<{ id: string; label: string }> = [
   { id: 'security-quality', label: 'Segurança & Qualidade' }
 ]
 
+/**
+ * Estado do Runtime Local (superfície Web). SEMPRE sanitizado: nunca inclui
+ * token, header Authorization ou URL do gateway — apenas estado, transporte
+ * e capacidades. No Desktop a prop é omitida (gates executam localmente).
+ */
+export interface ExecutionRuntimeInfo {
+  view: { state: string; label: string; detail: string; tone: string }
+  status: {
+    configured?: boolean
+    online?: boolean
+    transport?: string
+    platform?: string
+    capabilities?: string[]
+    detail?: string
+  } | null
+}
+
 interface ControlCenterProps {
   open: boolean
   onClose: () => void
@@ -33,6 +50,9 @@ interface ControlCenterProps {
   onSelectProvider: (provider: AIProviderKind) => Promise<void>
   onSelectModel: (model: string) => Promise<void>
   onRefreshModels: () => Promise<void>
+  /** Presente apenas na superfície Web; Desktop mantém comportamento local. */
+  executionRuntime?: ExecutionRuntimeInfo
+  onRefreshRuntime?: () => Promise<void>
 }
 
 export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | null => {
@@ -51,6 +71,10 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
   const [actionResult, setActionResult] = useState('')
   const [busy, setBusy] = useState(false)
   const projectId = useMemo(() => props.workspaceRoot ?? '', [props.workspaceRoot])
+  // Web: gates bloqueados enquanto o Runtime Local não estiver READY —
+  // reflete o estado ANTES do clique em vez de falhar genericamente depois.
+  // Desktop (prop ausente): sem bloqueio, execução local como sempre.
+  const gatesLocked = props.executionRuntime !== undefined && props.executionRuntime.view.state !== 'READY'
   const toolboxEnabled = skills.some((skill) => skill.id === 'tupiniquim-toolbox' && skill.enabled)
   const providerOptions: AIProviderKind[] = props.aiStatus?.availableProviders ?? (props.aiStatus?.provider === 'cloudflare-workers-ai'
     ? ['cloudflare-workers-ai']
@@ -137,7 +161,7 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
         <main>
           {section === 'models-providers' && <div className="cc-stack"><h2>Modelos & Providers</h2><p>Seleção explícita e filtrada pelo runtime. Nenhum fallback automático.</p><label>Provider<select value={props.aiStatus?.provider ?? providerOptions[0] ?? 'codex-app-server'} disabled={busy || props.aiStatus?.state === 'BUSY'} onChange={(event) => void props.onSelectProvider(event.target.value as AIProviderKind)}>{providerOptions.map((provider) => <option key={provider} value={provider}>{providerName(provider)}</option>)}</select></label>{props.aiStatus !== null && providerUsesModel(props.aiStatus.provider) && <><label>Modelo<select value={props.selectedLocalModel} onChange={(event) => void props.onSelectModel(event.target.value)}><option value="">Selecionar modelo</option>{props.localModels.map((model) => <option key={model.model} value={model.model}>{model.displayName ?? model.name}</option>)}</select></label><button onClick={() => void props.onRefreshModels()}>Atualizar modelos</button></>}</div>}
           {section === 'skills' && <div className="cc-stack"><h2>Skills</h2><p>Descoberta não equivale a aprovação. Somente skills auditadas podem ser habilitadas.</p>{projectId === '' ? <div className="cc-note">Abra um workspace para gerenciar skills por projeto.</div> : skills.map((skill) => <div className="cc-card" key={skill.id}><div><strong>{skill.name}</strong><small>{skill.status} · execução automática: NÃO</small></div><button onClick={() => void toggleToolbox(!skill.enabled)}>{skill.enabled ? 'Desabilitar' : 'Habilitar'}</button></div>)}{actionResult !== '' && <div className="cc-note">{actionResult}</div>}</div>}
-          {section === 'toolbox' && <div className="cc-stack"><h2>Toolbox</h2><p>Gates allowlisted; nenhum comando arbitrário vem da interface.</p><div className="cc-grid">{toolboxGates.map((gate) => <button key={gate.id} disabled={busy || projectId === ''} onClick={() => void runGate(gate.id)}>{gate.label}</button>)}</div>{gateResult !== null && <pre className={`cc-evidence state-${gateResult.state.toLowerCase()}`}>{gateResult.gateId}: {gateResult.state}\n{gateResult.evidence}</pre>}</div>}
+          {section === 'toolbox' && <div className="cc-stack"><h2>Toolbox</h2><p>Gates allowlisted; nenhum comando arbitrário vem da interface.</p>{props.executionRuntime !== undefined && <div className={`cc-card cc-runtime tone-${props.executionRuntime.view.tone}`} role="status"><div><strong>{props.executionRuntime.view.label}</strong><small>{props.executionRuntime.view.detail}</small>{props.executionRuntime.view.state === 'READY' && props.executionRuntime.status !== null && <small>Transporte: {props.executionRuntime.status.transport === 'https-tunnel' ? 'HTTPS Tunnel' : props.executionRuntime.status.transport ?? '—'}{props.executionRuntime.status.platform !== undefined ? ` · Plataforma: ${props.executionRuntime.status.platform}` : ''}{(props.executionRuntime.status.capabilities?.length ?? 0) > 0 ? ` · Capacidades: ${props.executionRuntime.status.capabilities?.join(', ') ?? ''}` : ''}</small>}</div>{props.onRefreshRuntime !== undefined && <button disabled={busy} onClick={() => void props.onRefreshRuntime?.()}>Verificar novamente</button>}</div>}{gatesLocked ? <div className="cc-note">Os gates executam no seu hardware via Runtime Local (fail-closed). Eles ficam liberados quando o estado acima for READY — o chat Cloud e o Workers AI não dependem disso.</div> : <div className="cc-grid">{toolboxGates.map((gate) => <button key={gate.id} disabled={busy || projectId === ''} onClick={() => void runGate(gate.id)}>{gate.label}</button>)}</div>}{gateResult !== null && !gatesLocked && <pre className={`cc-evidence state-${gateResult.state.toLowerCase()}`}>{gateResult.gateId}: {gateResult.state}\n{gateResult.evidence}</pre>}</div>}
           {section === 'ai-lab' && <div className="cc-stack"><h2>AI Lab</h2><p>Detecção read-only da estrutura portátil runtime/models/data/projects/cache.</p><label>Raiz portátil<input value={portableRoot} onChange={(event) => setPortableRoot(event.target.value)} placeholder="Ex.: D:\\AI-LAB ou F:\\AI-LAB" /></label><button disabled={busy || portableRoot.trim() === ''} onClick={() => void inspectPortable()}>Detectar runtimes</button><pre className="cc-evidence">{portableResult}</pre></div>}
           {section === 'agents' && <div className="cc-stack"><h2>Agentes & Loadouts</h2><p>Agent, provider, modelo e skills permanecem identidades separadas. Salvar um loadout não concede execução automática.</p>{projectId === '' ? <div className="cc-note">Abra um workspace para configurar loadouts por projeto.</div> : <><label>Agente<select value={selectedAgentId} onChange={(event) => setSelectedAgentId(event.target.value)}>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label><label>Provider<select value={effectiveLoadoutProvider} onChange={(event) => { const provider = event.target.value as AIProviderKind; setLoadoutProvider(provider); if (!providerUsesModel(provider)) setLoadoutModel('') }}>{providerOptions.map((provider) => <option key={provider} value={provider}>{providerName(provider)}</option>)}</select></label>{providerUsesModel(effectiveLoadoutProvider) && <label>Modelo<select value={loadoutModel || props.selectedLocalModel} onChange={(event) => setLoadoutModel(event.target.value)}><option value="">Selecionar modelo</option>{props.localModels.map((model) => <option key={model.model} value={model.model}>{model.displayName ?? model.name}</option>)}</select></label>}<label>Permissão<select value={loadoutPermission} onChange={(event) => setLoadoutPermission(event.target.value as AgentPermissionProfile)}><option value="READ_ONLY">READ_ONLY</option><option value="ASSISTED">ASSISTED</option><option value="FULL_ACCESS">FULL_ACCESS</option></select></label><label className="cc-inline"><input type="checkbox" checked={loadoutUseToolbox} disabled={!toolboxEnabled} onChange={(event) => setLoadoutUseToolbox(event.target.checked)} />Usar Tupiniquim Toolbox {toolboxEnabled ? '' : '(habilite a skill primeiro)'}</label><button disabled={busy || selectedAgentId === '' || (providerUsesModel(effectiveLoadoutProvider) && (loadoutModel || props.selectedLocalModel) === '')} onClick={() => void saveAgentLoadout()}>Salvar loadout com aprovação</button><div className="cc-grid">{loadouts.map((loadout) => <div className="cc-card" key={loadout.agentId}><div><strong>{agents.find((agent) => agent.id === loadout.agentId)?.name ?? loadout.agentId}</strong><small>{loadout.provider}{loadout.model === null ? '' : ` · ${loadout.model}`} · {loadout.permissionProfile}</small><small>Skills: {loadout.skillIds.length === 0 ? 'nenhuma' : loadout.skillIds.join(', ')} · execução automática: NÃO</small></div><span className="cc-badge">SALVO</span></div>)}</div>{actionResult !== '' && <div className="cc-note">{actionResult}</div>}</>}</div>}
           {section === 'security-quality' && <div className="cc-stack"><h2>Segurança & Qualidade</h2><p>Ausência de ambiente = NOT_AVAILABLE, nunca PASS. Use o Toolbox para executar os gates suportados e revisar evidências.</p><div className="cc-card"><div><strong>Política</strong><small>Default deny · approvals · AuditLog · sem fallback automático</small></div><span className="cc-badge">ATIVA</span></div></div>}

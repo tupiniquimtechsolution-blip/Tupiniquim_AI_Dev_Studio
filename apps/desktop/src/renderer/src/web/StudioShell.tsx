@@ -32,8 +32,19 @@ const modes: Array<{ mode: Mode; label: string }> = [
 
 type StudioTool = 'files' | 'terminal' | 'git' | 'activity'
 
+/** Espelho sanitizado do executionRuntime do /api/health (nunca contém token). */
+export interface ExecutionRuntimeStatusPayload {
+  state?: string
+  configured?: boolean
+  online?: boolean
+  transport?: string
+  platform?: string
+  capabilities?: string[]
+  detail?: string
+}
+
 interface HealthPayload {
-  executionRuntime?: { state?: string }
+  executionRuntime?: ExecutionRuntimeStatusPayload
 }
 
 interface StudioShellProps {
@@ -70,6 +81,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const [proposalStatus, setProposalStatus] = useState<ProposalStatus | null>(null)
   const [expiredProposals, setExpiredProposals] = useState<Array<{ proposal: WorkspaceWriteProposal; status: ProposalStatus }>>([])
   const [runtime, setRuntime] = useState<ExecutionRuntimeView>(executionRuntimeView(null))
+  const [runtimeStatus, setRuntimeStatus] = useState<ExecutionRuntimeStatusPayload | null>(null)
   const [tool, setTool] = useState<StudioTool | null>(null)
   const [showControlCenter, setShowControlCenter] = useState(false)
   const [bootState, setBootState] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -89,8 +101,10 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
       const response = await fetch('/api/health')
       const body = await response.json() as HealthPayload
       setRuntime(executionRuntimeView(body.executionRuntime?.state))
+      setRuntimeStatus(body.executionRuntime ?? null)
     } catch {
       setRuntime(executionRuntimeView('OFFLINE'))
+      setRuntimeStatus(null)
     }
   }
 
@@ -572,7 +586,8 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                   <div className="ws-runtime-lock" role="status">
                     <TerminalSquare size={22} aria-hidden="true" />
                     <h2>{RUNTIME_LOCK_MESSAGE}</h2>
-                    <p>O chat Cloud continua funcionando normalmente. Quando o gateway do Runtime Local reportar READY, Files, Git, terminal, build e testes são liberados progressivamente.</p>
+                    <p className="ws-runtime-lock-state"><strong>{runtime.label}.</strong> {runtime.detail}</p>
+                    <p>O chat Cloud continua funcionando normalmente. Quando o gateway do Runtime Local reportar READY, Files, Git, terminal, build e testes são liberados progressivamente — sem recarregar a página.</p>
                     <div className="ws-runtime-lock-actions">
                       <button className="ld-btn ghost" onClick={() => void refreshRuntime()}>Verificar novamente</button>
                       <button className="ld-btn primary" onClick={() => { setTool(null); setShowControlCenter(true) }}>Abrir Control Center</button>
@@ -615,7 +630,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
         </div>
       )}
 
-      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectProviderModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} />
+      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectProviderModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} executionRuntime={{ view: runtime, status: runtimeStatus }} onRefreshRuntime={refreshRuntime} />
       <GoogleTasksDock />
 
       <footer className="statusbar">

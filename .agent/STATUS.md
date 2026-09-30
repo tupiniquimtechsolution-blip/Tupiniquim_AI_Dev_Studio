@@ -2,6 +2,27 @@
 
 Atualizado em: 2026-09-30
 
+## Estabilização Release Green (branch de trabalho sobre `integration/ai-lab-toolbox-unified` @ 4f32f35)
+
+**RELEASE_CANDIDATE_READY — PR #80 aberto (hotfix Web + estabilização).**
+
+- Inventário canônico: `docs/RELEASE/RELEASE_GREEN_AUDIT.md` (RG-01…RG-16);
+  matriz de gates: `docs/RELEASE/RELEASE_GREEN_CHECKLIST.md`.
+- Corrigido nesta onda: parser Workers AI OpenAI-compatible (JSON bruto no
+  chat, RG-01/02), mensagens por estado do Remote Runtime em gates/drawers/
+  Control Center (RG-03/04), e o falso "vermelho eterno" de integration/
+  security — eram invocação local sem TEMP, não falha de produto (RG-06:
+  integration 104/104, security 55/55 com TEMP=/tmp; CI ubuntu sempre passou).
+- Gates locais 100% PASS (lint/typecheck/unit 368/dogfood 13/build/dry-runs
+  web+control-plane+MW0–MW5). CI: cloud-quality PASS em dcde40d; smoke real
+  de browser PASS na base 4f32f35.
+- Bloqueios EXTERNOS documentados com passo mínimo e teste de validação:
+  RG-05 runtime DISABLED em produção (vars/secret/tunnel — RUNBOOK §2),
+  RG-07 Workers Builds do dashboard falhando em branch de PR,
+  RG-08 Access ANONYMOUS_TEST. Ambiente: RG-09 certificação Windows F:.
+- Produção (health real 2026-09-30): ai=workers-ai OK, persistência READY,
+  runtime DISABLED, auth productionReady=false.
+
 ## Tema Claro/Escuro/Sistema + transições (branch de trabalho sobre `integration/ai-lab-toolbox-unified`)
 
 **IMPLEMENTADO — AGUARDANDO PR/CI.**

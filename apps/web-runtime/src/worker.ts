@@ -1,3 +1,4 @@
+import { aiText as sharedAiText } from './ai-text'
 import { WEB_MODELS, WEB_PROVIDER, WEB_RUNTIME, isWebModelId, resolveWebModel } from './model-catalog'
 import { getRemoteSandbox, remoteRuntimeStatus, type RemoteRuntimeConfig } from './remote-runtime'
 
@@ -61,19 +62,7 @@ const listWorkspace = async (sandbox: ReturnType<typeof sandboxFor>, depth: numb
 
 const selectedModel = (request: Request): string => resolveWebModel(request.headers.get('x-tupiniquim-model'))
 
-const aiText = (response: unknown): string => {
-  if (typeof response === 'string') return response
-  if (response !== null && typeof response === 'object') {
-    const record = response as JsonRecord
-    if (typeof record.response === 'string') return record.response
-    if (typeof record.result === 'string') return record.result
-    if (record.result !== null && typeof record.result === 'object') {
-      const nested = record.result as JsonRecord
-      if (typeof nested.response === 'string') return nested.response
-    }
-  }
-  return JSON.stringify(response)
-}
+const aiText = sharedAiText
 
 const handleAgentSend = async (request: Request, env: Env, input: JsonRecord): Promise<Response> => {
   const message = typeof input.message === 'string' ? input.message.trim() : ''

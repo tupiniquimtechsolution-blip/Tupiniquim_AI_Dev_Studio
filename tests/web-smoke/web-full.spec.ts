@@ -197,6 +197,13 @@ test('UI Web Full inicializa workspace/modelo, conversa e recupera sessão; term
   const assistant = assistants.nth(assistantCount)
   await expect(assistant).toBeVisible({ timeout: 180_000 })
   await expect(assistant.locator('p')).not.toHaveText('')
+  // Regressão RG-01/RG-02: a resposta renderizada deve ser texto de conversa,
+  // nunca o envelope OpenAI-compatible bruto (choices/usage/model) nem
+  // reasoning_content vazado pelo fallback JSON.stringify.
+  const assistantText = (await assistant.innerText()).toLowerCase()
+  for (const leaked of ['"choices"', 'reasoning_content', '"usage"', 'completion_tokens', '"finish_reason"']) {
+    expect(assistantText, `resposta do chat vazou payload bruto (${leaked})`).not.toContain(leaked)
+  }
   await expect(page.locator('.agent-message.error')).toHaveCount(0)
 
   const healthResponse = await request.get('/api/health')
