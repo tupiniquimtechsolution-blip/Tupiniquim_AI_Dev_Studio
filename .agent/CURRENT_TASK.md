@@ -1,8 +1,22 @@
 # Tarefa atual
 
-Atualizado em: 2026-09-29
+Atualizado em: 2026-09-30
 
-## Objetivo
+## Tarefa concluída nesta sessão — Web Clean Product Experience
+
+Branch: `feat/web-clean-product-experience`.
+
+Entregue: landing pública, onboarding conversacional multi-step e Studio Web
+chat-first com progressive disclosure (drawers para Arquivos/Terminal/Git/
+Atividade, Control Center e workbench completo preservados). Guardas fail-closed
+Issue #25 compartilhadas em `agentGating.ts`. Smoke Web atualizado
+semanticamente (entrada via landing → "Abrir Studio"). Ver
+`docs/WEB/PRODUCT_EXPERIENCE.md` e ADR 0018.
+
+Pendente desta fase: abrir PR, rodar Cloud Quality + Web Product Smoke no CI
+contra deployment real e validar visualmente nos breakpoints certificados.
+
+## Objetivo (fase anterior — segue válido)
 
 Conectar e certificar o **Tupiniquim Remote Runtime** no Web Free já certificado.
 

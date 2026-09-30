@@ -1,6 +1,29 @@
 # Status
 
-Atualizado em: 2026-09-29
+Atualizado em: 2026-09-30
+
+## Web Product Experience (branch `feat/web-clean-product-experience`)
+
+**IMPLEMENTADO — AGUARDANDO PR/CI.**
+
+- Nova experiência Web em três momentos: landing pública (`/`), onboarding
+  conversacional (`/onboarding`) e Studio chat-first (`/studio`), com o
+  workbench clássico preservado em `/workbench`. Desktop intocado.
+- Regras fail-closed da Issue #25 extraídas para fonte única
+  (`apps/desktop/src/renderer/src/agentGating.ts`) compartilhada Web/Desktop.
+- Monaco/xterm agora carregam sob demanda (landing leve); bundling local sem
+  CDN preservado e testado.
+- Remote Runtime: estados DISABLED/MISCONFIGURED/OFFLINE/READY refletidos no
+  chip "Execution"; ferramentas de SO bloqueadas com mensagem discreta quando
+  não-READY; chat Cloud nunca bloqueado. Nenhum contrato de API alterado.
+- Documentação: `docs/WEB/PRODUCT_EXPERIENCE.md` + ADR 0018.
+- Validação local (sandbox Linux): lint GREEN, typecheck GREEN, unit GREEN
+  (329), dogfood GREEN, build GREEN. `tests/integration/persistence.test.ts`
+  e `tests/security/secret-environment.test.ts` falham nesta sandbox por
+  exigirem volume `F:` do Windows e ambiente de segredos privado — falhas
+  idênticas no commit base (não são regressões); devem ficar GREEN no CI
+  oficial. `test:web-smoke` requer deployment real (atualizado
+  semanticamente para o novo fluxo de entrada).
 
 ## Estado operacional atual
 
