@@ -2,6 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $Fixtures = @(
   (Join-Path $PSScriptRoot 'portable-layout.test.ps1'),
+  (Join-Path $PSScriptRoot 'remote-runtime-bootstrap.test.ps1'),
   (Join-Path $PSScriptRoot 'ollama-live-smoke.test.ps1')
 )
 
