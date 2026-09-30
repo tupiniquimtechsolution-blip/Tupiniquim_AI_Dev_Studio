@@ -1,7 +1,7 @@
 # Web Free — Tupiniquim Remote Runtime
 
-Status: IMPLEMENTADO / GATEWAY OPCIONAL NO PRIMEIRO DEPLOY  
-Data: 2026-09-28
+Status: IMPLEMENTADO / CLOUD-ONLY GREEN / REMOTE RUNTIME RELEASE GATE PENDENTE  
+Data: 2026-09-30
 
 ## Objetivo
 
@@ -20,7 +20,8 @@ O Worker continua responsável pelo control plane. O gateway local é responsáv
 - Workers AI;
 - Assets;
 - Durable Object `STATE`;
-- `WEB_REMOTE_RUNTIME_ENABLED=false`.
+- `WEB_REMOTE_RUNTIME_ENABLED=false`;
+- `WEB_WORKSPACE_BACKUP_ENABLED=true` prepara checkpoints locais, mas eles só recebem PASS quando o gateway estiver READY.
 
 Não existe bloco `containers`.
 
@@ -61,7 +62,10 @@ Use Cloudflare Tunnel apontando o hostname do runtime para:
 No Worker configure:
 - `WEB_REMOTE_RUNTIME_ENABLED=true`;
 - `REMOTE_RUNTIME_URL=https://<hostname-do-runtime>`;
-- secret `REMOTE_RUNTIME_TOKEN` igual ao token local.
+- secret `REMOTE_RUNTIME_TOKEN` igual ao token local;
+- `WEB_WORKSPACE_BACKUP_ENABLED=true` para checkpoint/restore local.
+
+R2 não é requisito para essa persistência. A referência canônica é `docs/WEB/WORKSPACE_LOCAL_PERSISTENCE.md`.
 
 ## Segurança
 
