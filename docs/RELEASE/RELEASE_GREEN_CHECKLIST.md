@@ -26,7 +26,8 @@ Atualizado em: 2026-09-30. Regras: resultado ∈ {PASS, FAIL, BLOCKED, NOT_APPLI
 | Cloud Quality Gate | `dcde40d` (PR #80) | **PASS** |
 | Web runtime lockfile | `4f32f35` | **PASS** |
 | Web Product Smoke (browser real na URL implantada) | `4f32f35` | **PASS** |
-| Workers Builds (dashboard Cloudflare, branch de PR) | `dcde40d` | **BLOCKED** (externo — RG-07) |
+| Workers Builds — integration/produção (deploy real) | `4f32f35` | **PASS** (Version ID; consertado pelo #79) |
+| Workers Builds — branch de PR | `efd5552` | **NOT_APPLICABLE** como gate (falha é função da branch: árvore idêntica passou na integration; check não-required — RG-07) |
 
 ## Smoke real (ambiente implantado)
 
