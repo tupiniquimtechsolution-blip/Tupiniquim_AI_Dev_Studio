@@ -1,8 +1,19 @@
 # Próxima ação
 
-Atualizado em: 2026-09-29
+Atualizado em: 2026-09-30
 
-## Foco atual
+## Ação imediata — Web Clean Product Experience
+
+1. Abrir PR de `feat/web-clean-product-experience` para
+   `integration/ai-lab-toolbox-unified` (não fazer merge sem CI GREEN).
+2. Rodar Cloud Quality (lint/typecheck/unit/integration/security/dogfood/build)
+   no CI oficial (as suítes que exigem volume F:/segredos não rodam na sandbox).
+3. Deploy de preview e `pnpm test:web-smoke` contra a URL real — o spec já
+   cobre landing → onboarding → Studio, chat, recovery e terminal-quando-READY.
+4. Validar responsividade real em 1440/1280/1024/768/390 e acessibilidade
+   (foco visível, drawers com Esc, reduced motion).
+
+## Foco anterior (segue válido)
 
 **Web Phase 2 — conectar e certificar o Tupiniquim Remote Runtime via Cloudflare Tunnel.**
 
