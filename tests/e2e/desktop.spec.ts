@@ -194,7 +194,7 @@ const providerReadinessDetail = async (page: Page, options: ProviderReadinessOpt
   const providerSelect = page.getByLabel('Provedor de IA')
   const providerValue = await withDiagnosticsBudget(providerSelect.inputValue(), 1_000).catch(() => null)
   const providerEnabled = await withDiagnosticsBudget(providerSelect.isEnabled(), 1_000).catch(() => null)
-  const modelSelect = page.getByLabel('Modelo Ollama local')
+  const modelSelect = page.getByLabel('Modelo de IA')
   const modelSelectorCount = await withDiagnosticsBudget(modelSelect.count(), 1_000).catch(() => null)
   let modelOptions = '<ausente>'
   if (modelSelectorCount !== null && modelSelectorCount > 0) {
@@ -230,7 +230,7 @@ const expectAgentReady = async (page: Page, options: ProviderReadinessOptions = 
 const selectOllamaAndWaitReady = async (page: Page, model: string, options: ProviderSelectionOptions = {}): Promise<void> => {
   const timeout = options.timeout ?? 60_000
   const providerSelect = page.getByLabel('Provedor de IA')
-  const modelSelect = page.getByLabel('Modelo Ollama local')
+  const modelSelect = page.getByLabel('Modelo de IA')
   try {
     if (options.initialProviderSelection !== true) {
       // Sinal AUTORITATIVO de turno terminal: obrigatório ANTES da troca em
@@ -1982,7 +1982,7 @@ test('issue #25: provider indisponível bloqueia envio fail-closed (Codex AUTH_R
     await page.locator('.mode-switch').getByRole('button', { name: 'Chat', exact: true }).click()
 
     const providerSelect = page.getByLabel('Provedor de IA')
-    const modelSelect = page.getByLabel('Modelo Ollama local')
+    const modelSelect = page.getByLabel('Modelo de IA')
     const sendButton = page.getByRole('button', { name: 'Enviar', exact: true })
     const textarea = page.getByLabel('Mensagem ao agente')
 
