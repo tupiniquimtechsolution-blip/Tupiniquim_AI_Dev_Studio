@@ -1,4 +1,3 @@
-import './monaco'
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import './styles.css'
@@ -25,14 +24,28 @@ const renderFatal = (error: unknown): void => {
 
 const bootstrap = async (): Promise<void> => {
   if (!hasDesktopBridge) {
+    // Superfície Web: landing pública → onboarding → Studio chat-first.
+    // Dependências pesadas de editor (Monaco/xterm) NÃO entram aqui — são
+    // carregadas sob demanda pelas rotas que as usam (ver web/CodeEditor e
+    // web/Workbench, que importam './monaco' e o CSS do xterm localmente).
     const [{ installWebBridge }, { installWebFullOverrides }] = await Promise.all([
       import('./webBridge'),
       import('./webBridgeFull')
     ])
     installWebBridge()
     installWebFullOverrides()
+    const { WebExperience } = await import('./web/WebExperience')
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <WebExperience />
+      </React.StrictMode>
+    )
+    return
   }
 
+  // Desktop (Electron): workbench completo com Monaco/xterm empacotados
+  // localmente (sem CDN) — a configuração vive em ./monaco.
+  await import('./monaco')
   await import('@xterm/xterm/css/xterm.css')
   const [{ App }, { GoogleTasksDock }] = await Promise.all([
     import('./App'),

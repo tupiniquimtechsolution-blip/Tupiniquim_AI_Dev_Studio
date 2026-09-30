@@ -21,5 +21,11 @@ it('bundles Monaco locally instead of depending on the default CDN', async () =>
   const config = await readFile('apps/desktop/src/renderer/src/monaco.ts', 'utf8')
   expect(config).toContain('loader.config({ monaco })')
   expect(config).toContain('editor.worker?worker')
-  expect(await readFile('apps/desktop/src/renderer/src/main.tsx', 'utf8')).toContain("import './monaco'")
+  // O loader local continua sendo o ÚNICO caminho de Monaco, mas agora é
+  // carregado sob demanda (progressive disclosure Web): o Desktop importa
+  // dinamicamente em main.tsx e as superfícies Web que hospedam o editor
+  // importam o mesmo módulo antes de montar o Editor. Nenhum CDN.
+  expect(await readFile('apps/desktop/src/renderer/src/main.tsx', 'utf8')).toContain("import('./monaco')")
+  expect(await readFile('apps/desktop/src/renderer/src/web/CodeEditor.tsx', 'utf8')).toContain("import '../monaco'")
+  expect(await readFile('apps/desktop/src/renderer/src/web/Workbench.tsx', 'utf8')).toContain("import '../monaco'")
 })
