@@ -9,6 +9,37 @@ import type { ConversationMessage } from './agentGating'
 import { ProposalProvenance } from './components/ProposalProvenance'
 import { FileTree } from './components/FileTree'
 import { TerminalPane } from './components/TerminalPane'
+import { ThemeToggle } from './components/ThemeToggle'
+import { useResolvedTheme } from './theme'
+
+/**
+ * Paletas "de fábrica" (desktop e web). Valores do perfil idênticos ao stock
+ * NÃO viram overrides inline — assim os tokens de tema (claro/escuro em
+ * styles.css) prevalecem. Somente cores realmente customizadas pelo usuário
+ * (ex.: Acento/Fundo nas Preferências, customização avançada) sobrepõem o
+ * tema em ambos os modos.
+ */
+const STOCK_THEME_VALUES = new Set([
+  '#0b0f12', '#11171c', '#182127', '#e7eef3', '#93a4af', '#27c483', '#49b6ff', '#f2b84b', '#ff6b6b',
+  '#07090f', '#0d1018', '#111622', '#f7f7fb', '#9da6b7', '#8fa8ff', '#76b7ff', '#e3b879', '#ef7f7f'
+])
+
+const profileStyle = (profile: UIProfile): React.CSSProperties => {
+  const overrides: Record<string, string> = {
+    '--explorer-width': `${profile.layout.explorerWidth}px`,
+    '--agent-width': `${profile.layout.agentWidth}px`,
+    '--deck-height': `${profile.layout.deckHeight}px`
+  }
+  const themeVars: Array<[string, string]> = [
+    ['--bg', profile.theme.background], ['--surface', profile.theme.surface], ['--raised', profile.theme.raised],
+    ['--text', profile.theme.text], ['--muted', profile.theme.muted], ['--accent', profile.theme.accent],
+    ['--info', profile.theme.info], ['--warning', profile.theme.warning], ['--danger', profile.theme.danger]
+  ]
+  for (const [name, value] of themeVars) {
+    if (!STOCK_THEME_VALUES.has(value.toLowerCase())) overrides[name] = value
+  }
+  return overrides
+}
 
 const modes: Array<{ mode: Mode; label: string }> = [
   { mode: 'CHAT', label: 'Chat' }, { mode: 'PLAN', label: 'Plan' }, { mode: 'RESEARCH', label: 'Research' }, { mode: 'EXECUTE', label: 'Execute' },
@@ -27,6 +58,7 @@ const basename = (path: string): string => path.split('/').at(-1) ?? path
 // superfície Web chat-first: ver ./agentGating.ts (fonte única).
 
 export const App = (): React.JSX.Element => {
+  const resolvedTheme = useResolvedTheme()
   const [system, setSystem] = useState<SystemInfo | null>(null)
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
   const [files, setFiles] = useState<FileEntry[]>([])
@@ -465,7 +497,7 @@ export const App = (): React.JSX.Element => {
   const proposalReady = proposalMatchesManifest && proposalStatus === 'APPROVED'
 
   return (
-    <main className={`studio ${profile?.density === 'COMFORTABLE' ? 'density-comfortable' : 'density-compact'}`} style={profile === null ? undefined : { '--bg': profile.theme.background, '--surface': profile.theme.surface, '--raised': profile.theme.raised, '--text': profile.theme.text, '--muted': profile.theme.muted, '--accent': profile.theme.accent, '--info': profile.theme.info, '--warning': profile.theme.warning, '--danger': profile.theme.danger, '--explorer-width': `${profile.layout.explorerWidth}px`, '--agent-width': `${profile.layout.agentWidth}px`, '--deck-height': `${profile.layout.deckHeight}px` } as React.CSSProperties}>
+    <main className={`studio ${profile?.density === 'COMFORTABLE' ? 'density-comfortable' : 'density-compact'}`} style={profile === null ? undefined : profileStyle(profile)}>
       <header className="ribbon drag-region">
         <div className="brand no-drag"><span className="brand-mark"><Braces size={17} /></span><strong>Tupiniquim</strong><span className="brand-sub">AI DEV STUDIO</span></div>
         <button className="project-switcher no-drag" disabled={sending || aiStatus?.state === 'BUSY'} onClick={() => void openWorkspace()}><Boxes size={15} /><span>{workspaceName}</span><ChevronsUpDown size={13} /></button>
@@ -493,7 +525,7 @@ export const App = (): React.JSX.Element => {
             <div className="spacer" /><button className="icon-button" disabled={!dirty} onClick={() => void save()} title="Salvar"><Save size={15} /></button>
           </div>
           {document !== null ? (
-            <Editor height="100%" path={document.relativePath} language={languageFor(document.relativePath)} value={content} onChange={(value) => setContent(value ?? '')} theme="vs-dark" options={{ minimap: { enabled: true }, fontFamily: 'JetBrains Mono, Cascadia Code, Consolas, monospace', fontSize: 13, padding: { top: 16 }, smoothScrolling: true, automaticLayout: true }} />
+            <Editor height="100%" path={document.relativePath} language={languageFor(document.relativePath)} value={content} onChange={(value) => setContent(value ?? '')} theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'} options={{ minimap: { enabled: true }, fontFamily: 'JetBrains Mono, Cascadia Code, Consolas, monospace', fontSize: 13, padding: { top: 16 }, smoothScrolling: true, automaticLayout: true }} />
           ) : (
             <div className="welcome-canvas">
               <div className="aurora" />
@@ -547,7 +579,7 @@ export const App = (): React.JSX.Element => {
         <div className="resize-handle deck-resize" role="separator" aria-label="Redimensionar deck inferior" onPointerDown={(event) => beginResize('deckHeight', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, deckHeight: current.layout.deckHeight === 0 ? 220 : 0 } }))} />
       </div>
       <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectProviderModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} />
-      {showSettings && profile !== null && <aside className="settings-popover"><header><strong>Preferências</strong><button onClick={() => setShowSettings(false)}>×</button></header><label>Densidade<select value={profile.density} onChange={(event) => updateProfile((current) => ({ ...current, density: event.target.value as UIProfile['density'] }))}><option value="COMPACT">Compacta</option><option value="COMFORTABLE">Confortável</option></select></label><label>Acento<input type="color" value={profile.theme.accent} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, accent: event.target.value } }))} /></label><label>Fundo<input type="color" value={profile.theme.background} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, background: event.target.value } }))} /></label><button className="save-settings" onClick={() => void saveProfile()}>Validar e salvar</button></aside>}
+      {showSettings && profile !== null && <aside className="settings-popover"><header><strong>Preferências</strong><button onClick={() => setShowSettings(false)} aria-label="Fechar preferências">×</button></header><label>Tema<ThemeToggle /></label><label>Densidade<select value={profile.density} onChange={(event) => updateProfile((current) => ({ ...current, density: event.target.value as UIProfile['density'] }))}><option value="COMPACT">Compacta</option><option value="COMFORTABLE">Confortável</option></select></label><p className="settings-advanced">Cores avançadas (sobrepõem o tema)</p><label>Acento<input type="color" value={profile.theme.accent} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, accent: event.target.value } }))} /></label><label>Fundo<input type="color" value={profile.theme.background} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, background: event.target.value } }))} /></label><button className="save-settings" onClick={() => void saveProfile()}>Validar e salvar</button></aside>}
       <footer className="statusbar"><span><ShieldCheck size={13} />Sandbox ativo</span><span>{workspaceRoot === null ? 'Sem workspace' : workspaceRoot}</span><div className="spacer" /><span>{system?.platform ?? 'win32'} · {system?.arch ?? 'x64'}</span><span>v{system?.version ?? '0.1.0'}</span></footer>
     </main>
   )

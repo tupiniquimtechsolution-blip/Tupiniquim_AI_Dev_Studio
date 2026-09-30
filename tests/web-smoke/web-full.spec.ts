@@ -143,6 +143,31 @@ test('landing pública apresenta o produto e leva ao onboarding conversacional',
   await expect(page.getByRole('heading', { name: 'Qual o seu nível hoje?' })).toBeVisible()
 })
 
+test('tema Claro/Escuro/Sistema aplica data-theme, persiste no reload e não quebra a navegação', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  const html = page.locator('html')
+  // SYSTEM é o padrão da superfície Web: o tema resolvido já está aplicado.
+  await expect(html).toHaveAttribute('data-theme', /^(light|dark)$/)
+
+  const themeGroup = page.getByRole('group', { name: 'Tema da interface' }).first()
+  await themeGroup.getByRole('button', { name: 'Tema escuro' }).click()
+  await expect(html).toHaveAttribute('data-theme', 'dark')
+  await expect(themeGroup.getByRole('button', { name: 'Tema escuro' })).toHaveAttribute('aria-pressed', 'true')
+
+  // Persistência: reload mantém o escuro sem flash de preferência perdida.
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+
+  await page.getByRole('group', { name: 'Tema da interface' }).first()
+    .getByRole('button', { name: 'Tema claro' }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+
+  // Navegação continua íntegra com o tema trocado (landing → onboarding).
+  await page.getByRole('button', { name: 'Começar', exact: true }).first().click()
+  await expect(page.getByRole('heading', { name: 'Boas-vindas ao Studio.' })).toBeVisible()
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+})
+
 test('UI Web Full inicializa workspace/modelo, conversa e recupera sessão; terminal quando o Remote Runtime está online', async ({ page, request }) => {
   await enterStudio(page)
   await expect(page.locator('.web-studio .brand')).toContainText('Tupiniquim')
