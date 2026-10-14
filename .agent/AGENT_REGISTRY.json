@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.1.0",
-  "updatedAt": "2026-09-04",
+  "updatedAt": "2026-10-14",
   "invariants": {
     "separation": "agent != model != provider != tool != skill != source_repository",
     "providerSelection": "user-controlled-no-automatic-priority",
@@ -247,6 +247,32 @@
         "workspace-only",
         "approval-for-mutating-effects"
       ]
+    },
+    {
+      "id": "AGENT-PORTFOLIO-ADMIN",
+      "name": "Tupiniquim Project Administrator",
+      "status": "source-registered",
+      "modelRequirements": [
+        "reasoning",
+        "long-context",
+        "tool-use"
+      ],
+      "sources": [
+        "internal:docs/AI_TOOLBOX/PORTFOLIO_ADMINISTRATOR.md",
+        "internal:docs/AI_TOOLBOX/PORTFOLIO_AUDIT_2026-10-14.md"
+      ],
+      "capabilities": [
+        "repository-discovery",
+        "portfolio-governance",
+        "documentation-audit",
+        "six-document-coverage",
+        "decision-traceability",
+        "gap-analysis",
+        "remediation-planning",
+        "evidence-reporting",
+        "agenor-coordination"
+      ],
+      "effects": []
     }
   ],
   "skillLibrary": {
