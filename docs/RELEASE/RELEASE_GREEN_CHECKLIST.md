@@ -1,5 +1,26 @@
 # Release Green Checklist — matriz de gates
 
+## Atualização certificada — 2026-10-16
+
+Esta seção prevalece sobre os itens históricos de 2026-09-30 abaixo.
+
+| Gate | Estado | Evidência |
+| --- | --- | --- |
+| Cloudflare toolchain | PASS | PR #79, Wrangler 4.144.0 pinado, dry-runs MW0–MW5 |
+| Parser Workers AI / estados Runtime | PASS código | PR #80 merged, integration merge `61ae3d59152649409a8dfe18d4c8dd7ee01be6f6` |
+| Live Web após PR #80 | PASS cloud-only | Workflow `36762440741`, attempt 2: 4 passed / 1 skipped |
+| HUD chat-first | PASS código/CI | PR #85 merged em `e3bec44710ac34f41f135ea2b1b0466ae701806e`; Cloud Quality SUCCESS |
+| Cloudflare Web deploy | PASS | Build `26c99bb7-765f-4116-8e35-fb84f0624636`, Version ID `8a97095a-8a67-4821-b5c9-1dee5bcdd0d0` |
+| Live Web após PR #85 | PASS cloud-only | Workflow `38883721480`, attempt 2: 5 passed / 1 skipped (inclui HUD/tema/chat/recovery) |
+| Responsividade com evidência visual | IN_PROGRESS | branch `test/web-hud-responsive-evidence` — screenshots e overflow em 390/768/1024/1440 serão gerados no CI |
+| RG-05 Remote Runtime | BLOCKED | Issue #68 — gateway/tunnel/secret/READY não certificados |
+| RG-08 Access | BLOCKED | Production Access e production-ready smoke não certificados |
+| RG-09 Windows físico | BLOCKED_ENVIRONMENT | Dependência do host certificado F: (fora dos testes locais desta tarefa) |
+
+**Classificação:** WEB CLOUD-ONLY GREEN. **Não** declarar `RELEASE_GREEN` completo enquanto RG-05/RG-08/RG-09 estiverem pendentes. Um teste skipped por Runtime OFFLINE não é PASS da capacidade.
+
+---
+
 Atualizado em: 2026-09-30. Regras: resultado ∈ {PASS, FAIL, BLOCKED, NOT_APPLICABLE}; falha conhecida NUNCA vira PASS; gate não executado NUNCA vira PASS.
 
 ## Gates de código (executados nesta estabilização, TEMP=/tmp)

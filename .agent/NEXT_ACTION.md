@@ -1,19 +1,12 @@
 # Next Action
 
-Somente ações futuras reais (donos indicados):
+Atualizado: 2026-10-16.
 
-1. [Mantenedor] Revisar e mergear PR #80 (cloud-quality PASS; único check
-   vermelho é o Workers Builds externo do dashboard — RG-07).
-2. [Automático] Confirmar Web Product Smoke verde no SHA de merge.
-3. [Operador Cloudflare + host local] RG-05: habilitar Remote Runtime em
-   produção seguindo docs/RELEASE/RUNBOOK.md §2; validar health READY e
-   smoke de terminal/Git/filesystem/gates.
-4. [Operador Cloudflare] RG-08: impor Cloudflare Access
-   (docs/WEB/CLOUDFLARE_ACCESS.md); validar productionReady=true e smoke
-   com WEB_SMOKE_REQUIRE_PRODUCTION_READY=true.
-5. [Operador Cloudflare] RG-07: corrigir/limitar Workers Builds do dashboard
-   para branches de PR.
-6. [Host Windows F:] RG-09: executar certificação desktop
-   (windows-certification) no ambiente alvo.
-7. Após 1–6: declarar RELEASE_GREEN com a matriz de
-   docs/RELEASE/RELEASE_GREEN_CHECKLIST.md 100% PASS/NOT_APPLICABLE.
+1. [Cloud CI] Concluir PR `test/web-hud-responsive-evidence` e registrar screenshots 390/768/1024/1440 + resultado de overflow. Nenhum teste local exigido nesta frente.
+2. [Operador Cloudflare + host Windows] Issue #68 / RG-05: ativar named Tunnel + Runtime Gateway real, configurar `WEB_REMOTE_RUNTIME_ENABLED`, `REMOTE_RUNTIME_URL`, `REMOTE_RUNTIME_TOKEN` como secret; rodar smoke full com capacidades de SO.
+3. [Operador Cloudflare] RG-08: configurar Cloudflare Access real, comprovar `auth.productionReady=true` e smoke `WEB_SMOKE_REQUIRE_PRODUCTION_READY=true`. Não declarar pronto no modo `ANONYMOUS_TEST`.
+4. [Operador Cloudflare] RG-07: limitar Workers Builds do dashboard a branch de produção, evitando check vermelho artificial em PRs.
+5. [Host Windows F:] RG-09: certificar Electron/ConPTY/Git/FS no equipamento alvo, etapa física explicitamente diferida.
+6. [Auditor] Revisar `docs/RELEASE/RELEASE_GREEN_CHECKLIST.md` com SHA/build/run e marcar `RELEASE_GREEN` somente quando todos os gates obrigatórios estiverem PASS ou NOT_APPLICABLE com justificativa comprovada.
+
+Concluído (não repetir): PR #79 toolchain Cloudflare; PR #80 parser Workers AI e estados Runtime; PR #85 HUD simplificado. Live Web smoke pós-PR #80 reexecutado com SUCCESS em 16/10/2026 (workflow `36762440741`, 4 passed / 1 skipped). Smoke do HUD (workflow `38883721480`, attempt 2) SUCCESS, 5 passed / 1 skipped.

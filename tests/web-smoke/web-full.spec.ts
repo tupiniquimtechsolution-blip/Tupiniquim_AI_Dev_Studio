@@ -168,7 +168,7 @@ test('tema Claro/Escuro/Sistema aplica data-theme, persiste no reload e não que
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
 })
 
-test('HUD mantém ferramentas e modos especializados acessíveis sem dominar o chat', async ({ page }) => {
+test('HUD mantém ferramentas e modos especializados acessíveis sem dominar o chat', async ({ page }, testInfo) => {
   await enterStudio(page)
   const tools = page.locator('.ws-tools-menu')
   await expect(tools.locator('summary')).toBeVisible()
@@ -186,6 +186,22 @@ test('HUD mantém ferramentas e modos especializados acessíveis sem dominar o c
   await expect(moreModes.locator('summary')).toContainText('Debug')
   await page.getByRole('button', { name: 'Chat', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Chat', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  // Evidência visual gerada no CI (sem testes locais ou dados de usuário).
+  // O mesmo HUD deve ficar utilizável em quatro larguras de referência.
+  for (const width of [390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect(page.getByLabel('Mensagem ao agente')).toBeVisible()
+    await expect(page.locator('.ws-tools-menu summary')).toBeVisible()
+    const dimensions = await page.evaluate(() => ({
+      documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: document.documentElement.clientWidth,
+      studioWidth: document.querySelector('.web-studio')?.scrollWidth ?? 0,
+      studioClient: document.querySelector('.web-studio')?.clientWidth ?? 0
+    }))
+    expect(dimensions.documentWidth, `overflow da página em ${width}px`).toBeLessThanOrEqual(dimensions.viewportWidth + 1)
+    expect(dimensions.studioWidth, `overflow do Studio em ${width}px`).toBeLessThanOrEqual(dimensions.studioClient + 1)
+    await page.screenshot({ path: testInfo.outputPath(`hud-${width}.png`) })
+  }
 })
 
 test('UI Web Full inicializa workspace/modelo, conversa e recupera sessão; terminal quando o Remote Runtime está online', async ({ page, request }) => {
