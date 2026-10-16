@@ -214,8 +214,9 @@ test('UI Web Full inicializa workspace/modelo, conversa e recupera sessão; term
 
   const model = page.getByLabel('Modelo de IA')
   await expect(model).toBeVisible()
-  const selectedModel = await model.inputValue()
-  expect(selectedModel).toMatch(/^@cf\//)
+  // O bootstrap Web recupera a sessão antes de sincronizar status/modelo.
+  // Aguardar o modelo real (sem aceitar string vazia ou fallback fictício).
+  await expect(model).toHaveValue(/^@cf\//, { timeout: 120_000 })
 
   await page.getByRole('button', { name: 'Chat', exact: true }).click()
 
