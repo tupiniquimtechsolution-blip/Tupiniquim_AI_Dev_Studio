@@ -421,6 +421,12 @@
   .ws-more-modes-panel { right: 0; left: auto; }
   .ws-composer-zone { padding-inline: 12px; }
   .web-studio .statusbar span:nth-child(3) { display: none; }
+  /* A faixa inferior é resumo, não painel de telemetria: priorizar estado e
+     workspace em 390px; a versão completa segue no desktop/Control Center. */
+  .web-studio .statusbar { min-width: 0; gap: 8px; padding-inline: 10px; overflow: hidden; }
+  .web-studio .statusbar > span:last-child { display: none; }
+  .web-studio .statusbar > span:nth-child(2) { min-width: 0; max-width: 30vw; overflow: hidden; text-overflow: ellipsis; }
+  .web-studio .statusbar > span:nth-last-child(2) { min-width: 0; max-width: 35vw; overflow: hidden; text-overflow: ellipsis; }
 }
 
 /* ============================================================
