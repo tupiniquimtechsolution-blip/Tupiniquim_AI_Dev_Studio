@@ -1,6 +1,6 @@
 # Web HUD Refinement — UI/UX review e decisão
 
-Status: IMPLEMENTAÇÃO CANDIDATA (certificação depende de Cloud Quality, deployment e Web Product Smoke).  
+Status: WEB CLOUD-ONLY GREEN — PR #85 merged em e3bec44710ac34f41f135ea2b1b0466ae701806e; Cloud Quality e Web Product Smoke SUCCESS. Validação visual responsiva complementar em andamento.  
 Baseline: `integration/ai-lab-toolbox-unified` @ `61ae3d59152649409a8dfe18d4c8dd7ee01be6f6`.  
 Backlog: issue #84.
 
