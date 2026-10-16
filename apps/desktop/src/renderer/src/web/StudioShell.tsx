@@ -1,5 +1,5 @@
 import { Activity, Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, FolderTree, GitBranch, LayoutPanelLeft, Save, Settings2, ShieldCheck, Sparkles, TerminalSquare, X } from 'lucide-react'
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AIProviderKind, AIStatus, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, ProposalStatus, SystemInfo, WorkspaceWriteProposal } from '@tupiniquim/contracts'
 import { evaluateSend, handleAgentEvent, providerDisplayName, providerLabel, providerTurnBlockReason, providerUsesSelectableModel } from '../agentGating'
 import type { ConversationMessage } from '../agentGating'
@@ -89,6 +89,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const hudToolsRef = useRef<HTMLDetailsElement | null>(null)
   const drawerRef = useRef<HTMLDialogElement | null>(null)
+  const toolsFocusTarget = useCallback(() => hudToolsRef.current?.querySelector('summary') ?? null, [])
   const threadEndRef = useRef<HTMLDivElement | null>(null)
   const dirty = document !== null && content !== document.content
   const preferences = useMemo(() => parseOnboardingPreferences(localStorage.getItem(WEB_ONBOARDING_KEY)), [])
@@ -689,7 +690,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
           </dialog>
       )}
 
-      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectProviderModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} executionRuntime={{ view: runtime, status: runtimeStatus }} onRefreshRuntime={refreshRuntime} />
+      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} returnFocusTo={toolsFocusTarget} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectProviderModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} executionRuntime={{ view: runtime, status: runtimeStatus }} onRefreshRuntime={refreshRuntime} />
       <GoogleTasksDock />
 
       <footer className="statusbar">

@@ -43,6 +43,7 @@ export interface ExecutionRuntimeInfo {
 interface ControlCenterProps {
   open: boolean
   onClose: () => void
+  returnFocusTo?: () => HTMLElement | null
   workspaceRoot: string | null
   aiStatus: AIStatus | null
   localModels: LocalModel[]
@@ -93,11 +94,11 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
     const active = document.activeElement
     const opener = active instanceof HTMLElement ? active : null
     const disclosure = opener?.closest('details')
-    const returnTarget = disclosure !== null && disclosure !== undefined && !disclosure.open
-      ? disclosure.querySelector('summary') : opener
+    const returnTarget = props.returnFocusTo?.() ?? (disclosure !== null && disclosure !== undefined && !disclosure.open
+      ? disclosure.querySelector('summary') : opener)
     dialog.showModal()
     return () => { dialog.close(); returnTarget?.focus() }
-  }, [props.open])
+  }, [props.open, props.returnFocusTo])
 
   useEffect(() => {
     if (!props.open) return
