@@ -1,5 +1,21 @@
 # Status
 
+## Checkpoint atual — 2026-10-16
+
+> **Seções datadas de 2026-09-30 abaixo são snapshots históricos; este checkpoint prevalece para o estado operacional atual.**
+
+- `integration/ai-lab-toolbox-unified` merge HEAD validado: `e3bec44710ac34f41f135ea2b1b0466ae701806e` (PR #85 — HUD chat-first refinado).
+- PR #79: Cloudflare toolchain determinística — Wrangler 4.144.0, Node 24, pnpm 11.16.0, sem Containers pagos.
+- Tema LIGHT/DARK/SYSTEM + transições: já integrado e certificado no Web Product Smoke.
+- PR #80: normalização Workers AI, estados de Runtime e anti-JSON bruto — merged; smoke `36762440741` reexecutado SUCCESS (4 passed / 1 skipped).
+- PR #85: HUD com ferramentas por disclosure, modos especializados agrupados e navegação responsiva — merged.
+- Cloud Quality: SUCCESS no PR #85 e no merge; Workers Build `26c99bb7-765f-4116-8e35-fb84f0624636`, Version ID `8a97095a-8a67-4821-b5c9-1dee5bcdd0d0`.
+- Web Product Smoke `38883721480`, attempt 2: SUCCESS (5 passed / 1 skipped); screenshot cloud responsivo em preparação.
+- **WEB CLOUD-ONLY = GREEN. RELEASE_GREEN global = PENDING** (Issue #68/RG-05, Access/RG-08, Windows/RG-09).
+- Release documentado: `docs/RELEASE/RELEASE_GREEN_CHECKLIST.md` e `docs/WEB/HUD_UX_REVIEW.md`.
+
+---
+
 Atualizado em: 2026-09-30
 
 ## Estabilização Release Green (branch de trabalho sobre `integration/ai-lab-toolbox-unified` @ 4f32f35)
