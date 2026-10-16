@@ -1,5 +1,19 @@
 # Status
 
+## Continuação executada — 2026-10-16
+
+- PR #89 / `c9393086c8023ebeeda893db41476290e0cbb458`: Cloud Quality
+  `38919537449` SUCCESS. Esse resultado não é smoke/visual do novo HUD.
+- Continuação na mesma branch: Control Center com dialog modal/teclado/foco;
+  busca de conteúdo no drawer Files pela bridge existente, sem escrita direta.
+- WorkspaceAdapter.search ignora symlinks e tipos especiais e confina caminhos;
+  regressão de link externo adicionada para CI Linux (Windows diferido).
+- Kanban Miro existente do Studio materializado e verificado: 34 linhas, 34
+  sequências únicas, títulos/estados iguais ao Notion. Tarefa #17 Em Andamento
+  (Studio sincronizado; pendências de outros projetos/Obsidian fora do escopo).
+- Nenhum teste local, merge ou deploy. Novo delta aguardando CI no checkpoint.
+  RELEASE_GREEN permanece PENDING; busca/criação V1 não declarada concluída.
+
 ## Auditoria vigente — 2026-10-16 — HEAD 70c0c97
 
 Este registro prevalece sobre o checkpoint anterior para a cabeça atual.

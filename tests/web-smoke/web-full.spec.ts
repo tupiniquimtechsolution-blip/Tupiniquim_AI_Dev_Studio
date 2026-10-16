@@ -189,6 +189,15 @@ test('HUD mantém ferramentas e modos especializados acessíveis sem dominar o c
   await expect(activity).toBeHidden()
   await expect(tools.locator('summary')).toBeFocused()
 
+  await tools.locator('summary').click()
+  await tools.getByRole('button', { name: 'Control Center', exact: true }).click()
+  const controlCenter = page.getByRole('dialog', { name: 'Tupiniquim Control Center', exact: true })
+  await expect(controlCenter).toBeVisible()
+  await expect(controlCenter.getByRole('button', { name: 'Fechar Control Center' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(controlCenter).toBeHidden()
+  await expect(tools.locator('summary')).toBeFocused()
+
   const moreModes = page.locator('.ws-more-modes')
   await moreModes.locator('summary').click()
   await moreModes.getByRole('button', { name: 'Debug' }).click()

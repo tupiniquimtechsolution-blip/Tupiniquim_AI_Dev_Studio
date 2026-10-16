@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import os from 'node:os'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WorkspaceAdapter } from '@tupiniquim/adapters'
@@ -24,6 +24,22 @@ beforeEach(async () => {
 afterEach(async () => { if (fixture !== '') await rm(fixture, { recursive: true, force: true }) })
 
 describe('WorkspaceAdapter', () => {
+  it.skipIf(isWindows)('busca ignora links para arquivos e diretórios fora do workspace', async () => {
+    const external = await mkdtemp(path.join(path.dirname(fixture), 'tupiniquim-external-'))
+    try {
+      await writeFile(path.join(external, 'outside.txt'), 'external-search-canary', 'utf8')
+      await symlink(path.join(external, 'outside.txt'), path.join(fixture, 'linked.txt'))
+      await symlink(external, path.join(fixture, 'linked-directory'), 'dir')
+      await writeFile(path.join(fixture, 'inside.txt'), 'internal-search-canary', 'utf8')
+      const adapter = new WorkspaceAdapter()
+      await adapter.configure(fixture)
+      expect(await adapter.search('external-search-canary')).toEqual([])
+      expect(await adapter.search('internal-search-canary')).toEqual([
+        { relativePath: 'inside.txt', line: 1, preview: 'internal-search-canary' }
+      ])
+    } finally { await rm(external, { recursive: true, force: true }) }
+  })
+
   it('lista, lê e grava atomicamente com optimistic concurrency', async () => {
     const adapter = new WorkspaceAdapter()
     await adapter.configure(fixture)

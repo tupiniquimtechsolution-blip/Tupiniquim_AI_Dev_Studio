@@ -1,5 +1,32 @@
 # Dev Studio — execution audit, 2026-10-16
 
+## Continuation after initial audit
+
+Initial PR #89 head `c9393086c8023ebeeda893db41476290e0cbb458` passed
+[Cloud Quality 38919537449](https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio/actions/runs/38919537449).
+New implementation in this continuation needs its own exact-head CI.
+
+- Added actual content search to the Web Files drawer through the existing
+  typed bridge. Empty/error/loading/100-result limit and stale responses handled.
+  File creation remains behind approved plans, not an unrestricted renderer write.
+- Fixed WorkspaceAdapter.search following file symlinks: skip symlinks/special
+  entries and apply realpath confinement. Regression test added for remote Linux
+  CI; physical Windows/junction certification still deferred.
+- Addressed the residual shared Control Center focus issue using a native modal
+  dialog with initial/return focus, Escape, labelled close button and responsive
+  controls. No provider/permission/runtime authority changes.
+- Existing Miro table `3458764684238548376`, titled Agenor — Tupiniquim AI Dev
+  Studio · To-dos numerados, was empty. Inserted 34 Notion-derived records and
+  grouped by Status. Readback: 34 records, sequences 1–34 unique, 0 title/status
+  mismatches. No replacement board or duplicate rows created.
+- Task #17 moved Bloqueada → Em Andamento in both systems: its Studio portion
+  is complete, but its existing content also requests cross-project/Obsidian
+  reconciliation outside this task. Current totals: 17 A Fazer, 7 Bloqueada,
+  6 Em Andamento, 4 historical Concluída. Other task statuses preserved.
+
+The sections below record the earlier snapshot. No local tests/build/app startup,
+production deploy, merge, release or RELEASE_GREEN certification in either step.
+
 ## Decision
 
 **NOT RELEASE-GREEN.** This is a partial execution and evidence reconciliation,

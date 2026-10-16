@@ -1,10 +1,10 @@
-import { Activity, Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, FolderTree, GitBranch, LayoutPanelLeft, Save, Settings2, ShieldCheck, Sparkles, TerminalSquare, X } from 'lucide-react'
+import { Activity, Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, FolderTree, GitBranch, LayoutPanelLeft, Save, Settings2, ShieldCheck, Sparkles, TerminalSquare, X } from 'lucide-react'
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import type { AIProviderKind, AIStatus, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, ProposalStatus, SystemInfo, WorkspaceWriteProposal } from '@tupiniquim/contracts'
 import { evaluateSend, handleAgentEvent, providerDisplayName, providerLabel, providerTurnBlockReason, providerUsesSelectableModel } from '../agentGating'
 import type { ConversationMessage } from '../agentGating'
 import { ControlCenter } from '../components/ControlCenter'
-import { FileTree } from '../components/FileTree'
+import { WorkspaceFileBrowser } from '../components/WorkspaceFileBrowser'
 import { GitReviewPane } from '../components/GitReviewPane'
 import { ProposalProvenance } from '../components/ProposalProvenance'
 import { ThemeToggle } from '../components/ThemeToggle'
@@ -661,9 +661,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                     {tool === 'files' && (
                       <div className="ws-files">
                         <div className="ws-files-tree">
-                          {files.length > 0
-                            ? <FileTree entries={files} selected={document?.relativePath} onSelect={(path) => void openFile(path)} />
-                            : <div className="ws-files-empty"><Code2 size={18} aria-hidden="true" /><p>Nenhum arquivo mapeado ainda.</p><button className="ld-btn ghost" onClick={() => void syncWorkspace()}>Atualizar</button></div>}
+                          <WorkspaceFileBrowser entries={files} selected={document?.relativePath} onSelect={(path) => void openFile(path)} onRefresh={() => void syncWorkspace()} />
                         </div>
                         <div className="ws-files-editor">
                           {document !== null

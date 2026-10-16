@@ -1,5 +1,16 @@
 # Changelog do Agente
 
+## 2026-10-16 — Continuação das pendências executáveis
+
+- Busca de conteúdo real no drawer Files via IPC/RPC existente, com erro,
+  resultado vazio, limite e descarte de respostas antigas; sem simulação.
+- Busca no adaptador não segue symlinks/tipos especiais nem caminhos externos;
+  caso de segurança adicionado à integração remota, sem execução local.
+- Control Center usa modalidade nativa, Escape, foco inicial/restauração,
+  targets de toque e superfícies consistentes com tokens existentes.
+- Kanban Miro Dev Studio sincronizado/confirmado com 34 IDs e links Notion;
+  tarefa #17 desbloqueada para Em Andamento (residual cross-project preservado).
+
 ## 2026-10-16 — HUD acessível e reconciliação de evidências
 
 - Drawer Web usa dialog modal nativo, Escape e restauração de foco; disclosures

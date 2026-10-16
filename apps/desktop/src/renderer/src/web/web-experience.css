@@ -476,6 +476,18 @@
 }
 
 /* Readable controls and touch targets without increasing chat density. */
+.workspace-file-browser form { display:grid; gap:8px; padding:12px; border-bottom:1px solid var(--wx-line); }
+.workspace-file-browser label { color:var(--wx-muted); font-size:13px; }
+.workspace-file-browser input { min-width:0; width:100%; padding:9px; border:1px solid var(--wx-line-strong); border-radius:8px; background:var(--wx-surface); color:var(--wx-text); font:inherit; font-size:16px; }
+.workspace-search-actions { display:flex; flex-wrap:wrap; gap:6px; }
+.workspace-search-actions button { min-height:36px; padding:6px 9px; border:1px solid var(--wx-line); border-radius:8px; background:var(--wx-raised); color:var(--wx-text); font:inherit; font-size:12px; cursor:pointer; }
+.workspace-search-actions button:disabled { opacity:.55; cursor:default; }
+.workspace-search-notice { margin:0; padding:8px 12px; color:var(--wx-muted); font-size:13px; overflow-wrap:anywhere; }
+.workspace-search-notice:empty { display:none; }
+.workspace-search-results { list-style:none; padding:0; margin:0; }
+.workspace-search-results button { display:grid; gap:5px; width:100%; padding:12px; text-align:left; border:0; border-bottom:1px solid var(--wx-line); background:transparent; color:var(--wx-text); cursor:pointer; font:inherit; font-size:13px; overflow-wrap:anywhere; }
+.workspace-search-results button:hover { background:var(--wx-raised); }
+.workspace-search-results span { color:var(--wx-muted); white-space:pre-wrap; }
 .web-studio .ws-select select { min-height: 36px; }
 .web-studio .ws-mode-switch button { min-height: 36px; font-size: 13px; }
 .web-studio .ws-more-modes > summary { min-height: 36px; font-size: 13px; }
