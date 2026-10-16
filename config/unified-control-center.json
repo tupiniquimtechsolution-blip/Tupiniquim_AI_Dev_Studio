@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "product": "Tupiniquim Dev AI",
+  "surface": "Tupiniquim Control Center",
+  "principles": {
+    "explicitProviderSelection": true,
+    "explicitModelSelection": true,
+    "automaticFallback": false,
+    "discoveryImpliesApproval": false,
+    "privilegedActionsDefaultDeny": true,
+    "missingEnvironmentCanPass": false
+  },
+  "sections": [
+    {
+      "id": "models-providers",
+      "label": "Modelos & Providers",
+      "items": [
+        { "id": "provider-status", "label": "Status dos providers", "mode": "read" },
+        { "id": "provider-select", "label": "Selecionar provider", "mode": "explicit-action" },
+        { "id": "model-list", "label": "Modelos locais", "mode": "read" },
+        { "id": "model-select", "label": "Selecionar modelo", "mode": "explicit-action" },
+        { "id": "model-install", "label": "Instalar/importar modelo", "mode": "approval-required" }
+      ]
+    },
+    {
+      "id": "skills",
+      "label": "Skills",
+      "items": [
+        { "id": "skill-discover", "label": "Descobrir skills", "mode": "read-network" },
+        { "id": "skill-audit", "label": "Auditar skill", "mode": "controlled-action" },
+        { "id": "skill-enable", "label": "Habilitar skill por projeto", "mode": "approval-required" },
+        { "id": "skill-disable", "label": "Desabilitar skill", "mode": "explicit-action" },
+        { "id": "skill-find", "label": "Pesquisar skills", "mode": "read" }
+      ]
+    },
+    {
+      "id": "toolbox",
+      "label": "Toolbox",
+      "items": [
+        { "id": "quality-gates", "label": "Lint / Typecheck / Test / Build", "mode": "controlled-action" },
+        { "id": "dependency-audit", "label": "Auditoria de dependências", "mode": "controlled-action" },
+        { "id": "secret-scan", "label": "Secret scan", "mode": "controlled-action" },
+        { "id": "security-review", "label": "Verificação de segurança", "mode": "controlled-action" },
+        { "id": "privacy-lgpd", "label": "LGPD / Privacidade", "mode": "controlled-action" },
+        { "id": "accessibility-wcag", "label": "WCAG / Acessibilidade", "mode": "controlled-action" },
+        { "id": "architecture-review", "label": "Revisão de arquitetura", "mode": "controlled-action" },
+        { "id": "supply-chain", "label": "Supply chain", "mode": "controlled-action" },
+        { "id": "release-checklist", "label": "Checklist de release", "mode": "controlled-action" }
+      ]
+    },
+    {
+      "id": "ai-lab",
+      "label": "AI Lab",
+      "items": [
+        { "id": "runtime-detect", "label": "Detectar runtimes", "mode": "read" },
+        { "id": "ollama-start", "label": "Iniciar Ollama", "mode": "approval-required" },
+        { "id": "ollama-stop", "label": "Parar Ollama", "mode": "approval-required" },
+        { "id": "storage-health", "label": "Validar armazenamento portátil", "mode": "read" },
+        { "id": "runtime-health", "label": "Health checks", "mode": "read" },
+        { "id": "optional-tools", "label": "Ferramentas opcionais", "mode": "approval-required" }
+      ]
+    },
+    {
+      "id": "agents",
+      "label": "Agentes",
+      "items": [
+        { "id": "agent-registry", "label": "Agent Registry", "mode": "read" },
+        { "id": "agent-provider", "label": "Provider/modelo por agente", "mode": "approval-required" },
+        { "id": "agent-skills", "label": "Skills por agente", "mode": "approval-required" },
+        { "id": "agent-loadout", "label": "Loadout por projeto", "mode": "approval-required" }
+      ]
+    },
+    {
+      "id": "security-quality",
+      "label": "Segurança & Qualidade",
+      "items": [
+        { "id": "run-gates", "label": "Executar gates", "mode": "controlled-action" },
+        { "id": "evidence", "label": "Evidências", "mode": "read" },
+        { "id": "export-report", "label": "Exportar relatório", "mode": "explicit-action" }
+      ]
+    }
+  ],
+  "runtimeLayout": {
+    "directories": ["runtime", "models", "data", "projects", "cache"],
+    "portableRootDetection": true,
+    "allowExternalWritesByDefault": false
+  },
+  "gateStates": ["PASS", "FAIL", "SKIPPED", "NOT_AVAILABLE"],
+  "modelPolicy": {
+    "manualChoice": true,
+    "preserveInstalledModels": true,
+    "silentDownloads": false,
+    "knownProfiles": [
+      { "id": "qwen-local-native-agent", "status": "supported-target" },
+      { "id": "kimi-heavy-experimental", "status": "experimental" },
+      { "id": "media-open-generative-ai-minimax", "status": "capability-source" }
+    ]
+  }
+}

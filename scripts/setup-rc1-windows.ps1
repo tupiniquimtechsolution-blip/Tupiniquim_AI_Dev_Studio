@@ -97,8 +97,8 @@ $Manifest = Get-Content "$ProjectRoot\config\local-models.json" -Raw | ConvertFr
 foreach ($Model in $Manifest.models) {
   if ($Model.tier -ne 'required' -and -not ($IncludeRecommended -and $Model.tier -eq 'recommended') -and -not ($IncludeOptional -and $Model.tier -eq 'optional')) { continue }
   if (@($Tags.models.name) -contains $Model.name) { Write-Host "Preservado: $($Model.name)"; continue }
-  $FreeGB = [math]::Round((Get-PSDrive F).Free / 1GB, 2)
-  Write-Host "$($Model.name): download estimado $($Model.estimatedDownloadGB) GB; livre F: $FreeGB GB (estimativas, nao garantias)."
+  $FreeGB = [math]::Round((Get-PSDrive $PortableDriveName).Free / 1GB, 2)
+  Write-Host "$($Model.name): download estimado $($Model.estimatedDownloadGB) GB; livre $($PortableDriveName): $FreeGB GB (estimativas, nao garantias)."
   if ($FreeGB -lt ($Model.estimatedDownloadGB * 2)) { throw 'Espaco insuficiente: necessario pelo menos 2x o download estimado.' }
   Confirm-Download "Modelo $($Model.name)"
   Invoke-OllamaPullWithRetry $Model.name

@@ -49,14 +49,16 @@ jobs:
         run: pnpm test:dogfood
       - name: Build
         run: pnpm build
+      # Toolchain determinística: Wrangler vem do lockfile (devDependency
+      # exata), nunca de npx@latest — ver docs/WEB/CLOUDFLARE_TOOLCHAIN.md.
       - name: Validate default Cloudflare bundle without deploy
-        run: npx --yes wrangler@4 deploy --dry-run --config cloudflare/wrangler.jsonc --outdir .wrangler-dry-run/preview
+        run: pnpm exec wrangler deploy --dry-run --config cloudflare/wrangler.jsonc --outdir .wrangler-dry-run/preview
       - name: Validate all Master Wave Cloudflare environments
         shell: bash
         run: |
           set -euo pipefail
           for wave in mw0 mw1 mw2 mw3 mw4 mw5; do
-            npx --yes wrangler@4 deploy --dry-run --config cloudflare/wrangler.jsonc --env "$wave" --outdir ".wrangler-dry-run/$wave"
+            pnpm exec wrangler deploy --dry-run --config cloudflare/wrangler.jsonc --env "$wave" --outdir ".wrangler-dry-run/$wave"
           done
       - name: Upload cloud evidence
         if: always()

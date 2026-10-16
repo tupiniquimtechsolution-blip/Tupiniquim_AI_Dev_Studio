@@ -25,7 +25,12 @@ const materializeEffects = (plan: Awaited<ReturnType<PlanApprovalService['create
 
 beforeEach(async () => {
   const temp = process.env.TEMP
-  if (temp === undefined || (process.platform === 'win32' && path.parse(temp).root.toUpperCase() !== 'F:\\')) throw new Error('TEMP de testes precisa estar em F:.')
+  // Contrato: no host Windows certificado o TEMP DEVE estar em F:\ (política
+  // de unidade de trabalho). Fora do Windows basta TEMP definido (CI usa
+  // TEMP=/tmp) — a mensagem distingue os dois casos para não sugerir F:\
+  // em Linux/macOS.
+  if (temp === undefined) throw new Error('Defina TEMP/TMP (ex.: TEMP=/tmp) para executar os testes de persistência.')
+  if (process.platform === 'win32' && path.parse(temp).root.toUpperCase() !== 'F:\\') throw new Error('TEMP de testes precisa estar em F:.')
   fixture = await mkdtemp(path.join(temp, 'tupiniquim-sqlite-'))
   database = new LocalDatabase(fixture)
 })

@@ -5,9 +5,13 @@ export const aiProviderStates = ['DISCONNECTED', 'STARTING', 'READY', 'BUSY', 'A
 export const aiProviderStateSchema = z.enum(aiProviderStates)
 export type AIProviderState = z.infer<typeof aiProviderStateSchema>
 
-export const aiProviderKinds = ['codex-app-server', 'ollama'] as const
+export const aiProviderKinds = ['codex-app-server', 'ollama', 'cloudflare-workers-ai'] as const
 export const aiProviderKindSchema = z.enum(aiProviderKinds)
 export type AIProviderKind = z.infer<typeof aiProviderKindSchema>
+
+export const aiRuntimeKinds = ['codex-app-server', 'ollama', 'workers-ai'] as const
+export const aiRuntimeKindSchema = z.enum(aiRuntimeKinds)
+export type AIRuntimeKind = z.infer<typeof aiRuntimeKindSchema>
 
 export const aiAccountKinds = ['API_KEY', 'CHATGPT', 'AMAZON_BEDROCK', 'NONE'] as const
 export const aiAccountKindSchema = z.enum(aiAccountKinds)
@@ -15,6 +19,8 @@ export type AIAccountKind = z.infer<typeof aiAccountKindSchema>
 
 export const aiStatusSchema = z.object({
   provider: aiProviderKindSchema,
+  runtime: aiRuntimeKindSchema.optional(),
+  availableProviders: z.array(aiProviderKindSchema).optional(),
   selectedModel: z.string().nullable().optional(),
   state: aiProviderStateSchema,
   account: aiAccountKindSchema,
@@ -27,7 +33,14 @@ export type AIStatus = z.infer<typeof aiStatusSchema>
 
 export const localModelSchema = z.object({
   name: z.string().min(1).max(300),
+  displayName: z.string().min(1).max(300).optional(),
   model: z.string().min(1).max(300),
+  provider: aiProviderKindSchema.optional(),
+  runtime: aiRuntimeKindSchema.optional(),
+  execution: z.enum(['LOCAL', 'CLOUD', 'HYBRID']).optional(),
+  capabilities: z.array(z.string().min(1).max(100)).max(32).optional(),
+  available: z.boolean().optional(),
+  default: z.boolean().optional(),
   modifiedAt: z.string().nullable(),
   size: z.number().nonnegative().nullable()
 })

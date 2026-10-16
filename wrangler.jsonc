@@ -1,0 +1,53 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tupiniquim-dev-ai-web",
+  "main": "apps/web-runtime/src/worker-secure.ts",
+  "compatibility_date": "2026-09-26",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": true,
+  "preview_urls": true,
+  "ai": {
+    "binding": "AI"
+  },
+  "assets": {
+    "directory": "./out/renderer",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": [
+      "/api/*",
+      "/ws/*"
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "STATE",
+        "class_name": "WebState"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "web-sandbox-v1",
+      "new_sqlite_classes": [
+        "Sandbox"
+      ]
+    },
+    {
+      "tag": "web-full-state-v1",
+      "new_sqlite_classes": [
+        "WebState"
+      ]
+    }
+  ],
+  "vars": {
+    "WEB_ALLOW_ANONYMOUS": "true",
+    "WEB_WORKSPACE_BACKUP_ENABLED": "true",
+    "WEB_RUNTIME_VERSION": "web-free-remote-0.3.0",
+    "WEB_BOOTSTRAP_REPO": "https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio.git",
+    "WEB_BOOTSTRAP_REF": "integration/ai-lab-toolbox-unified",
+    "WEB_REMOTE_RUNTIME_ENABLED": "false"
+  }
+}

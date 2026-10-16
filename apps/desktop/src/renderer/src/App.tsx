@@ -1,10 +1,45 @@
 import { GitReviewPane } from './components/GitReviewPane'
+import { ControlCenter } from './components/ControlCenter'
 import Editor from '@monaco-editor/react'
 import { Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, Eye, FileSearch, GitBranch, History, LayoutDashboard, Palette, PanelBottom, Save, Search, Settings2, ShieldCheck, Sparkles, TerminalSquare } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { AIEvent, AIProviderKind, AIStatus, AIThreadHistory, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, ProposalStatus, SystemInfo, UIProfile, WorkspaceContext, WorkspaceWriteProposal } from '@tupiniquim/contracts'
+import type { AIProviderKind, AIStatus, AIThreadHistory, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, ProposalStatus, SystemInfo, UIProfile, WorkspaceContext, WorkspaceWriteProposal } from '@tupiniquim/contracts'
+import { evaluateSend, handleAgentEvent, providerDisplayName, providerLabel, providerTurnBlockReason, providerUsesSelectableModel } from './agentGating'
+import type { ConversationMessage } from './agentGating'
+import { ProposalProvenance } from './components/ProposalProvenance'
 import { FileTree } from './components/FileTree'
 import { TerminalPane } from './components/TerminalPane'
+import { ThemeToggle } from './components/ThemeToggle'
+import { useResolvedTheme } from './theme'
+
+/**
+ * Paletas "de fábrica" (desktop e web). Valores do perfil idênticos ao stock
+ * NÃO viram overrides inline — assim os tokens de tema (claro/escuro em
+ * styles.css) prevalecem. Somente cores realmente customizadas pelo usuário
+ * (ex.: Acento/Fundo nas Preferências, customização avançada) sobrepõem o
+ * tema em ambos os modos.
+ */
+const STOCK_THEME_VALUES = new Set([
+  '#0b0f12', '#11171c', '#182127', '#e7eef3', '#93a4af', '#27c483', '#49b6ff', '#f2b84b', '#ff6b6b',
+  '#07090f', '#0d1018', '#111622', '#f7f7fb', '#9da6b7', '#8fa8ff', '#76b7ff', '#e3b879', '#ef7f7f'
+])
+
+const profileStyle = (profile: UIProfile): React.CSSProperties => {
+  const overrides: Record<string, string> = {
+    '--explorer-width': `${profile.layout.explorerWidth}px`,
+    '--agent-width': `${profile.layout.agentWidth}px`,
+    '--deck-height': `${profile.layout.deckHeight}px`
+  }
+  const themeVars: Array<[string, string]> = [
+    ['--bg', profile.theme.background], ['--surface', profile.theme.surface], ['--raised', profile.theme.raised],
+    ['--text', profile.theme.text], ['--muted', profile.theme.muted], ['--accent', profile.theme.accent],
+    ['--info', profile.theme.info], ['--warning', profile.theme.warning], ['--danger', profile.theme.danger]
+  ]
+  for (const [name, value] of themeVars) {
+    if (!STOCK_THEME_VALUES.has(value.toLowerCase())) overrides[name] = value
+  }
+  return overrides
+}
 
 const modes: Array<{ mode: Mode; label: string }> = [
   { mode: 'CHAT', label: 'Chat' }, { mode: 'PLAN', label: 'Plan' }, { mode: 'RESEARCH', label: 'Research' }, { mode: 'EXECUTE', label: 'Execute' },
@@ -18,105 +53,12 @@ const languageFor = (file?: string): string => {
 
 const basename = (path: string): string => path.split('/').at(-1) ?? path
 
-interface ConversationMessage {
-  id: string
-  role: 'user' | 'assistant' | 'error'
-  text: string
-  turnId: string | null
-  complete: boolean
-  provider: AIProviderKind | null
-}
-
-const providerLabel = (provider: AIProviderKind | null): string => provider === 'ollama' ? 'OLLAMA' : provider === 'codex-app-server' ? 'CODEX' : 'AGENTE'
-
 // ProposalStatus imported from @tupiniquim/contracts — includes EXPIRED
-
-// ── Issue #25 (Wave 17) — fronteira de envio FAIL-CLOSED (escopo por modo) ──
-// Readiness de provider (state === 'READY') é requisito somente das OPERAÇÕES
-// QUE REALMENTE ENVIAM AO PROVIDER:
-//   - Modos que enviam ao agente (CHAT/EXECUTE/REVIEW/DEBUG e demais que
-//     chamam window.studio.agent.send): botão Enviar, Ctrl+Enter e a guarda do
-//     sendToAgent() exigem provider READY (Codex: state READY; Ollama: READY +
-//     modelo explicitamente selecionado);
-//   - PLAN: planning.create() roda INDEPENDENTE do provider; apenas a etapa
-//     que chama window.studio.agent.send() (geração de proposta) exige
-//     readiness — guarda posicionada imediatamente antes da chamada;
-//   - Modos independentes de provider (VISUAL/PROMPT/RESEARCH) usam as
-//     próprias fronteiras Tupiniquim (visual.statuses / prompt.* / research.*)
-//     e NUNCA chamam agent.send: readiness de provider não os bloqueia.
-//
-// Provider em estado != READY (AUTH_REQUIRED, DISCONNECTED, STARTING, ERROR,
-// STOPPED, NOT_INSTALLED) NUNCA inicia turno: as guardas executam ANTES de
-// adicionar a mensagem do usuário, ANTES de limpar o textarea, ANTES de
-// sending=true e ANTES de window.studio.agent.send() — logo, antes de criar
-// thread, alterar activeThreadId ou alterar a sessão.
-//
-// A troca de provider continua explícita pelo usuário — nenhum fallback
-// automático.
-const CODEX_AUTH_REQUIRED_MESSAGE = 'Codex requer autenticação no runtime isolado do Tupiniquim.'
-const OLLAMA_MODEL_REQUIRED_MESSAGE = 'Selecione um modelo Ollama local antes de enviar.'
-
-const sendBlockedReason = (status: AIStatus | null): string => {
-  if (status === null) return 'Provider ainda não reportou estado. Envio bloqueado até READY.'
-  if (status.state === 'AUTH_REQUIRED') {
-    return status.provider === 'codex-app-server' ? CODEX_AUTH_REQUIRED_MESSAGE : 'Ollama local requer autenticação; envio bloqueado.'
-  }
-  const label = status.provider === 'codex-app-server' ? 'Codex' : 'Ollama local'
-  return `${label} indisponível no momento (estado ${status.state}). Envio bloqueado até READY.`
-}
-
-/**
- * Readiness ESTRITA para operações que realmente enviam ao provider — a
- * última barreira, posicionada imediatamente antes de cada chamada a
- * window.studio.agent.send(). Retorna a razão de bloqueio ou null quando o
- * turno pode iniciar (state READY; Ollama: + modelo explicitamente selecionado).
- */
-const providerTurnBlockReason = (status: AIStatus | null, selectedModel: string): string | null => {
-  if (status === null || status.state !== 'READY') return sendBlockedReason(status)
-  if (status.provider === 'ollama' && selectedModel === '') return OLLAMA_MODEL_REQUIRED_MESSAGE
-  return null
-}
-
-// Modos INDEPENDENTES de provider (funcionalidades Tupiniquim com fronteiras
-// próprias — nunca chamam window.studio.agent.send). PLAN entra aqui no nível
-// do composer: o plano é criado/persistido independentemente; a etapa
-// provider-backed de proposta é guardada internamente antes do agent.send.
-const PROVIDER_INDEPENDENT_MODES: ReadonlySet<Mode> = new Set<Mode>(['VISUAL', 'PROMPT', 'RESEARCH', 'PLAN'])
-
-const isProviderBackedMode = (mode: Mode): boolean => !PROVIDER_INDEPENDENT_MODES.has(mode)
-
-interface SendDecision {
-  allowed: boolean
-  /** Razão de indisponibilidade (provider/modelo) para exibição; null em bloqueios neutros (entrada vazia, sem workspace, turno em voo). */
-  blockReason: string | null
-}
-
-/**
- * Capability do composer (botão Enviar + Ctrl+Enter + guarda de topo do
- * sendToAgent) CONSCIENTE DO MODO ATUAL:
- * - modo provider-backed → provider READY é obrigatório (fail-closed);
- * - modo independente → somente workspace, mensagem e turno livre.
- */
-const evaluateSend = (input: {
-  status: AIStatus | null
-  hasWorkspace: boolean
-  message: string
-  isSending: boolean
-  selectedModel: string
-  mode: Mode
-}): SendDecision => {
-  const message = input.message.trim()
-  if (message === '') return { allowed: false, blockReason: null }
-  if (!input.hasWorkspace) return { allowed: false, blockReason: null }
-  if (input.isSending) return { allowed: false, blockReason: null }
-  if (isProviderBackedMode(input.mode)) {
-    const providerReason = providerTurnBlockReason(input.status, input.selectedModel)
-    if (providerReason !== null) return { allowed: false, blockReason: providerReason }
-  }
-  return { allowed: true, blockReason: null }
-}
+// Regras de disponibilidade do agente (Issue #25) compartilhadas com a
+// superfície Web chat-first: ver ./agentGating.ts (fonte única).
 
 export const App = (): React.JSX.Element => {
+  const resolvedTheme = useResolvedTheme()
   const [system, setSystem] = useState<SystemInfo | null>(null)
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
   const [files, setFiles] = useState<FileEntry[]>([])
@@ -140,6 +82,7 @@ export const App = (): React.JSX.Element => {
   const [expiredProposals, setExpiredProposals] = useState<Array<{ proposal: WorkspaceWriteProposal; status: ProposalStatus }>>([])
   const [profile, setProfile] = useState<UIProfile | null>(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [showControlCenter, setShowControlCenter] = useState(false)
   const profileRef = useRef<UIProfile | null>(null)
   const providerRef = useRef<AIProviderKind | null>(null)
   const dirty = document !== null && content !== document.content
@@ -149,7 +92,49 @@ export const App = (): React.JSX.Element => {
   }, [aiStatus?.provider])
 
   useEffect(() => {
-    void window.studio.system.info().then((result) => { if (result.ok) setSystem(result.value) })
+    void window.studio.system.info().then(async (result) => {
+      if (!result.ok) return
+      setSystem(result.value)
+      // Web Full possui um workspace lógico canônico. Diferente do Desktop,
+      // não existe seletor nativo de pasta: preparar /workspace automaticamente
+      // remove a dependência artificial do botão "Abrir workspace" sem relaxar
+      // a guarda fail-closed do composer.
+      if (result.value.platform === 'cloudflare-edge' || result.value.platform === 'cloudflare-sandbox') {
+        const selected = await window.studio.workspace.pick()
+        if (!selected.ok || selected.value === null) {
+          setNotice(selected.ok ? 'Workspace Web não identificado.' : selected.error.message)
+          return
+        }
+        const configured = await window.studio.workspace.configure({ root: selected.value })
+        if (!configured.ok) {
+          setNotice(configured.error.message)
+          return
+        }
+        setWorkspaceRoot(configured.value)
+        const session = await window.studio.agent.session()
+        if (session.ok) {
+          setSessionId(session.value?.session.id ?? null)
+          setConversation((session.value?.turns ?? []).flatMap((turn) => {
+            if (turn.role !== 'user' && turn.role !== 'assistant' && turn.role !== 'error') return []
+            return [{ id: turn.id, role: turn.role, text: turn.text, turnId: turn.turnId, complete: true, provider: turn.provider }]
+          }))
+        }
+        const [tree, status, context, agentStatus] = await Promise.all([
+          window.studio.workspace.list({ relativePath: '', depth: 4 }),
+          window.studio.git.status(),
+          window.studio.workspace.context(),
+          window.studio.agent.status()
+        ])
+        if (tree.ok) setFiles(tree.value)
+        if (status.ok) setGit(status.value)
+        if (context.ok) setWorkspaceContext(context.value)
+        if (agentStatus.ok) {
+          setAIStatus(agentStatus.value)
+          setSelectedLocalModel(agentStatus.value.selectedModel ?? '')
+        }
+        setNotice(context.ok ? 'Workspace Web preparado e contexto mapeado.' : 'Workspace Web preparado.')
+      }
+    })
     /**
      * Issue #25 (dogfood pós-auth) — startup: processo novo com provider já
      * selecionado e DISCONNECTED reconecta ESSE MESMO provider pela via
@@ -167,7 +152,7 @@ export const App = (): React.JSX.Element => {
         const reconnected = await window.studio.agent.selectProvider({ provider: result.value.provider })
         if (reconnected.ok) setAIStatus(reconnected.value)
       }
-      if (result.value.provider === 'ollama') {
+      if (providerUsesSelectableModel(result.value.provider)) {
         const models = await window.studio.agent.listLocalModels()
         if (models.ok) setLocalModels(models.value)
         const status = await window.studio.agent.status()
@@ -381,13 +366,13 @@ export const App = (): React.JSX.Element => {
     const session = await window.studio.agent.session()
     if (session.ok) setSessionId(session.value?.session.id ?? null)
     setSelectedLocalModel(result.value.selectedModel ?? '')
-    if (provider !== 'ollama') { setLocalModels([]); return }
+    if (!providerUsesSelectableModel(provider)) { setLocalModels([]); return }
     const models = await window.studio.agent.listLocalModels()
     if (models.ok) setLocalModels(models.value)
     else setNotice(models.error.message)
   }
 
-  const selectOllamaModel = async (model: string): Promise<void> => {
+  const selectProviderModel = async (model: string): Promise<void> => {
     if (model === '') return
     const result = await window.studio.agent.selectLocalModel({ model })
     if (result.ok) { setSelectedLocalModel(model); setAIStatus(result.value) }
@@ -495,11 +480,16 @@ export const App = (): React.JSX.Element => {
     ? 'Aguardando estado do provider…'
     : aiStatus.provider === 'ollama'
       ? (selectedLocalModel === '' ? 'Selecione um modelo local' : 'Ollama somente loopback')
-      : aiStatus.state === 'AUTH_REQUIRED'
+      : aiStatus.provider === 'cloudflare-workers-ai'
+        ? (selectedLocalModel === '' ? 'Selecione um modelo Workers AI' : `Workers AI · ${selectedLocalModel}`)
+        : aiStatus.state === 'AUTH_REQUIRED'
         ? 'Codex requer autenticação no runtime isolado'
         : aiStatus.state !== 'READY'
           ? `Codex indisponível (estado ${aiStatus.state})`
           : aiStatus.account === 'API_KEY' ? 'API key local' : aiStatus.account === 'CHATGPT' ? 'Conta Codex' : 'Ctrl + Enter para enviar'
+  const availableProviders: AIProviderKind[] = aiStatus?.availableProviders ?? ((system?.platform === 'cloudflare-edge' || system?.platform === 'cloudflare-sandbox')
+    ? ['cloudflare-workers-ai']
+    : ['codex-app-server', 'ollama'])
   const missingEffectManifest = planned?.plan.steps.some((step) => step.requiresApproval && step.effects.length === 0) ?? false
   const proposalMatchesManifest = proposal !== null && planned !== null
     && proposal.executionId === planned.execution.id
@@ -507,7 +497,7 @@ export const App = (): React.JSX.Element => {
   const proposalReady = proposalMatchesManifest && proposalStatus === 'APPROVED'
 
   return (
-    <main className={`studio ${profile?.density === 'COMFORTABLE' ? 'density-comfortable' : 'density-compact'}`} style={profile === null ? undefined : { '--bg': profile.theme.background, '--surface': profile.theme.surface, '--raised': profile.theme.raised, '--text': profile.theme.text, '--muted': profile.theme.muted, '--accent': profile.theme.accent, '--info': profile.theme.info, '--warning': profile.theme.warning, '--danger': profile.theme.danger, '--explorer-width': `${profile.layout.explorerWidth}px`, '--agent-width': `${profile.layout.agentWidth}px`, '--deck-height': `${profile.layout.deckHeight}px` } as React.CSSProperties}>
+    <main className={`studio ${profile?.density === 'COMFORTABLE' ? 'density-comfortable' : 'density-compact'}`} style={profile === null ? undefined : profileStyle(profile)}>
       <header className="ribbon drag-region">
         <div className="brand no-drag"><span className="brand-mark"><Braces size={17} /></span><strong>Tupiniquim</strong><span className="brand-sub">AI DEV STUDIO</span></div>
         <button className="project-switcher no-drag" disabled={sending || aiStatus?.state === 'BUSY'} onClick={() => void openWorkspace()}><Boxes size={15} /><span>{workspaceName}</span><ChevronsUpDown size={13} /></button>
@@ -520,7 +510,7 @@ export const App = (): React.JSX.Element => {
         <nav className="activity-rail" aria-label="Navegação principal">
           <button className="active" title="Explorer" onClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, explorerWidth: 230 } }))}><Code2 /></button><button title="Pesquisa" onClick={() => setMode('RESEARCH')}><Search /></button><button title="Agentes" onClick={() => setMode('CHAT')}><Bot /></button>
           <button title="Research" onClick={() => setMode('RESEARCH')}><FileSearch /></button><button title="Prompt Architect" onClick={() => setMode('PROMPT')}><Sparkles /></button><button title="Visual Lab" onClick={() => setMode('VISUAL')}><Palette /></button>
-          <div className="spacer" /><button title="Layout" onClick={() => updateProfile((current) => ({ ...current, layout: { explorerWidth: 230, agentWidth: 340, deckHeight: 220 } }))}><LayoutDashboard /></button><button title="Configurações" onClick={() => setShowSettings((current) => !current)}><Settings2 /></button>
+          <button title="Control Center" onClick={() => setShowControlCenter(true)}><ShieldCheck /></button><div className="spacer" /><button title="Layout" onClick={() => updateProfile((current) => ({ ...current, layout: { explorerWidth: 230, agentWidth: 340, deckHeight: 220 } }))}><LayoutDashboard /></button><button title="Configurações" onClick={() => setShowSettings((current) => !current)}><Settings2 /></button>
         </nav>
 
         <aside className="explorer panel">
@@ -535,7 +525,7 @@ export const App = (): React.JSX.Element => {
             <div className="spacer" /><button className="icon-button" disabled={!dirty} onClick={() => void save()} title="Salvar"><Save size={15} /></button>
           </div>
           {document !== null ? (
-            <Editor height="100%" path={document.relativePath} language={languageFor(document.relativePath)} value={content} onChange={(value) => setContent(value ?? '')} theme="vs-dark" options={{ minimap: { enabled: true }, fontFamily: 'JetBrains Mono, Cascadia Code, Consolas, monospace', fontSize: 13, padding: { top: 16 }, smoothScrolling: true, automaticLayout: true }} />
+            <Editor height="100%" path={document.relativePath} language={languageFor(document.relativePath)} value={content} onChange={(value) => setContent(value ?? '')} theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'} options={{ minimap: { enabled: true }, fontFamily: 'JetBrains Mono, Cascadia Code, Consolas, monospace', fontSize: 13, padding: { top: 16 }, smoothScrolling: true, automaticLayout: true }} />
           ) : (
             <div className="welcome-canvas">
               <div className="aurora" />
@@ -551,11 +541,11 @@ export const App = (): React.JSX.Element => {
           <div className="context-strip"><span>ESTADO</span><strong>{aiStatus?.state ?? 'DISCONNECTED'}</strong><span>POLÍTICA</span><strong>ASSISTED</strong><span>CONTEXTO</span><strong>{workspaceContext === null ? 'NÃO MAPEADO' : String(workspaceContext.entries.length) + (workspaceContext.truncated ? '+' : '') + ' ITENS'}</strong></div>
           <div className="context-strip" aria-label="Sessão Tupiniquim" data-session-id={sessionId ?? ''}><span>SESSÃO TUPINIQUIM</span><strong title={sessionId ?? ''}>{sessionId ?? 'NENHUMA'}</strong></div>
           <div className="provider-controls">
-            <label>PROVIDER<select aria-label="Provedor de IA" value={aiStatus?.provider ?? 'codex-app-server'} disabled={sending || aiStatus?.state === 'BUSY'} onChange={(event) => void selectAgentProvider(event.target.value as AIProviderKind)}><option value="codex-app-server">Codex App Server</option><option value="ollama">Ollama local</option></select></label>
-            {aiStatus?.provider === 'ollama' && <label>MODELO<select aria-label="Modelo Ollama local" value={selectedLocalModel} disabled={localModels.length === 0 || aiStatus.state !== 'READY'} onChange={(event) => void selectOllamaModel(event.target.value)}><option value="">Selecionar modelo</option>{localModels.map((model) => <option key={model.name} value={model.name}>{model.name}</option>)}</select><button disabled={sending || aiStatus.state === 'BUSY'} onClick={() => void window.studio.agent.listLocalModels().then(async (result) => { if (result.ok) { setLocalModels(result.value); if (!result.value.some((model) => model.name === selectedLocalModel)) setSelectedLocalModel('') } else setNotice(result.error.message); const status = await window.studio.agent.status(); if (status.ok) setAIStatus(status.value) })}>Atualizar modelos</button></label>}
+            <label>PROVIDER<select aria-label="Provedor de IA" value={aiStatus?.provider ?? availableProviders[0] ?? 'codex-app-server'} disabled={sending || aiStatus?.state === 'BUSY'} onChange={(event) => void selectAgentProvider(event.target.value as AIProviderKind)}>{availableProviders.map((provider) => <option key={provider} value={provider}>{providerDisplayName(provider)}</option>)}</select></label>
+            {providerUsesSelectableModel(aiStatus?.provider) && <label>MODELO<select aria-label="Modelo de IA" value={selectedLocalModel} disabled={localModels.length === 0 || aiStatus?.state !== 'READY'} onChange={(event) => void selectProviderModel(event.target.value)}><option value="">Selecionar modelo</option>{localModels.map((model) => <option key={model.model} value={model.model}>{model.displayName ?? model.name}</option>)}</select><button disabled={sending || aiStatus?.state === 'BUSY'} onClick={() => void window.studio.agent.listLocalModels().then(async (result) => { if (result.ok) { setLocalModels(result.value); if (!result.value.some((model) => model.model === selectedLocalModel)) setSelectedLocalModel('') } else setNotice(result.error.message); const status = await window.studio.agent.status(); if (status.ok) setAIStatus(status.value) })}>Atualizar modelos</button></label>}
           </div>
           <section className="agent-conversation">
-            <div className="agent-message"><span className="message-label">SISTEMA</span><p>{aiStatus?.provider === 'ollama' ? 'Ollama usa somente o loopback local; modelos são escolhidos explicitamente e não há downloads automáticos.' : 'Codex usa stdio JSONL, dados em F:\\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.'}</p></div>
+            <div className="agent-message"><span className="message-label">SISTEMA</span><p>{aiStatus?.provider === 'ollama' ? 'Ollama usa somente o loopback local; modelos são escolhidos explicitamente e não há downloads automáticos.' : aiStatus?.provider === 'cloudflare-workers-ai' ? 'Workers AI executa inferência na nuvem Cloudflare; apenas modelos compatíveis com esta edição Web aparecem na seleção.' : 'Codex usa stdio JSONL, dados em F:\\CODEX e execução read-only nesta onda. Mutações aguardam aprovação granular.'}</p></div>
             {conversation.map((message) => <div key={message.id} className={`agent-message ${message.role}`} data-provider={message.provider ?? ''}><span className="message-label">{message.role === 'user' ? 'VOCÊ' : message.role === 'error' ? 'ERRO' : providerLabel(message.provider)}</span><p>{message.text}{!message.complete && <span className="stream-caret">▋</span>}</p></div>)}
             {expiredProposals.map((item) => <ProposalProvenance key={item.proposal.id} proposal={item.proposal} status={item.status} expired />)}
             {proposal !== null && <ProposalProvenance proposal={proposal} status={proposalStatus ?? 'PENDING_REVIEW'} />}
@@ -582,41 +572,20 @@ export const App = (): React.JSX.Element => {
 
         <section className="bottom-deck">
           <nav><button className={deck === 'terminal' ? 'active' : ''} onClick={() => setDeck('terminal')}><TerminalSquare size={14} />Terminal</button><button className={deck === 'tests' ? 'active' : ''} disabled title="Executor de suítes ainda não integrado na RC1"><CheckCircle2 size={14} />Testes</button><button className={deck === 'review' ? 'active' : ''} onClick={() => setDeck('review')}><Eye size={14} />Review</button><button className={deck === 'timeline' ? 'active' : ''} onClick={() => setDeck('timeline')}><History size={14} />Caixa-preta</button><div className="spacer" /><span className="notice">{notice}</span></nav>
-          <div className="deck-content">{deck === 'terminal' && <TerminalPane workspaceReady={workspaceRoot !== null} />}{deck === 'tests' && <DeckEmpty icon={<CheckCircle2 />} title="Nenhuma suíte executada" detail="Testes reais aparecerão aqui com comando, duração e evidência." />}{deck === 'review' && <GitReviewPane workspaceReady={workspaceRoot !== null} />}{deck === 'timeline' && <Timeline key={aiStatus?.activeThreadId ?? 'empty'} workspaceReady={workspaceRoot !== null} threadId={aiStatus?.activeThreadId ?? null} />}</div>
+          <div className="deck-content">{deck === 'terminal' && <TerminalPane workspaceReady={workspaceRoot !== null} platform={system?.platform ?? null} />}{deck === 'tests' && <DeckEmpty icon={<CheckCircle2 />} title="Nenhuma suíte executada" detail="Testes reais aparecerão aqui com comando, duração e evidência." />}{deck === 'review' && <GitReviewPane workspaceReady={workspaceRoot !== null} />}{deck === 'timeline' && <Timeline key={aiStatus?.activeThreadId ?? 'empty'} workspaceReady={workspaceRoot !== null} threadId={aiStatus?.activeThreadId ?? null} />}</div>
         </section>
         <div className="resize-handle explorer-resize" role="separator" aria-label="Redimensionar explorer" onPointerDown={(event) => beginResize('explorerWidth', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, explorerWidth: current.layout.explorerWidth === 0 ? 230 : 0 } }))} />
         <div className="resize-handle agent-resize" role="separator" aria-label="Redimensionar agente" onPointerDown={(event) => beginResize('agentWidth', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, agentWidth: current.layout.agentWidth === 0 ? 340 : 0 } }))} />
         <div className="resize-handle deck-resize" role="separator" aria-label="Redimensionar deck inferior" onPointerDown={(event) => beginResize('deckHeight', event)} onDoubleClick={() => updateProfile((current) => ({ ...current, layout: { ...current.layout, deckHeight: current.layout.deckHeight === 0 ? 220 : 0 } }))} />
       </div>
-      {showSettings && profile !== null && <aside className="settings-popover"><header><strong>Preferências</strong><button onClick={() => setShowSettings(false)}>×</button></header><label>Densidade<select value={profile.density} onChange={(event) => updateProfile((current) => ({ ...current, density: event.target.value as UIProfile['density'] }))}><option value="COMPACT">Compacta</option><option value="COMFORTABLE">Confortável</option></select></label><label>Acento<input type="color" value={profile.theme.accent} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, accent: event.target.value } }))} /></label><label>Fundo<input type="color" value={profile.theme.background} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, background: event.target.value } }))} /></label><button className="save-settings" onClick={() => void saveProfile()}>Validar e salvar</button></aside>}
+      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectProviderModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} />
+      {showSettings && profile !== null && <aside className="settings-popover"><header><strong>Preferências</strong><button onClick={() => setShowSettings(false)} aria-label="Fechar preferências">×</button></header><label>Tema<ThemeToggle /></label><label>Densidade<select value={profile.density} onChange={(event) => updateProfile((current) => ({ ...current, density: event.target.value as UIProfile['density'] }))}><option value="COMPACT">Compacta</option><option value="COMFORTABLE">Confortável</option></select></label><p className="settings-advanced">Cores avançadas (sobrepõem o tema)</p><label>Acento<input type="color" value={profile.theme.accent} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, accent: event.target.value } }))} /></label><label>Fundo<input type="color" value={profile.theme.background} onChange={(event) => updateProfile((current) => ({ ...current, theme: { ...current.theme, background: event.target.value } }))} /></label><button className="save-settings" onClick={() => void saveProfile()}>Validar e salvar</button></aside>}
       <footer className="statusbar"><span><ShieldCheck size={13} />Sandbox ativo</span><span>{workspaceRoot === null ? 'Sem workspace' : workspaceRoot}</span><div className="spacer" /><span>{system?.platform ?? 'win32'} · {system?.arch ?? 'x64'}</span><span>v{system?.version ?? '0.1.0'}</span></footer>
     </main>
   )
 }
 
 const DeckEmpty = ({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }): React.JSX.Element => <div className="deck-empty"><span>{icon}</span><div><strong>{title}</strong><p>{detail}</p></div></div>
-
-const ProposalProvenance = ({ proposal, status, expired }: { proposal: WorkspaceWriteProposal; status: ProposalStatus; expired?: boolean }): React.JSX.Element => (
-  <section className={`proposal-provenance${expired === true ? ' expired' : ''}`} aria-label="Proveniência da proposta de escrita">
-    <header><strong>workspace.write</strong><span>{status}</span></header>
-    <dl>
-      <div><dt>Provider</dt><dd>{proposal.provider}</dd></div>
-      <div><dt>Tool</dt><dd>{proposal.tool}</dd></div>
-      <div><dt>Execution</dt><dd title={proposal.executionId}>{proposal.executionId}</dd></div>
-      <div><dt>Step</dt><dd title={proposal.stepId}>{proposal.stepId}</dd></div>
-      <div><dt>Thread</dt><dd title={proposal.threadId}>{proposal.threadId}</dd></div>
-      <div><dt>Turn</dt><dd title={proposal.turnId}>{proposal.turnId}</dd></div>
-      <div><dt>Tool call</dt><dd title={proposal.toolCallId}>{proposal.toolCallId}</dd></div>
-      <div><dt>Target</dt><dd title={proposal.effect.target}>{proposal.effect.target}</dd></div>
-      <div><dt>Operation</dt><dd>{proposal.effect.operation}</dd></div>
-      <div><dt>Manifest</dt><dd title={proposal.effect.id}>{proposal.effect.id}</dd></div>
-      <div><dt>Proposal</dt><dd title={proposal.id}>{proposal.id}</dd></div>
-      <div><dt>Hash</dt><dd title={proposal.effect.payloadHash}>{proposal.effect.payloadHash}</dd></div>
-      <div><dt>Target baseline</dt><dd title={proposal.effect.expectedTargetHash ?? 'INEXISTENTE'}>{proposal.effect.expectedTargetHash ?? 'INEXISTENTE'}</dd></div>
-      <div><dt>Timestamp</dt><dd>{new Date(proposal.createdAt).toLocaleString('pt-BR')}</dd></div>
-    </dl>
-  </section>
-)
 
 const Timeline = ({ workspaceReady, threadId }: { workspaceReady: boolean; threadId: string | null }): React.JSX.Element => {
   const [history, setHistory] = useState<AIThreadHistory | null>(null)
@@ -629,30 +598,4 @@ const Timeline = ({ workspaceReady, threadId }: { workspaceReady: boolean; threa
   return (
     <div className="timeline"><div className="timeline-event success"><span /><time>agora</time><strong>Aplicação iniciada</strong><p>Fronteiras Electron e armazenamento F:\CODEX-only ativos.</p></div>{workspaceReady && <div className="timeline-event info"><span /><time>agora</time><strong>Workspace autorizado</strong><p>Mapa de arquivos e estado Git carregados.</p></div>}{history !== null && <div className="timeline-event info"><span /><time>histórico</time><strong>{String(history.turns.length)} turns persistidos</strong><p>{history.events.slice(-3).map((event) => event.kind + (event.status === undefined ? '' : ' · ' + event.status)).join('\n') || 'Eventos sem conteúdo bruto de entrada.'}</p></div>}</div>
   )
-}
-
-const handleAgentEvent = (
-  event: AIEvent,
-  setStatus: React.Dispatch<React.SetStateAction<AIStatus | null>>,
-  setConversation: React.Dispatch<React.SetStateAction<ConversationMessage[]>>,
-  setSending: React.Dispatch<React.SetStateAction<boolean>>,
-  getProvider: () => AIProviderKind | null
-): void => {
-  if (event.kind === 'STATUS') {
-    void window.studio.agent.status().then((result) => { if (result.ok) setStatus(result.value) })
-  } else if (event.kind === 'MESSAGE_DELTA') {
-    setConversation((current) => {
-      const last = current.at(-1)
-      if (last?.role === 'assistant' && last.turnId === (event.turnId ?? null) && !last.complete) {
-        return [...current.slice(0, -1), { ...last, text: `${last.text}${event.text ?? ''}` }]
-      }
-      return [...current, { id: event.id, role: 'assistant', text: event.text ?? '', turnId: event.turnId ?? null, complete: false, provider: getProvider() }]
-    })
-  } else if (event.kind === 'TURN_COMPLETED') {
-    setConversation((current) => current.map((message) => message.turnId === (event.turnId ?? null) ? { ...message, complete: true } : message))
-    setSending(false)
-  } else if (event.kind === 'ERROR') {
-    setConversation((current) => [...current, { id: event.id, role: 'error', text: event.detail ?? 'Falha no Codex App Server.', turnId: event.turnId ?? null, complete: true, provider: getProvider() }])
-    setSending(false)
-  }
 }

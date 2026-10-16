@@ -40,6 +40,7 @@ jobs:
           New-Item -ItemType Directory -Path 'F:\CODEX\Tupiniquim-AI-Dev-Studio.data' -Force | Out-Null
           "TEMP=F:\CODEX\ci-temp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "TMP=F:\CODEX\ci-temp" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TUPINIQUIM_PORTABLE_DRIVE_ROOT=F:\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Hosted F: ready at $backing"
       - name: Provision controlled Codex boundary for hosted CI
         shell: powershell
@@ -66,7 +67,7 @@ jobs:
         run: pnpm build
       - name: Windows script fixtures
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File ./tests/scripts/ollama-live-smoke.test.ps1
+        run: pnpm test:rc1-windows-scripts
       - name: Electron E2E on hosted Windows
         run: pnpm test:e2e
       - name: Package Windows

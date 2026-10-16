@@ -1,0 +1,59 @@
+name: Web contract alignment
+
+on:
+  push:
+    branches:
+      - integration/ai-lab-toolbox-unified
+    paths:
+      - .github/workflows/web-contract-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: integration/ai-lab-toolbox-unified
+          fetch-depth: 0
+      - name: Align Web adapters with strict contracts
+        shell: python
+        run: |
+          from pathlib import Path
+
+          bridge_path = Path('apps/desktop/src/renderer/src/webBridge.ts')
+          bridge = bridge_path.read_text(encoding='utf-8')
+          replacements = {
+              "createTerminal(input.cols, input.rows)": "createTerminal(input.cols ?? 100, input.rows ?? 30)",
+              "        current.plan = input.plan\n        plans.set(input.executionId, current)\n        return success(input.plan)": "        const normalizedPlan = { ...input.plan, steps: input.plan.steps.map((step) => ({ ...step, effects: step.effects ?? [] })) }\n        current.plan = normalizedPlan\n        plans.set(input.executionId, current)\n        return success(normalizedPlan)",
+              "variables: input.variables,": "variables: input.variables ?? [],",
+          }
+          for old, new in replacements.items():
+              if old not in bridge:
+                  raise SystemExit(f'Expected bridge fragment not found: {old[:80]}')
+              bridge = bridge.replace(old, new, 1)
+          bridge_path.write_text(bridge, encoding='utf-8')
+
+          worker_path = Path('apps/web-runtime/src/worker.ts')
+          worker = worker_path.read_text(encoding='utf-8')
+          worker_replacements = {
+              "body = await request.json<RpcRequest>()": "body = await request.json() as RpcRequest",
+              "        return sandbox.terminal(request, { cols, rows })": "        return await (sandbox as unknown as { terminal(request: Request, options?: { cols?: number; rows?: number }): Promise<Response> }).terminal(request, { cols, rows })",
+          }
+          for old, new in worker_replacements.items():
+              if old not in worker:
+                  raise SystemExit(f'Expected worker fragment not found: {old[:80]}')
+              worker = worker.replace(old, new, 1)
+          worker_path.write_text(worker, encoding='utf-8')
+      - name: Commit strict contract fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/desktop/src/renderer/src/webBridge.ts apps/web-runtime/src/worker.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(web): align bridge and sandbox with strict contracts"
+          git push origin HEAD:integration/ai-lab-toolbox-unified

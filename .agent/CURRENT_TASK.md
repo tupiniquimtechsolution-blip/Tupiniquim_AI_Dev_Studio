@@ -1,58 +1,29 @@
-# Tarefa atual
+# Current Task
 
-## Objetivo
+Atualizado: 2026-10-16. Fonte de verdade: GitHub.
 
-Executar a **Wave 17 — dogfood/QA final e gate de fechamento da Master Wave 1**.
+## Produto Web — HUD chat-first
 
-A Wave 16 está formalmente encerrada e marcada por `checkpoint/wave-16`. Esta etapa NÃO adiciona novas features; ela valida o produto integrado em uso real antes de permitir o fechamento da Master Wave 1.
+- PR #85 **MERGED** em `integration/ai-lab-toolbox-unified` no SHA `e3bec44710ac34f41f135ea2b1b0466ae701806e`.
+- Cloud Quality Gate do PR: **SUCCESS**.
+- Deploy Workers Build: **SUCCESS** — Build ID `26c99bb7-765f-4116-8e35-fb84f0624636`, Version ID `8a97095a-8a67-4821-b5c9-1dee5bcdd0d0`.
+- Web Product Smoke `38883721480`, attempt 2: **SUCCESS**, 5 passed / 1 skipped.
+- Inclui regressão de menus de ferramentas/modos, tema, navegação, chat real Workers AI e recovery.
+- Capturas visuais por viewport (390/768/1024/1440) e auditoria de overflow em cloud CI: PR de evidência em andamento; não atribuir PASS antes de rodar.
 
-## Identificação
+## Release Green global — gates restantes
 
-- Branch: `wave-17/master-wave-1-dogfood-qa`
-- Issue: #24 — `[MASTER WAVE 1] wave-17 — dogfood/QA final e gate de fechamento`
-- Baseline do checkpoint: `checkpoint/wave-16`
-- Commit do checkpoint: `0b46bd60996aa6f87e495cffa8c4ff1bc4d1c0e8`
-- Master Wave 1: EM ANDAMENTO
-- Master Wave 2: NÃO INICIADA
+- RG-05 / Issue #68: Remote Runtime físico + Cloudflare Tunnel + secret + configuração e certificação de filesystem/Git/terminal/build/checkpoint/fail-closed.
+- RG-08: Cloudflare Access production-ready e smoke com `WEB_SMOKE_REQUIRE_PRODUCTION_READY=true`.
+- RG-09: Windows/Electron com host físico F: — testes locais fora do escopo desta etapa.
+- RG-07: política de builds de branches de PR no Cloudflare Dashboard (operacional; não é regressão de código).
 
-## Escopo
+O smoke com 1 skipped é **CLOUD-ONLY GREEN**, não `RELEASE_GREEN` completo.
 
-Dogfood/QA real obrigatório:
+## Referências
 
-1. startup e workspace real;
-2. Tupiniquim Session e conversa integrada;
-3. troca explícita de providers/modelos;
-4. restart real e recovery;
-5. isolamento workspace A → B → A;
-6. proposal/approval/EXPIRED;
-7. persistência, privacidade e ausência de payload privado/secrets;
-8. UX/estado BUSY/READY/provider/model;
-9. regressão automatizada Windows F: `validate` + `test:e2e`.
-
-## Regra de execução
-
-Primeiro coletar evidência. Não corrigir silenciosamente.
-
-Cada achado deve ser classificado como:
-
-- PRODUCTION BUG
-- E2E/HARNESS BUG
-- UX BUG
-- DOCUMENTATION GAP
-- ENVIRONMENT
-- OUT OF SCOPE
-
-Correções só são autorizadas se houver reprodução concreta e devem ser mínimas, delimitadas e seguidas de nova auditoria/gates.
-
-## Critério de conclusão
-
-A Wave 17 só pode ser fechada quando:
-
-- todos os cenários de dogfood forem executados;
-- `validate` Windows F: estiver GREEN;
-- Electron E2E estiver GREEN;
-- nenhum bloqueio crítico/alto permanecer aberto;
-- documentação final estiver atualizada;
-- auditoria externa final aprovar o estado.
-
-Somente depois disso a Master Wave 1 poderá ser declarada concluída. Master Wave 2 continua bloqueada até lá.
+- `docs/RELEASE/RELEASE_GREEN_AUDIT.md`
+- `docs/RELEASE/RELEASE_GREEN_CHECKLIST.md`
+- `docs/WEB/HUD_UX_REVIEW.md`
+- `docs/WEB/CLOUDFLARE_TOOLCHAIN.md`
+- `docs/RELEASE/RUNBOOK.md`
