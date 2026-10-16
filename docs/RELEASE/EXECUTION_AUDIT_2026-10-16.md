@@ -2,6 +2,19 @@
 
 ## Continuation after initial audit
 
+Further checkpoint: `1180f408b2ea02f127500c3c6b8c8071a46245de` passed
+[Cloud Quality 38923387966](https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio/actions/runs/38923387966).
+Subsequent gateway search hardening omits hidden entries/symlinks/special files,
+confines realpaths and truncates previews to 240 chars. Native Node 24 launcher
+uses explicit `.ts` imports (noEmit typecheck allows those extensions).
+New integration cases exercise external links and hidden synthetic fixtures;
+no real credential files were read. This delta requires another exact-head CI.
+
+Task #19 is now Em Andamento in Notion/Miro; creation/diff acceptance remains.
+Verified both systems: 34 rows, 34 unique sequences, zero title/status mismatches;
+current counts 16 A Fazer / 7 Bloqueada / 7 Em Andamento / 4 historical Concluída.
+Counts below describe earlier snapshots.
+
 Initial PR #89 head `c9393086c8023ebeeda893db41476290e0cbb458` passed
 [Cloud Quality 38919537449](https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio/actions/runs/38919537449).
 New implementation in this continuation needs its own exact-head CI.

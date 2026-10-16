@@ -2,6 +2,10 @@
 
 ## 2026-10-16 — Continuação das pendências executáveis
 
+- Remote Gateway recebe o mesmo confinamento da busca, omite entradas ocultas
+  e limita previews; integração cobre links externos, dados ocultos e limite.
+  Import explícito `.ts` compatível com o launcher nativo Node 24.
+
 - Busca de conteúdo real no drawer Files via IPC/RPC existente, com erro,
   resultado vazio, limite e descarte de respostas antigas; sem simulação.
 - Busca no adaptador não segue symlinks/tipos especiais nem caminhos externos;

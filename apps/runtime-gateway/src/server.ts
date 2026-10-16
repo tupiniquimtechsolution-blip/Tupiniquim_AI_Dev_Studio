@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import * as pty from 'node-pty'
+import { searchWorkspaceFiles } from './workspace-search.ts'
 
 type JsonRecord = Record<string, unknown>
 
@@ -112,29 +113,7 @@ const listTree = async (workspaceId: string, depth: number): Promise<JsonRecord[
 
 const searchWorkspace = async (workspaceId: string, query: string, limit: number): Promise<JsonRecord[]> => {
   const root = await workspaceRoot(workspaceId)
-  const max = Math.max(1, Math.min(500, Math.floor(limit)))
-  const results: JsonRecord[] = []
-  const walk = async (directory: string): Promise<void> => {
-    if (results.length >= max) return
-    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-      if (results.length >= max) return
-      if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === 'release' || entry.name === 'out') continue
-      const absolute = path.join(directory, entry.name)
-      if (entry.isDirectory()) { await walk(absolute); continue }
-      const stat = await fs.stat(absolute)
-      if (stat.size > 2 * 1024 * 1024) continue
-      let content: string
-      try { content = await fs.readFile(absolute, 'utf8') } catch { continue }
-      const lines = content.split(/\r?\n/)
-      for (let index = 0; index < lines.length && results.length < max; index += 1) {
-        if (lines[index]?.includes(query)) {
-          results.push({ relativePath: path.relative(root, absolute).split(path.sep).join('/'), line: index + 1, preview: lines[index] ?? '' })
-        }
-      }
-    }
-  }
-  await walk(root)
-  return results
+  return searchWorkspaceFiles(root, query, limit)
 }
 
 const gate = async (workspaceId: string, gateId: string): Promise<{ state: 'PASS' | 'FAIL'; evidence: string }> => {

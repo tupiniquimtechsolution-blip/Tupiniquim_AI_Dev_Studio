@@ -2,6 +2,15 @@
 
 ## Continuação executada — 2026-10-16
 
+- Delta `1180f408b2ea02f127500c3c6b8c8071a46245de` passou Cloud Quality
+  `38923387966`. Hardening adicional da busca no Remote Gateway acrescentado
+  depois desse resultado; exige novo CI. Gateway agora omite entradas ocultas,
+  links e arquivos especiais, confina realpaths e limita previews a 240 chars.
+  Import `.ts` explícito preserva execução nativa Node 24 do gateway.
+- Tarefa #19 passou A Fazer → Em Andamento em Notion/Miro (busca implementada;
+  criação/diff/aceite pendentes). Totais atuais: 16 A Fazer / 7 Bloqueada /
+  7 Em Andamento / 4 Concluída histórica. Contagens abaixo são snapshots.
+
 - PR #89 / `c9393086c8023ebeeda893db41476290e0cbb458`: Cloud Quality
   `38919537449` SUCCESS. Esse resultado não é smoke/visual do novo HUD.
 - Continuação na mesma branch: Control Center com dialog modal/teclado/foco;
