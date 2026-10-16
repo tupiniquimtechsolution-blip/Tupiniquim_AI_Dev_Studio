@@ -1,5 +1,20 @@
 # Web HUD Refinement — UI/UX review e decisão
 
+## Revisão complementar — 2026-10-16
+
+O status verde abaixo pertence ao SHA histórico `e3bec44`. A integração atual
+`70c0c97` passou Cloud Quality, mas Web Smoke `38885409266` falhou na leitura do
+modelo. PR #88 trata a corrida; ainda exige smoke real após deploy autorizado.
+
+Revisão por código identificou foco escapando do drawer pseudo-modal, envio por
+Enter durante IME, labels pequenos e targets de toque insuficientes. Esta branch
+usa dialog nativo, restaura foco, fecha disclosures ao sair, protege IME, amplia
+legibilidade/touch e acrescenta regressão de teclado ao smoke remoto. Mantidos
+Carbono/Floresta, tema, motion reduzido e guardas fail-closed. Referência anti-slop
+consultada: blob `721e00b32f0047a21cb48a93a9e76aac2e0d1df1`, sem copiar código.
+Sem certificação visual/AA ou execução local; ver
+`docs/RELEASE/EXECUTION_AUDIT_2026-10-16.md` para cobertura e pendências.
+
 Status: WEB CLOUD-ONLY GREEN — PR #85 merged em e3bec44710ac34f41f135ea2b1b0466ae701806e; Cloud Quality e Web Product Smoke SUCCESS. Validação visual responsiva complementar em andamento.  
 Baseline: `integration/ai-lab-toolbox-unified` @ `61ae3d59152649409a8dfe18d4c8dd7ee01be6f6`.  
 Backlog: issue #84.

@@ -237,7 +237,7 @@
 .web-studio .brand { display: flex; align-items: center; gap: 9px; }
 .ws-brand-mark { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 8px; background: var(--wx-accent); color: var(--wx-on-accent); }
 .web-studio .brand strong { font-size: 14px; letter-spacing: -.01em; }
-.ws-brand-sub { color: var(--wx-muted); font-size: 8.5px; font-weight: 700; letter-spacing: .16em; }
+.ws-brand-sub { color: var(--wx-muted); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
 .web-studio .project-switcher { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--wx-line); border-radius: 9px; background: var(--wx-raised); color: var(--wx-text); font: inherit; font-size: 13px; font-weight: 600; padding: 7px 12px; cursor: pointer; }
 .web-studio .project-switcher:hover { border-color: var(--wx-accent); }
 .ws-runtime-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 650; border: 1px solid var(--wx-line); }
@@ -246,7 +246,7 @@
 .ws-runtime-chip.tone-danger { background: var(--wx-danger-soft); color: var(--wx-danger); border-color: transparent; }
 .ws-runtime-chip.tone-muted { background: var(--wx-bg); color: var(--wx-muted); }
 .ws-top-controls { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.ws-select { display: grid; gap: 2px; color: var(--wx-muted); font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.ws-select { display: grid; gap: 4px; color: var(--wx-muted); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
 .ws-select select { border: 1px solid var(--wx-line); border-radius: 8px; background: var(--wx-raised); color: var(--wx-text); font: inherit; font-size: 12.5px; padding: 5px 8px; max-width: 190px; }
 .ws-select select:disabled { opacity: .55; }
 .ws-tools { display: flex; align-items: center; gap: 4px; border: 1px solid var(--wx-line); border-radius: 10px; background: var(--wx-raised); padding: 3px; }
@@ -330,8 +330,9 @@
 .ws-composer-hint { max-width: 780px; margin: 8px auto 0; color: var(--wx-muted); font-size: 11.5px; text-align: center; }
 
 /* ── Drawers (progressive disclosure) ──────────────────────────────────── */
-.ws-drawer-backdrop { position: fixed; inset: 0; z-index: 40; background: var(--wx-backdrop); display: flex; justify-content: flex-end; }
-.ws-drawer { width: min(560px, 100%); height: 100%; display: flex; flex-direction: column; background: var(--wx-surface); border-left: 1px solid var(--wx-line); box-shadow: var(--wx-shadow-strong); }
+.ws-drawer::backdrop { background: var(--wx-backdrop); }
+.ws-drawer { position: fixed; inset: 0; margin: 0 0 0 auto; padding: 0; max-width: 100%; max-height: 100%; width: min(560px, 100%); height: 100%; flex-direction: column; background: var(--wx-surface); color: var(--wx-text); border: 0; border-left: 1px solid var(--wx-line); box-shadow: var(--wx-shadow-strong); overflow: auto; }
+.ws-drawer[open] { display: flex; }
 .ws-drawer.wide { width: min(760px, 100%); }
 @media (prefers-reduced-motion: no-preference) {
   .ws-drawer { animation: ws-drawer-in .22s ease; }
@@ -470,6 +471,23 @@
     transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
   }
   .ld-btn.primary:hover, .ws-send:not(:disabled):hover { transform: translateY(-1px); transition: background-color .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease, transform .12s ease; }
-  .ws-drawer-backdrop { animation: wx-fade-in .18s ease; }
+  .ws-drawer::backdrop { animation: wx-fade-in .18s ease; }
   @keyframes wx-fade-in { from { opacity: 0; } to { opacity: 1; } }
+}
+
+/* Readable controls and touch targets without increasing chat density. */
+.web-studio .ws-select select { min-height: 36px; }
+.web-studio .ws-mode-switch button { min-height: 36px; font-size: 13px; }
+.web-studio .ws-more-modes > summary { min-height: 36px; font-size: 13px; }
+.web-studio .ws-availability { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.web-studio .ws-send { flex-shrink: 0; }
+.web-studio .ws-composer textarea { font-size: 16px; }
+.web-studio .ws-composer-hint { font-size: 12px; line-height: 1.5; }
+.web-studio .ws-tools-popover { max-height: min(70dvh, 520px); overflow-y: auto; }
+@media (pointer: coarse) {
+  .web-studio .ws-select select, .web-studio .ws-icon-btn,
+  .web-studio .ws-tools-menu > summary, .web-studio .ws-tools-menu button,
+  .web-studio .ws-mode-switch button, .web-studio .ws-more-modes > summary,
+  .web-studio .wx-theme-toggle button, .web-studio .project-switcher { min-height: 44px; }
+  .web-studio .ws-icon-btn, .web-studio .wx-theme-toggle button { min-width: 44px; }
 }

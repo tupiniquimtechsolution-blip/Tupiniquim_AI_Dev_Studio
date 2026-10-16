@@ -88,6 +88,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const providerRef = useRef<AIProviderKind | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const hudToolsRef = useRef<HTMLDetailsElement | null>(null)
+  const drawerRef = useRef<HTMLDialogElement | null>(null)
   const threadEndRef = useRef<HTMLDivElement | null>(null)
   const dirty = document !== null && content !== document.content
   const preferences = useMemo(() => parseOnboardingPreferences(localStorage.getItem(WEB_ONBOARDING_KEY)), [])
@@ -96,6 +97,19 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   useEffect(() => {
     providerRef.current = aiStatus?.provider ?? null
   }, [aiStatus?.provider])
+
+  useEffect(() => {
+    if (tool === null) return
+    const drawer = drawerRef.current
+    if (drawer === null) return
+    const toolsSummary = hudToolsRef.current?.querySelector('summary')
+    // Native modality makes the background inert and contains keyboard focus.
+    drawer.showModal()
+    return () => {
+      drawer.close()
+      toolsSummary?.focus()
+    }
+  }, [tool])
 
   const refreshRuntime = async (): Promise<void> => {
     try {
@@ -472,6 +486,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
           <details
             className="ws-tools-menu"
             ref={hudToolsRef}
+            onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false }}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 event.preventDefault()
@@ -563,7 +578,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
         <section className="ws-composer-zone" aria-label="Composer">
           <div className="ws-mode-switch" role="group" aria-label="Modo do agente">
             {modes.slice(0, 4).map((item) => <button key={item.mode} className={mode === item.mode ? 'active' : ''} aria-pressed={mode === item.mode} onClick={() => setMode(item.mode)}>{item.label}</button>)}
-            <details className="ws-more-modes" onKeyDown={(event) => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}>
+            <details className="ws-more-modes" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}>
               <summary aria-label="Mais modos do agente">
                 {modes.slice(4).some((item) => item.mode === mode)
                   ? `Modo: ${modes.find((item) => item.mode === mode)?.label ?? mode}`
@@ -576,7 +591,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                     key={item.mode}
                     className={mode === item.mode ? 'active' : ''}
                     aria-pressed={mode === item.mode}
-                    onClick={(event) => { setMode(item.mode); event.currentTarget.closest('details')?.removeAttribute('open') }}
+                    onClick={(event) => { setMode(item.mode); event.currentTarget.closest('details')?.removeAttribute('open'); composerRef.current?.focus() }}
                   >{item.label}</button>
                 ))}
               </div>
@@ -591,6 +606,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
               rows={3}
               onChange={(event) => setAgentInput(event.target.value)}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return
                 if ((event.key === 'Enter' && !event.shiftKey) || (event.ctrlKey && event.key === 'Enter')) {
                   event.preventDefault()
                   void sendToAgent()
@@ -609,14 +625,18 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
       </main>
 
       {tool !== null && (
-        <div className="ws-drawer-backdrop" onClick={() => setTool(null)}>
-          <aside
+          <dialog
+            ref={drawerRef}
             className={`ws-drawer${tool === 'terminal' ? ' wide' : ''}`}
             role="dialog"
             aria-modal="true"
             aria-label={tool === 'files' ? 'Arquivos do workspace' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : 'Atividade da sessão'}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => { if (event.key === 'Escape') setTool(null) }}
+            onCancel={(event) => { event.preventDefault(); setTool(null) }}
+            onClick={(event) => {
+              if (event.target !== event.currentTarget) return
+              const bounds = event.currentTarget.getBoundingClientRect()
+              if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) setTool(null)
+            }}
           >
             <header className="ws-drawer-head">
               <strong>{tool === 'files' ? 'Arquivos' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : 'Atividade'}</strong>
@@ -668,8 +688,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                     {tool === 'activity' && <SessionActivity sessionId={sessionId} threadId={aiStatus?.activeThreadId ?? null} workspaceReady={workspaceRoot !== null} runtime={runtime} />}
                   </div>
                 )}
-          </aside>
-        </div>
+          </dialog>
       )}
 
       <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectProviderModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} executionRuntime={{ view: runtime, status: runtimeStatus }} onRefreshRuntime={refreshRuntime} />

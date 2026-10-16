@@ -1,5 +1,21 @@
 # Status
 
+## Auditoria vigente — 2026-10-16 — HEAD 70c0c97
+
+Este registro prevalece sobre o checkpoint anterior para a cabeça atual.
+Cloud Quality `38885419671` SUCCESS no SHA `70c0c977e6f1920dd7b2ab6c587afc1f5785f3f5`;
+Web Product Smoke `38885409266` FAILURE (4 passed / 1 skipped / 1 failed).
+O PASS anterior em `e3bec44` é histórico. PR #88 corrige a espera do modelo
+(`702bd73`, Cloud Quality `38885973816` SUCCESS), mas ainda não comprova smoke
+implantado desse SHA. **CURRENT WEB SMOKE FAILING / RELEASE_GREEN PENDING.**
+
+Branch isolada `fix/hud-accessibility-release-audit-20261016`: correções de
+modalidade/foco/IME e legibilidade/touch do HUD; smoke de teclado ampliado.
+CI desta mudança e validação visual pós-deploy ainda pendentes neste checkpoint.
+Nenhum teste local, build local, merge ou deploy executado nesta sessão.
+As 34 tarefas Agenor foram consultadas sem promoção de status.
+Detalhes: `docs/RELEASE/EXECUTION_AUDIT_2026-10-16.md`.
+
 ## Checkpoint atual — 2026-10-16
 
 > **Seções datadas de 2026-09-30 abaixo são snapshots históricos; este checkpoint prevalece para o estado operacional atual.**

@@ -1,5 +1,16 @@
 # Changelog do Agente
 
+## 2026-10-16 — HUD acessível e reconciliação de evidências
+
+- Drawer Web usa dialog modal nativo, Escape e restauração de foco; disclosures
+  fecham ao perder foco e seleção de modo volta ao composer.
+- Enter durante composição IME não envia; labels, textarea e touch targets
+  melhorados sem alterar guardas/provider/runtime/dependências.
+- Smoke remoto ampliado para teclado; NÃO executado localmente.
+- Auditoria de 17 PRs, 17 issues, CI por SHA, ruleset/main, release gates e
+  34 tarefas Agenor. Corrigida a leitura de verde histórico como estado atual.
+- Release permanece pendente de smoke atual, Runtime, Access e Windows físico.
+
 ## 2026-09-30 — Estabilização Release Green (Web hotfix + auditoria canônica)
 
 - fix(web-ai): `ai-text.ts` compartilhado normaliza respostas OpenAI-compatible
