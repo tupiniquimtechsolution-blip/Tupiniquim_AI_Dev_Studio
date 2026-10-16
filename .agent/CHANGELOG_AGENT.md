@@ -2,6 +2,9 @@
 
 ## 2026-10-16 — Continuação das pendências executáveis
 
+- CI remoto `38924014282` detectou warning de dependência do hook de foco;
+  props desestruturadas antes do effect para corrigir sem suprimir a regra.
+
 - Remote Gateway recebe o mesmo confinamento da busca, omite entradas ocultas
   e limita previews; integração cobre links externos, dados ocultos e limite.
   Import explícito `.ts` compatível com o launcher nativo Node 24.

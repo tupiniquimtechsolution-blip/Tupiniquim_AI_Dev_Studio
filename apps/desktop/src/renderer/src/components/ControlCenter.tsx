@@ -57,6 +57,7 @@ interface ControlCenterProps {
 }
 
 export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | null => {
+  const { open, returnFocusTo } = props
   const dialogRef = useRef<HTMLDialogElement | null>(null)
   const [section, setSection] = useState('models-providers')
   const [skills, setSkills] = useState<SkillControlView[]>([])
@@ -88,17 +89,17 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
     : (providerOptions[0] ?? 'codex-app-server')
 
   useEffect(() => {
-    if (!props.open) return
+    if (!open) return
     const dialog = dialogRef.current
     if (dialog === null) return
     const active = document.activeElement
     const opener = active instanceof HTMLElement ? active : null
     const disclosure = opener?.closest('details')
-    const returnTarget = props.returnFocusTo?.() ?? (disclosure !== null && disclosure !== undefined && !disclosure.open
+    const returnTarget = returnFocusTo?.() ?? (disclosure !== null && disclosure !== undefined && !disclosure.open
       ? disclosure.querySelector('summary') : opener)
     dialog.showModal()
     return () => { dialog.close(); returnTarget?.focus() }
-  }, [props.open, props.returnFocusTo])
+  }, [open, returnFocusTo])
 
   useEffect(() => {
     if (!props.open) return
