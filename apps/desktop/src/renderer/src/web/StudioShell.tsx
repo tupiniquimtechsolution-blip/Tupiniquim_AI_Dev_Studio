@@ -87,6 +87,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const [bootState, setBootState] = useState<'loading' | 'ready' | 'error'>('loading')
   const providerRef = useRef<AIProviderKind | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
+  const hudToolsRef = useRef<HTMLDetailsElement | null>(null)
   const threadEndRef = useRef<HTMLDivElement | null>(null)
   const dirty = document !== null && content !== document.content
   const preferences = useMemo(() => parseOnboardingPreferences(localStorage.getItem(WEB_ONBOARDING_KEY)), [])
@@ -467,16 +468,39 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
               </select>
             </label>
           )}
-          <nav className="ws-tools" aria-label="Ferramentas de engenharia">
-            <button className={tool === 'files' ? 'active' : ''} title="Arquivos do workspace" aria-pressed={tool === 'files'} onClick={() => openTool('files')}><FolderTree size={15} aria-hidden="true" /><span>Arquivos</span></button>
-            <button className={tool === 'terminal' ? 'active' : ''} title="Terminal (Runtime Local)" aria-pressed={tool === 'terminal'} onClick={() => openTool('terminal')}><TerminalSquare size={15} aria-hidden="true" /><span>Terminal</span></button>
-            <button className={tool === 'git' ? 'active' : ''} title="Revisão Git" aria-pressed={tool === 'git'} onClick={() => openTool('git')}><GitBranch size={15} aria-hidden="true" /><span>Git</span></button>
-            <button className={tool === 'activity' ? 'active' : ''} title="Atividade da sessão" aria-pressed={tool === 'activity'} onClick={() => openTool('activity')}><Activity size={15} aria-hidden="true" /><span>Atividade</span></button>
-          </nav>
           <ThemeToggle />
-          <button className="ws-icon-btn" title="Control Center" onClick={() => setShowControlCenter(true)}><ShieldCheck size={16} aria-hidden="true" /></button>
-          <button className="ws-icon-btn" title="Workbench completo (editor, explorer e deck)" onClick={() => onNavigate('workbench')}><LayoutPanelLeft size={16} aria-hidden="true" /></button>
-          <button className="ws-icon-btn" title="Refazer onboarding" onClick={() => onNavigate('onboarding')}><Settings2 size={16} aria-hidden="true" /></button>
+          <details
+            className="ws-tools-menu"
+            ref={hudToolsRef}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                hudToolsRef.current?.removeAttribute('open')
+                hudToolsRef.current?.querySelector('summary')?.focus()
+              }
+            }}
+          >
+            <summary aria-label="Ferramentas e opções do Studio">
+              <Settings2 size={16} aria-hidden="true" />
+              <span>Ferramentas</span>
+              <ChevronsUpDown size={13} aria-hidden="true" />
+            </summary>
+            <div className="ws-tools-popover">
+              <span className="ws-tools-group-title">Workspace e execução</span>
+              <nav className="ws-tools" aria-label="Ferramentas de engenharia">
+                <button className={tool === 'files' ? 'active' : ''} aria-pressed={tool === 'files'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('files') }}><FolderTree size={16} aria-hidden="true" /><span>Arquivos</span></button>
+                <button className={tool === 'terminal' ? 'active' : ''} aria-pressed={tool === 'terminal'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('terminal') }}><TerminalSquare size={16} aria-hidden="true" /><span>Terminal</span></button>
+                <button className={tool === 'git' ? 'active' : ''} aria-pressed={tool === 'git'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('git') }}><GitBranch size={16} aria-hidden="true" /><span>Git</span></button>
+                <button className={tool === 'activity' ? 'active' : ''} aria-pressed={tool === 'activity'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('activity') }}><Activity size={16} aria-hidden="true" /><span>Atividade</span></button>
+              </nav>
+              <span className="ws-tools-group-title ws-tools-group-separator">Configurações e áreas</span>
+              <div className="ws-tool-destinations">
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); setShowControlCenter(true) }}><ShieldCheck size={16} aria-hidden="true" /><span>Control Center</span></button>
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); onNavigate('workbench') }}><LayoutPanelLeft size={16} aria-hidden="true" /><span>Workbench completo</span></button>
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); onNavigate('onboarding') }}><Settings2 size={16} aria-hidden="true" /><span>Preferências iniciais</span></button>
+              </div>
+            </div>
+          </details>
         </div>
       </header>
 
@@ -538,7 +562,25 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
 
         <section className="ws-composer-zone" aria-label="Composer">
           <div className="ws-mode-switch" role="group" aria-label="Modo do agente">
-            {modes.map((item) => <button key={item.mode} className={mode === item.mode ? 'active' : ''} aria-pressed={mode === item.mode} onClick={() => setMode(item.mode)}>{item.label}</button>)}
+            {modes.slice(0, 4).map((item) => <button key={item.mode} className={mode === item.mode ? 'active' : ''} aria-pressed={mode === item.mode} onClick={() => setMode(item.mode)}>{item.label}</button>)}
+            <details className="ws-more-modes" onKeyDown={(event) => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}>
+              <summary aria-label="Mais modos do agente">
+                {modes.slice(4).some((item) => item.mode === mode)
+                  ? `Modo: ${modes.find((item) => item.mode === mode)?.label ?? mode}`
+                  : 'Mais modos'}
+                <ChevronsUpDown size={13} aria-hidden="true" />
+              </summary>
+              <div className="ws-more-modes-panel" role="group" aria-label="Modos adicionais">
+                {modes.slice(4).map((item) => (
+                  <button
+                    key={item.mode}
+                    className={mode === item.mode ? 'active' : ''}
+                    aria-pressed={mode === item.mode}
+                    onClick={(event) => { setMode(item.mode); event.currentTarget.closest('details')?.removeAttribute('open') }}
+                  >{item.label}</button>
+                ))}
+              </div>
+            </details>
           </div>
           <div className="ws-composer">
             <textarea

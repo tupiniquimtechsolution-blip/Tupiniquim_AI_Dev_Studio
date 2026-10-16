@@ -168,6 +168,26 @@ test('tema Claro/Escuro/Sistema aplica data-theme, persiste no reload e não que
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
 })
 
+test('HUD mantém ferramentas e modos especializados acessíveis sem dominar o chat', async ({ page }) => {
+  await enterStudio(page)
+  const tools = page.locator('.ws-tools-menu')
+  await expect(tools.locator('summary')).toBeVisible()
+  await expect(tools.getByRole('button', { name: 'Arquivos' })).toBeHidden()
+
+  await tools.locator('summary').click()
+  await expect(tools.getByRole('button', { name: 'Terminal' })).toBeVisible()
+  await tools.getByRole('button', { name: 'Atividade' }).click()
+  await expect(page.getByRole('dialog', { name: 'Atividade da sessão' })).toBeVisible()
+  await page.getByRole('button', { name: 'Fechar painel' }).click()
+
+  const moreModes = page.locator('.ws-more-modes')
+  await moreModes.locator('summary').click()
+  await moreModes.getByRole('button', { name: 'Debug' }).click()
+  await expect(moreModes.locator('summary')).toContainText('Debug')
+  await page.getByRole('button', { name: 'Chat', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Chat', exact: true })).toHaveAttribute('aria-pressed', 'true')
+})
+
 test('UI Web Full inicializa workspace/modelo, conversa e recupera sessão; terminal quando o Remote Runtime está online', async ({ page, request }) => {
   await enterStudio(page)
   await expect(page.locator('.web-studio .brand')).toContainText('Tupiniquim')
