@@ -1,5 +1,44 @@
 # Status
 
+## Continuação executada — 2026-10-16
+
+- Delta `1180f408b2ea02f127500c3c6b8c8071a46245de` passou Cloud Quality
+  `38923387966`. Hardening adicional da busca no Remote Gateway acrescentado
+  depois desse resultado; exige novo CI. Gateway agora omite entradas ocultas,
+  links e arquivos especiais, confina realpaths e limita previews a 240 chars.
+  Import `.ts` explícito preserva execução nativa Node 24 do gateway.
+- Tarefa #19 passou A Fazer → Em Andamento em Notion/Miro (busca implementada;
+  criação/diff/aceite pendentes). Totais atuais: 16 A Fazer / 7 Bloqueada /
+  7 Em Andamento / 4 Concluída histórica. Contagens abaixo são snapshots.
+
+- PR #89 / `c9393086c8023ebeeda893db41476290e0cbb458`: Cloud Quality
+  `38919537449` SUCCESS. Esse resultado não é smoke/visual do novo HUD.
+- Continuação na mesma branch: Control Center com dialog modal/teclado/foco;
+  busca de conteúdo no drawer Files pela bridge existente, sem escrita direta.
+- WorkspaceAdapter.search ignora symlinks e tipos especiais e confina caminhos;
+  regressão de link externo adicionada para CI Linux (Windows diferido).
+- Kanban Miro existente do Studio materializado e verificado: 34 linhas, 34
+  sequências únicas, títulos/estados iguais ao Notion. Tarefa #17 Em Andamento
+  (Studio sincronizado; pendências de outros projetos/Obsidian fora do escopo).
+- Nenhum teste local, merge ou deploy. Novo delta aguardando CI no checkpoint.
+  RELEASE_GREEN permanece PENDING; busca/criação V1 não declarada concluída.
+
+## Auditoria vigente — 2026-10-16 — HEAD 70c0c97
+
+Este registro prevalece sobre o checkpoint anterior para a cabeça atual.
+Cloud Quality `38885419671` SUCCESS no SHA `70c0c977e6f1920dd7b2ab6c587afc1f5785f3f5`;
+Web Product Smoke `38885409266` FAILURE (4 passed / 1 skipped / 1 failed).
+O PASS anterior em `e3bec44` é histórico. PR #88 corrige a espera do modelo
+(`702bd73`, Cloud Quality `38885973816` SUCCESS), mas ainda não comprova smoke
+implantado desse SHA. **CURRENT WEB SMOKE FAILING / RELEASE_GREEN PENDING.**
+
+Branch isolada `fix/hud-accessibility-release-audit-20261016`: correções de
+modalidade/foco/IME e legibilidade/touch do HUD; smoke de teclado ampliado.
+CI desta mudança e validação visual pós-deploy ainda pendentes neste checkpoint.
+Nenhum teste local, build local, merge ou deploy executado nesta sessão.
+As 34 tarefas Agenor foram consultadas sem promoção de status.
+Detalhes: `docs/RELEASE/EXECUTION_AUDIT_2026-10-16.md`.
+
 ## Checkpoint atual — 2026-10-16
 
 > **Seções datadas de 2026-09-30 abaixo são snapshots históricos; este checkpoint prevalece para o estado operacional atual.**

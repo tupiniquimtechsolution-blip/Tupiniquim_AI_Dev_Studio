@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentCatalogView, AgentLoadoutView, AgentPermissionProfile, AIProviderKind, AIStatus, LocalModel, SkillControlView, ToolboxGateId, ToolboxGateView } from '@tupiniquim/contracts'
 import './control-center.css'
 
@@ -43,6 +43,7 @@ export interface ExecutionRuntimeInfo {
 interface ControlCenterProps {
   open: boolean
   onClose: () => void
+  returnFocusTo?: () => HTMLElement | null
   workspaceRoot: string | null
   aiStatus: AIStatus | null
   localModels: LocalModel[]
@@ -56,6 +57,8 @@ interface ControlCenterProps {
 }
 
 export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | null => {
+  const { open, returnFocusTo } = props
+  const dialogRef = useRef<HTMLDialogElement | null>(null)
   const [section, setSection] = useState('models-providers')
   const [skills, setSkills] = useState<SkillControlView[]>([])
   const [agents, setAgents] = useState<AgentCatalogView[]>([])
@@ -84,6 +87,19 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
   const effectiveLoadoutProvider: AIProviderKind = providerOptions.includes(loadoutProvider)
     ? loadoutProvider
     : (providerOptions[0] ?? 'codex-app-server')
+
+  useEffect(() => {
+    if (!open) return
+    const dialog = dialogRef.current
+    if (dialog === null) return
+    const active = document.activeElement
+    const opener = active instanceof HTMLElement ? active : null
+    const disclosure = opener?.closest('details')
+    const returnTarget = returnFocusTo?.() ?? (disclosure !== null && disclosure !== undefined && !disclosure.open
+      ? disclosure.querySelector('summary') : opener)
+    dialog.showModal()
+    return () => { dialog.close(); returnTarget?.focus() }
+  }, [open, returnFocusTo])
 
   useEffect(() => {
     if (!props.open) return
@@ -153,9 +169,12 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
     } finally { setBusy(false) }
   }
 
-  return <div className="control-center-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose() }}>
-    <section className="control-center" role="dialog" aria-modal="true" aria-label="Tupiniquim Control Center">
-      <header><div><strong>Tupiniquim Control Center</strong><small>AI Lab + Toolbox + Dev AI</small></div><button onClick={() => props.onClose()}>×</button></header>
+  return <dialog ref={dialogRef} className="control-center" aria-label="Tupiniquim Control Center" onCancel={(event) => { event.preventDefault(); props.onClose() }} onClick={(event) => {
+    if (event.target !== event.currentTarget) return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) props.onClose()
+  }}>
+      <header><div><strong>Tupiniquim Control Center</strong><small>AI Lab + Toolbox + Dev AI</small></div><button autoFocus aria-label="Fechar Control Center" onClick={() => props.onClose()}>×</button></header>
       <div className="control-center-body">
         <nav>{controlCenterSections.map(({ id, label }) => <button key={id} className={section === id ? 'active' : ''} onClick={() => setSection(id)}>{label}</button>)}</nav>
         <main>
@@ -167,6 +186,5 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
           {section === 'security-quality' && <div className="cc-stack"><h2>Segurança & Qualidade</h2><p>Ausência de ambiente = NOT_AVAILABLE, nunca PASS. Use o Toolbox para executar os gates suportados e revisar evidências.</p><div className="cc-card"><div><strong>Política</strong><small>Default deny · approvals · AuditLog · sem fallback automático</small></div><span className="cc-badge">ATIVA</span></div></div>}
         </main>
       </div>
-    </section>
-  </div>
+  </dialog>
 }

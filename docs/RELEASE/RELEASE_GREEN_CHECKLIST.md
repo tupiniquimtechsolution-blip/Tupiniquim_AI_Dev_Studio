@@ -1,5 +1,16 @@
 # Release Green Checklist — matriz de gates
 
+## Correção de estado atual — 2026-10-16
+
+**Esta seção prevalece sobre a atualização certificada abaixo.**
+No HEAD de integração `70c0c977e6f1920dd7b2ab6c587afc1f5785f3f5`, Cloud Quality
+`38885419671` = SUCCESS, Web Smoke `38885409266` = FAILURE (4 passed, 1 skipped,
+1 failed na seleção assíncrona do modelo). O verde em `e3bec44` é histórico.
+PR #88 / `702bd73` tem Cloud Quality SUCCESS; falta smoke implantado nesse SHA.
+HUD adicional nesta branch aguarda CI e evidência visual. **RELEASE_GREEN = PENDING**;
+RG-05/RG-08/RG-09 permanecem sem comprovação. Nenhum teste local nesta execução.
+Ver `EXECUTION_AUDIT_2026-10-16.md` para inventário e dependências.
+
 ## Atualização certificada — 2026-10-16
 
 Esta seção prevalece sobre os itens históricos de 2026-09-30 abaixo.

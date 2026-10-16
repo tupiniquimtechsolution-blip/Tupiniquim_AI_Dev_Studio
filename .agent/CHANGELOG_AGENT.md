@@ -1,5 +1,34 @@
 # Changelog do Agente
 
+## 2026-10-16 — Continuação das pendências executáveis
+
+- CI remoto `38924014282` detectou warning de dependência do hook de foco;
+  props desestruturadas antes do effect para corrigir sem suprimir a regra.
+
+- Remote Gateway recebe o mesmo confinamento da busca, omite entradas ocultas
+  e limita previews; integração cobre links externos, dados ocultos e limite.
+  Import explícito `.ts` compatível com o launcher nativo Node 24.
+
+- Busca de conteúdo real no drawer Files via IPC/RPC existente, com erro,
+  resultado vazio, limite e descarte de respostas antigas; sem simulação.
+- Busca no adaptador não segue symlinks/tipos especiais nem caminhos externos;
+  caso de segurança adicionado à integração remota, sem execução local.
+- Control Center usa modalidade nativa, Escape, foco inicial/restauração,
+  targets de toque e superfícies consistentes com tokens existentes.
+- Kanban Miro Dev Studio sincronizado/confirmado com 34 IDs e links Notion;
+  tarefa #17 desbloqueada para Em Andamento (residual cross-project preservado).
+
+## 2026-10-16 — HUD acessível e reconciliação de evidências
+
+- Drawer Web usa dialog modal nativo, Escape e restauração de foco; disclosures
+  fecham ao perder foco e seleção de modo volta ao composer.
+- Enter durante composição IME não envia; labels, textarea e touch targets
+  melhorados sem alterar guardas/provider/runtime/dependências.
+- Smoke remoto ampliado para teclado; NÃO executado localmente.
+- Auditoria de 17 PRs, 17 issues, CI por SHA, ruleset/main, release gates e
+  34 tarefas Agenor. Corrigida a leitura de verde histórico como estado atual.
+- Release permanece pendente de smoke atual, Runtime, Access e Windows físico.
+
 ## 2026-09-30 — Estabilização Release Green (Web hotfix + auditoria canônica)
 
 - fix(web-ai): `ai-text.ts` compartilhado normaliza respostas OpenAI-compatible

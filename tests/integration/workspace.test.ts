@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto'
 import os from 'node:os'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WorkspaceAdapter } from '@tupiniquim/adapters'
+import { searchWorkspaceFiles } from '../../apps/runtime-gateway/src/workspace-search'
 
 const isWindows = process.platform === 'win32'
 
@@ -24,6 +25,34 @@ beforeEach(async () => {
 afterEach(async () => { if (fixture !== '') await rm(fixture, { recursive: true, force: true }) })
 
 describe('WorkspaceAdapter', () => {
+  it.skipIf(isWindows)('busca ignora links para arquivos e diretórios fora do workspace', async () => {
+    const external = await mkdtemp(path.join(path.dirname(fixture), 'tupiniquim-external-'))
+    try {
+      await writeFile(path.join(external, 'outside.txt'), 'external-search-canary', 'utf8')
+      await symlink(path.join(external, 'outside.txt'), path.join(fixture, 'linked.txt'))
+      await symlink(external, path.join(fixture, 'linked-directory'), 'dir')
+      await writeFile(path.join(fixture, 'inside.txt'), 'internal-search-canary', 'utf8')
+      const adapter = new WorkspaceAdapter()
+      await adapter.configure(fixture)
+      expect(await adapter.search('external-search-canary')).toEqual([])
+      expect(await searchWorkspaceFiles(fixture, 'external-search-canary', 100)).toEqual([])
+      expect(await adapter.search('internal-search-canary')).toEqual([
+        { relativePath: 'inside.txt', line: 1, preview: 'internal-search-canary' }
+      ])
+    } finally { await rm(external, { recursive: true, force: true }) }
+  })
+
+  it('busca do gateway ignora entradas ocultas e limita conteúdo retornado', async () => {
+    await writeFile(path.join(fixture, '.private-test.txt'), 'hidden-search-canary', 'utf8')
+    await writeFile(path.join(fixture, 'visible.txt'), `visible-search-canary${'x'.repeat(300)}\nvisible-search-canary`, 'utf8')
+    expect(await searchWorkspaceFiles(fixture, 'hidden-search-canary', 100)).toEqual([])
+    const results = await searchWorkspaceFiles(fixture, 'visible-search-canary', 1)
+    expect(results).toHaveLength(1)
+    expect(results[0]?.relativePath).toBe('visible.txt')
+    expect(results[0]?.preview).toHaveLength(240)
+    expect(await searchWorkspaceFiles(fixture, '   ', 100)).toEqual([])
+  })
+
   it('lista, lê e grava atomicamente com optimistic concurrency', async () => {
     const adapter = new WorkspaceAdapter()
     await adapter.configure(fixture)
