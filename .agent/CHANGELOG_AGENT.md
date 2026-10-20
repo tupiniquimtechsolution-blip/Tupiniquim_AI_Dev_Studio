@@ -1,5 +1,13 @@
 # Changelog do Agente
 
+## 2026-10-20 — Files: revisão antes de salvar
+
+- Comparação baseline/buffer somente leitura no Monaco existente, com tema e
+  fallback inline para telas estreitas; edição preservada ao alternar.
+- Proteção contra descarte acidental ao fechar arquivo sujo.
+- Sem alteração em preload, contratos, policies, dependências ou produção.
+- Testes locais excluídos pelo usuário; validação via Cloud Quality do novo head.
+
 ## 2026-10-16 — Continuação das pendências executáveis
 
 - CI remoto `38924014282` detectou warning de dependência do hook de foco;

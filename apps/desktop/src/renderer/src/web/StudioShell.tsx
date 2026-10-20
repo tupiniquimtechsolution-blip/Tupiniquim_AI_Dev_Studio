@@ -66,6 +66,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const [files, setFiles] = useState<FileEntry[]>([])
   const [document, setDocument] = useState<FileDocument | null>(null)
   const [content, setContent] = useState('')
+  const [reviewFileChanges, setReviewFileChanges] = useState(false)
   const [git, setGit] = useState<GitStatus | null>(null)
   const [mode, setMode] = useState<Mode>('CHAT')
   const [notice, setNotice] = useState('Preparando o Studio…')
@@ -416,7 +417,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const openFile = async (relativePath: string): Promise<void> => {
     if (dirty && !window.confirm('Há alterações não salvas. Descartar e abrir outro arquivo?')) return
     const result = await window.studio.workspace.read({ relativePath })
-    if (result.ok) { setDocument(result.value); setContent(result.value.content); setNotice(`Aberto: ${relativePath}`) }
+    if (result.ok) { setDocument(result.value); setContent(result.value.content); setReviewFileChanges(false); setNotice(`Aberto: ${relativePath}`) }
     else setNotice(result.error.message)
   }
 
@@ -668,9 +669,10 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                           {document !== null
                             ? (
                                 <>
-                                  <div className="ws-files-editor-head"><span>{dirty ? '● ' : ''}{basename(document.relativePath)}</span><button className="ws-icon-btn" disabled={!dirty} title="Salvar" onClick={() => void saveFile()}><Save size={15} aria-hidden="true" /></button><button className="ws-icon-btn" title="Fechar arquivo" onClick={() => { setDocument(null); setContent('') }}><X size={15} aria-hidden="true" /></button></div>
+                                  <div className="ws-files-editor-head"><span title={document.relativePath}>{dirty ? '● ' : ''}{basename(document.relativePath)}</span><button className="ws-file-review" aria-pressed={reviewFileChanges} onClick={() => setReviewFileChanges((current) => !current)}>{reviewFileChanges ? 'Voltar ao editor' : 'Comparar alterações'}</button><button className="ws-icon-btn" disabled={!dirty} title="Salvar" onClick={() => void saveFile()}><Save size={15} aria-hidden="true" /></button><button className="ws-icon-btn" title="Fechar arquivo" onClick={() => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e fechar o arquivo?')) return; setDocument(null); setContent(''); setReviewFileChanges(false) }}><X size={15} aria-hidden="true" /></button></div>
+                                  {reviewFileChanges && <p className="ws-file-review-caption">Versão carregada → alterações não salvas. Comparação somente leitura; salvar continua verificando o hash do arquivo.</p>}
                                   <Suspense fallback={<div className="ws-panel-loading" role="status"><span className="wx-spinner" aria-hidden="true" /><p>Carregando editor…</p></div>}>
-                                    <CodeEditor path={document.relativePath} value={content} onChange={setContent} />
+                                    <CodeEditor path={document.relativePath} value={content} onChange={setContent} {...(reviewFileChanges ? { original: document.content } : {})} />
                                   </Suspense>
                                 </>
                               )

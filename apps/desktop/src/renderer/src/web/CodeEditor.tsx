@@ -1,5 +1,5 @@
 import '../monaco'
-import Editor from '@monaco-editor/react'
+import Editor, { DiffEditor } from '@monaco-editor/react'
 import { useResolvedTheme } from '../theme'
 
 const languageFor = (file?: string): string => {
@@ -11,6 +11,7 @@ interface CodeEditorProps {
   path: string
   value: string
   onChange: (value: string) => void
+  original?: string
 }
 
 /**
@@ -18,8 +19,18 @@ interface CodeEditorProps {
  * chat não pagam o custo do editor — ele só entra quando o usuário abre um
  * arquivo do workspace. O bundle continua local (ver ../monaco.ts, sem CDN).
  */
-const CodeEditor = ({ path, value, onChange }: CodeEditorProps): React.JSX.Element => {
+const CodeEditor = ({ path, value, onChange, original }: CodeEditorProps): React.JSX.Element => {
   const resolvedTheme = useResolvedTheme()
+  if (original !== undefined) return (
+    <DiffEditor
+      height="100%"
+      original={original}
+      modified={value}
+      language={languageFor(path)}
+      theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'}
+      options={{ readOnly: true, originalEditable: false, renderSideBySide: true, useInlineViewWhenSpaceIsLimited: true, automaticLayout: true, minimap: { enabled: false }, fontSize: 13 }}
+    />
+  )
   return (
     <Editor
       height="100%"

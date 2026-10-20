@@ -1,5 +1,19 @@
 # Status
 
+## Continuação — 2026-10-20
+
+- PR #89 continua OPEN/DRAFT, base integration `70c0c97`; PR #88 continua aberto.
+- HEAD anterior `7842e5a7124ea05533bee6f66df80c53328afeb5` certificado pelo
+  Cloud Quality `38924278785` SUCCESS. Esse verde não valida o novo delta.
+- Files Web: comparação somente leitura entre baseline carregado e buffer
+  editado via Monaco DiffEditor; volta ao editor sem perder conteúdo.
+- Fechar arquivo com alterações agora pede confirmação; salvar mantém
+  expectedHash/bridge/Policy existentes. Sem nova autoridade de escrita.
+- Novo delta aguarda CI remoto e smoke/revisão visual no deployment exato.
+  Criação de arquivos, Runtime/Access/OAuth e certificação Windows pendentes.
+- Nenhum teste local, build local, app startup, merge ou deploy nesta etapa.
+  RELEASE_GREEN segue não comprovado.
+
 ## Continuação executada — 2026-10-16
 
 - Delta `1180f408b2ea02f127500c3c6b8c8071a46245de` passou Cloud Quality

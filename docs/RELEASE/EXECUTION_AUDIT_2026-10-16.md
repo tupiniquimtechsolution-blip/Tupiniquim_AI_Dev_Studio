@@ -1,5 +1,18 @@
 # Dev Studio — execution audit, 2026-10-16
 
+## Follow-up — 2026-10-20
+
+PR #89 remains OPEN/DRAFT and PR #88 remains open. Previous head `7842e5a`
+passed Cloud Quality `38924278785`; no current deployment/visual claim follows.
+Files now offers a read-only Monaco comparison of the loaded file and current
+unsaved buffer, with inline fallback when space is limited. Returning to edit
+preserves the buffer. Closing a dirty file requires explicit discard confirmation.
+Save still uses the original expectedHash and existing privileged bridge/policy.
+No new write path, provider or dependency. The new head needs remote CI and
+exact-deployment visual/keyboard acceptance. File creation, full Files V1 and
+RELEASE_GREEN remain incomplete. No local tests, build, app startup, merge or
+production deployment in this follow-up.
+
 ## Continuation after initial audit
 
 Further checkpoint: `1180f408b2ea02f127500c3c6b8c8071a46245de` passed

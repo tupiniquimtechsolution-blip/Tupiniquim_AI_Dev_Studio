@@ -476,6 +476,11 @@
 }
 
 /* Readable controls and touch targets without increasing chat density. */
+.ws-files-editor-head { flex-wrap:wrap; }
+.ws-files-editor-head > span { min-width:0; overflow-wrap:anywhere; }
+.ws-file-review { margin-left:auto; min-height:36px; padding:6px 10px; border:1px solid var(--wx-line-strong); border-radius:8px; background:var(--wx-raised); color:var(--wx-text); font:inherit; font-size:12px; cursor:pointer; }
+.ws-file-review[aria-pressed='true'] { border-color:var(--wx-accent); background:var(--wx-accent-soft); }
+.ws-file-review-caption { margin:0; padding:8px 12px; color:var(--wx-muted); font-size:12px; line-height:1.5; border-bottom:1px solid var(--wx-line); }
 .workspace-file-browser form { display:grid; gap:8px; padding:12px; border-bottom:1px solid var(--wx-line); }
 .workspace-file-browser label { color:var(--wx-muted); font-size:13px; }
 .workspace-file-browser input { min-width:0; width:100%; padding:9px; border:1px solid var(--wx-line-strong); border-radius:8px; background:var(--wx-surface); color:var(--wx-text); font:inherit; font-size:16px; }
