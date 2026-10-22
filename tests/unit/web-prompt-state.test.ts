@@ -5,9 +5,9 @@ import { promptTemplateSchema, compiledPromptSchema } from '../../packages/contr
 const makeStorage = () => {
   const data = new Map<string, unknown>()
   return {
-    get: async <T>(key: string): Promise<T | undefined> => structuredClone(data.get(key)) as T | undefined,
-    put: async <T>(key: string, value: T): Promise<void> => { data.set(key, structuredClone(value)) },
-    delete: async (key: string): Promise<boolean> => data.delete(key)
+    get: <T>(key: string): Promise<T | undefined> => Promise.resolve(structuredClone(data.get(key)) as T | undefined),
+    put: <T>(key: string, value: T): Promise<void> => { data.set(key, structuredClone(value)); return Promise.resolve() },
+    delete: (key: string): Promise<boolean> => Promise.resolve(data.delete(key))
   }
 }
 

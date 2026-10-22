@@ -438,3 +438,6 @@ Continuidade corretiva sobre o PR #12 (Ref #11). Nenhuma mudança arquitetural; 
 ## 2026-09-22 — RC1 consolidation
 
 Merge Wave17 + Google Tasks; entrypoint de packaging corrigido, Monaco offline, provider/model preferences duráveis, descoberta dinâmica Ollama, rail/diff ligados, aprovação manual nativa limitada e auditada, terminal não oculta erro nem deixa PTY ao desmontar. Bootstrap Windows e manifesto local, build/run/verify, regressões e auditoria honesta RF em docs/RC1. Não é aceite integral V1. Sem rebase/force push/main merge.
+
+## 2026-10-22 — Hosted browser evidence and CI repair
+Hosted Web UI 39770100780 SUCCESS at 69fae38. Cloud Quality 39770100616 stopped at lint: three test storage methods declared async without await. Return explicit resolved promises; no local tests executed. Remaining gates await rerun.
