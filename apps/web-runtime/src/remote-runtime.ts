@@ -143,8 +143,8 @@ export const getRemoteSandbox = (env: RemoteRuntimeConfig, workspaceId: string) 
       void options
       return runtimeRpc(env, workspaceId, 'fs.read-file', { path })
     },
-    writeFile: async (path: string, content: string): Promise<void> => {
-      await runtimeRpc<null>(env, workspaceId, 'fs.write-file', { path, content })
+    writeFile: async (path: string, content: string, expectedHash?: string): Promise<void> => {
+      await runtimeRpc<null>(env, workspaceId, 'fs.write-file', { path, content, expectedHash })
     },
     listTree: async (depth: number): Promise<Array<JsonRecord>> =>
       runtimeRpc(env, workspaceId, 'workspace.tree', { depth }),

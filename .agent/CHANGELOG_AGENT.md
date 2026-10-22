@@ -456,3 +456,6 @@ UI Web Novo arquivo prepara revisão imutável, exibe caminho/conteúdo/hash/ris
 
 ## 2026-10-22 — Revisão visual e navegação
 Inspeção dos screenshots remotos @21e75fe em 390/1440; formulários novos usam tokens do Prompt Architect. Corrigido contraste do Control Center em tema claro. Regressão remota amplia screenshots claro/escuro 390/768/1024/1440 e painéis mobile. Navegação centralizada registra guarda do Studio para edições/IO e restaura posição do histórico quando Voltar é cancelado. Startup sinaliza aria-busy até preferências carregarem, evitando teste antecipado de atalhos após reload.
+
+## 2026-10-22 — CAS e aprovação persistida
+Gateway grava temporário e publica atomicamente sob fila por caminho, revalida hash dentro da fila e recusa sobrescrita sem baseline. Worker encaminha expectedHash. Planos/propostas Web validam schemas, guardam decisões e comparam hash canônico do manifesto antes de start/apply; baseline removido ou alterado bloqueia. Regressões de escritores concorrentes e negativa de enfraquecimento/start sem aprovação no hosted. Execução positiva com modelo real continua sem aceite externo.

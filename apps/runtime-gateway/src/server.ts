@@ -9,6 +9,7 @@ import { searchWorkspaceFiles } from './workspace-search.ts'
 import { executeGatewayGate } from './gate-runner.ts'
 import { resolveConfinedWorkspacePath } from './workspace-path.ts'
 import { createWorkspaceFile } from './workspace-create.ts'
+import { writeWorkspaceFile } from './workspace-write.ts'
 
 type JsonRecord = Record<string, unknown>
 
@@ -143,9 +144,7 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
     return null
   }
   if (method === 'fs.write-file') {
-    const target = await resolveWorkspacePath(workspaceId, stringArg(args, 'path'))
-    await fs.mkdir(path.dirname(target), { recursive: true })
-    await fs.writeFile(target, stringArg(args, 'content'), 'utf8')
+    await writeWorkspaceFile(await workspaceRoot(workspaceId), stringArg(args, 'path'), stringArg(args, 'content'), typeof args.expectedHash === 'string' ? args.expectedHash : undefined)
     return null
   }
   if (method === 'workspace.tree') return listTree(workspaceId, numberArg(args, 'depth', 4))

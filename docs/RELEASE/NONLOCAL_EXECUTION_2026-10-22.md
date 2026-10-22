@@ -58,3 +58,9 @@ CREATE requires an existing parent directory. Failed/expired reviews require pre
 Cloud Quality 39776027692 SUCCESS @d193ff7. Hosted 39776027695: 5 passed, 1 failed (shortcut invoked after reload before preference hydration). Manual CREATE, refusal to overwrite, and legacy bypass rejection passed in that run. Full hosted certification for this head FAILED; no partial-green relabeling. Startup now exposes aria-busy and the test awaits hydration. Pending next remote run.
 
 Screenshots @21e75fe inspected at 390/1440. Added clear/dark evidence at four widths plus mobile panels. Corrected new form styles and Control Center light-theme evidence contrast. Browser history cancellation now uses a shared leave guard, preserves the Studio and restores known SPA history positions; hosted regression added. Unknown external history entries use conservative current-route restoration; external document unload remains browser-controlled.
+
+## Write/approval follow-up
+
+Gateway compare-and-write is serialized per canonical path. Replacements require the reviewed baseline hash, including at the final gateway mutation; no-hash writes are exclusive CREATE. Deleted baselines fail instead of recreating. Temporary sibling + atomic publication avoid partial writes under gateway-owned concurrency. Concurrent privileged host processes remain outside this boundary.
+
+Web agent proposals now require persisted approval decisions bound to the current canonical effects hash, execution/step/source/content consistency and non-replayed effects. Plan edits cannot downgrade risk/approval/structure. Old approvals without persisted decision records fail closed and require fresh review. Positive real-model proposal acceptance remains unproven; synthetic negative/concurrency regressions are not AI certification.

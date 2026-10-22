@@ -1,3 +1,6 @@
+import { planSchema, approvalDecisionSchema } from '../../../packages/contracts/src/domain'
+import { approvalDecideInputSchema, workspaceWriteProposalSchema, planCreateInputSchema, planUpdateInputSchema } from '../../../packages/contracts/src/ipc'
+import { manifestEffectsHash } from '../../../packages/core/src/plan-approval'
 import { uiProfileSchema, uiProfileImportInputSchema } from '../../../packages/contracts/src/settings'
 import { contrastRatio } from '../../../packages/core/src/profile-contrast'
 import { aiText as sharedAiText } from './ai-text'
@@ -311,8 +314,9 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
       return ok(stored?.status ?? 'EXPIRED')
     }
     case 'full.planning.create': {
-      const objective = typeof input.objective === 'string' ? input.objective.trim() : ''
-      if (objective.length < 3) return fail('INVALID_OBJECTIVE', 'Objetivo do plano inválido.')
+      const validated = planCreateInputSchema.safeParse(input)
+      if (!validated.success) return fail('INVALID_OBJECTIVE', 'Objetivo ou modo do plano inválido.')
+      const objective = validated.data.objective
       const stepId = crypto.randomUUID(); const planId = crypto.randomUUID(); const executionId = crypto.randomUUID()
       const value = { plan: { id: planId, title: objective.slice(0, 100), objective, steps: [{ id: stepId, title: 'Implementar objetivo', description: objective, status: 'PENDING', risk: 'LOW', requiresApproval: true, effects: [] }], createdAt: now, updatedAt: now }, execution: { id: executionId, planId, mode: typeof input.mode === 'string' ? input.mode : 'PLAN', state: 'PLAN', permissionProfile: 'ASSISTED', workspaceRoot: '/workspace', activeStepId: stepId, threadId: null, approvalIds: [], completedEffectIds: [], createdAt: now, updatedAt: now } }
       await statePut(env, workspaceId, `plan:${executionId}`, value)
@@ -324,36 +328,78 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
       return value === null ? fail('PLAN_NOT_FOUND', 'Plano não encontrado.', 404) : ok(value)
     }
     case 'full.planning.update': {
-      const key = `plan:${String(input.executionId ?? '')}`; const current = await stateGet<JsonRecord>(env, workspaceId, key)
-      if (current === null || input.plan === null || typeof input.plan !== 'object') return fail('PLAN_NOT_FOUND', 'Plano não encontrado.', 404)
-      current.plan = { ...(input.plan as JsonRecord), updatedAt: now }; await statePut(env, workspaceId, key, current); return ok(current.plan)
+      const checked = planUpdateInputSchema.safeParse(input)
+      if (!checked.success) return fail('INVALID_PLAN', 'Plano inválido.')
+      const key = `plan:${checked.data.executionId}`
+      const current = await stateGet<JsonRecord>(env, workspaceId, key)
+      const previous = planSchema.safeParse(current?.plan)
+      if (current === null || !previous.success) return fail('PLAN_NOT_FOUND', 'Plano não encontrado.', 404)
+      const state = (current.execution as JsonRecord).state
+      if (state !== 'PLAN' && state !== 'WAITING_APPROVAL') return fail('INVALID_EXECUTION_STATE', 'Plano não pode ser editado durante execução.', 409)
+      const next = checked.data.plan
+      if (next.id !== previous.data.id || next.steps.length !== previous.data.steps.length || next.steps.some((step, index) => {
+        const old = previous.data.steps[index]
+        return old === undefined || step.id !== old.id || step.description !== old.description || step.status !== old.status || step.risk !== old.risk || step.requiresApproval !== old.requiresApproval
+      })) return fail('INVALID_PLAN', 'Estrutura, risco, aprovação e estado dos passos são imutáveis.')
+      current.plan = { ...next, createdAt: previous.data.createdAt, updatedAt: now }
+      await statePut(env, workspaceId, key, current)
+      return ok(current.plan)
     }
     case 'full.planning.decide': {
-      const executionId = String(input.executionId ?? ''); const stepId = String(input.stepId ?? ''); const current = await stateGet<JsonRecord>(env, workspaceId, `plan:${executionId}`)
+      const checked = approvalDecideInputSchema.safeParse(input)
+      if (!checked.success) return fail('INVALID_APPROVAL', 'Decisão de aprovação inválida.')
+      const executionId = checked.data.executionId; const stepId = checked.data.stepId; const current = await stateGet<JsonRecord>(env, workspaceId, `plan:${executionId}`)
       if (current === null) return fail('PLAN_NOT_FOUND', 'Plano não encontrado.', 404)
+      const currentState = (current.execution as JsonRecord).state
+      if (currentState !== 'PLAN' && currentState !== 'WAITING_APPROVAL') return fail('INVALID_EXECUTION_STATE', 'Execução não aceita novas decisões.', 409)
       const plan = current.plan as JsonRecord; const steps = Array.isArray(plan.steps) ? plan.steps as JsonRecord[] : []; const step = steps.find((item) => item.id === stepId)
-      if (step === undefined) return fail('STEP_NOT_FOUND', 'Passo não encontrado.', 404)
+      if (step === undefined || step.requiresApproval !== true) return fail('STEP_NOT_FOUND', 'Passo de aprovação não encontrado.', 404)
       const effect = Array.isArray(step.effects) ? (step.effects as JsonRecord[])[0] : undefined; const proposalId = effect !== undefined && effect.source && typeof effect.source === 'object' ? String((effect.source as JsonRecord).proposalId ?? '') : ''
       if (proposalId === '') return fail('PROPOSAL_NOT_FOUND', 'Proposta vinculada não encontrada.', 404)
       const stored = await stateGet<JsonRecord>(env, workspaceId, `proposal:${proposalId}`); if (stored === null) return fail('PROPOSAL_NOT_FOUND', 'Proposta não encontrada.', 404)
+      const linked = workspaceWriteProposalSchema.safeParse(stored.proposal)
+      if (!linked.success || linked.data.executionId !== executionId || linked.data.stepId !== stepId || !Array.isArray(step.effects) || step.effects.length !== 1 || manifestEffectsHash(planSchema.parse(current.plan).steps.find((item) => item.id === stepId)?.effects ?? []) !== manifestEffectsHash([linked.data.effect])) return fail('STALE_PROPOSAL', 'Proposta não corresponde ao manifesto exibido.', 409)
       stored.status = input.decision === 'APPROVED' ? 'APPROVED' : 'DENIED'; await statePut(env, workspaceId, `proposal:${proposalId}`, stored)
-      const decision = { id: crypto.randomUUID(), executionId, stepId, action: 'workspace.write', target: String(effect?.target ?? '/workspace'), risk: String(effect?.risk ?? 'LOW'), effectsHash: await sha256(JSON.stringify(step.effects ?? [])), scope: input.scope ?? 'ONCE', decision: input.decision, decidedAt: now }
+      const decision = { id: crypto.randomUUID(), executionId, stepId, action: 'workspace.write', target: String(effect?.target ?? '/workspace'), risk: String(effect?.risk ?? 'LOW'), effectsHash: manifestEffectsHash(planSchema.parse(current.plan).steps.find((item) => item.id === stepId)?.effects ?? []), scope: input.scope ?? 'ONCE', decision: input.decision, decidedAt: now }
+      await statePut(env, workspaceId, `approval:${decision.id}`, approvalDecisionSchema.parse(decision))
       const execution = current.execution as JsonRecord; const approvals = Array.isArray(execution.approvalIds) ? execution.approvalIds as string[] : []; execution.approvalIds = [...approvals, decision.id]; execution.state = input.decision === 'APPROVED' ? 'WAITING_APPROVAL' : 'BLOCKED'; execution.updatedAt = now; await statePut(env, workspaceId, `plan:${executionId}`, current)
       await appendExecutionEvent(env, workspaceId, executionId, { id: crypto.randomUUID(), at: now, state: execution.state, category: 'APPROVAL', title: input.decision === 'APPROVED' ? 'Proposta aprovada.' : 'Proposta negada.', severity: input.decision === 'APPROVED' ? 'SUCCESS' : 'WARNING' })
       return ok(decision)
     }
     case 'full.planning.start': {
       const executionId = String(input.executionId ?? ''); const current = await stateGet<JsonRecord>(env, workspaceId, `plan:${executionId}`); if (current === null) return fail('PLAN_NOT_FOUND', 'Plano não encontrado.', 404)
+      const plan = planSchema.safeParse(current.plan)
+      const pending = current.execution as JsonRecord
+      if (!plan.success || pending.state !== 'WAITING_APPROVAL') return fail('APPROVAL_REQUIRED', 'Plano deve aguardar aprovação válida.', 409)
+      const decisions = await Promise.all((Array.isArray(pending.approvalIds) ? pending.approvalIds as string[] : []).map((id) => stateGet<JsonRecord>(env, workspaceId, `approval:${id}`)))
+      for (const step of plan.data.steps.filter((item) => item.requiresApproval)) {
+        const matching = decisions.filter((decision) => decision !== null && decision.stepId === step.id && decision.effectsHash === manifestEffectsHash(step.effects))
+        if (step.effects.length === 0 || matching.some((decision) => decision?.decision === 'DENIED') || !matching.some((decision) => decision?.decision === 'APPROVED')) return fail('APPROVAL_REQUIRED', 'Manifesto sem aprovação vigente.', 409)
+      }
       const execution = current.execution as JsonRecord; execution.state = 'EXECUTION'; execution.updatedAt = now; await statePut(env, workspaceId, `plan:${executionId}`, current)
       await appendExecutionEvent(env, workspaceId, executionId, { id: crypto.randomUUID(), at: now, state: 'EXECUTION', category: 'STATE', title: 'Execução autorizada.', severity: 'SUCCESS' }); return ok(execution)
     }
     case 'full.planning.events': return ok(await stateGet<JsonRecord[]>(env, workspaceId, `execution-events:${String(input.executionId ?? '')}`) ?? [])
     case 'full.planning.apply-proposal': {
       const proposalId = String(input.proposalId ?? ''); const stored = await stateGet<JsonRecord>(env, workspaceId, `proposal:${proposalId}`); if (stored === null || stored.status !== 'APPROVED') return fail('PROPOSAL_NOT_APPROVED', 'Proposta não aprovada.', 409)
-      const proposal = stored.proposal as JsonRecord; const effect = proposal.effect as JsonRecord; const relativePath = safePath(effect.target); const content = typeof stored.content === 'string' ? stored.content : null; if (relativePath === null || content === null) return fail('INVALID_PROPOSAL', 'Proposta inválida.')
+      const parsedProposal = workspaceWriteProposalSchema.safeParse(stored.proposal)
+      if (!parsedProposal.success) return fail('INVALID_PROPOSAL', 'Proposta inválida.')
+      const proposal = parsedProposal.data
+      const effect = proposal.effect
+      const approvedPlan = await stateGet<JsonRecord>(env, workspaceId, `plan:${proposal.executionId}`)
+      const parsedPlan = planSchema.safeParse(approvedPlan?.plan)
+      const execution = approvedPlan?.execution as JsonRecord | undefined
+      const step = parsedPlan.success ? parsedPlan.data.steps.find((item) => item.id === proposal.stepId) : undefined
+      if (execution?.state !== 'EXECUTION' || step === undefined || !step.requiresApproval || !step.effects.some((item) => item.id === effect.id && manifestEffectsHash([item]) === manifestEffectsHash([effect]))) return fail('STALE_APPROVAL', 'Plano atual não corresponde à proposta aprovada.', 409)
+      if (Array.isArray(execution.completedEffectIds) && execution.completedEffectIds.includes(effect.id)) return fail('EFFECT_ALREADY_APPLIED', 'Efeito já materializado.', 409)
+      const decisions = await Promise.all((Array.isArray(execution.approvalIds) ? execution.approvalIds as string[] : []).map((id) => stateGet<JsonRecord>(env, workspaceId, `approval:${id}`)))
+      const matching = decisions.filter((decision) => decision !== null && decision.stepId === step.id && decision.effectsHash === manifestEffectsHash(step.effects))
+      if (matching.some((decision) => decision?.decision === 'DENIED') || !matching.some((decision) => decision?.decision === 'APPROVED')) return fail('STALE_APPROVAL', 'Aprovação persistida ausente ou desatualizada.', 409)
+      const relativePath = safePath(effect.target); const content = typeof stored.content === 'string' ? stored.content : null; if (relativePath === null || content === null || await sha256(content) !== effect.payloadHash) return fail('INVALID_PROPOSAL', 'Conteúdo não corresponde ao manifesto.')
       const sandbox = await ensureWorkspace(env, workspaceId); const target = `/workspace/${relativePath}`; const exists = await sandbox.exists(target); const expected = typeof effect.expectedTargetHash === 'string' ? effect.expectedTargetHash : null
+      if ((effect.operation === 'CREATE' && exists.exists) || (effect.operation === 'REPLACE' && (!exists.exists || expected === null))) return fail('STALE_WRITE', 'Destino não corresponde ao baseline aprovado.', 409)
       if (expected !== null && exists.exists) { const currentFile = await sandbox.readFile(target, { encoding: 'utf-8' }); if (await sha256(typeof currentFile.content === 'string' ? currentFile.content : '') !== expected) return fail('STALE_WRITE', 'Arquivo mudou após a aprovação.', 409) }
-      const parent = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''; if (parent !== '') await sandbox.mkdir(`/workspace/${parent}`, { recursive: true }); await sandbox.writeFile(target, content)
+      const parent = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''; if (parent !== '') await sandbox.mkdir(`/workspace/${parent}`, { recursive: true }); await sandbox.writeFile(target, content, expected ?? undefined)
       let persistence: JsonRecord
       try {
         persistence = await createWorkspaceCheckpoint(env, workspaceId, sandbox)

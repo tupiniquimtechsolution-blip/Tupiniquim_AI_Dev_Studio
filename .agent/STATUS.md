@@ -245,3 +245,6 @@ Head anterior 21e75fe: Cloud Quality 39775354329 e Hosted Web UI 39775354325 SUC
 
 ## Resultado remoto e correção — 2026-10-22
 @d193ff7 Cloud Quality 39776027692 SUCCESS; Hosted Web UI 39776027695 FAILURE: 5 passam (incluindo CREATE real e Evidence), 1 falha por atalho após reload antes de carregar preferências. Aguardar aria-busy=false sem sleeps fixos. Novos estilos/guarda de histórico aguardam gates no próximo head. Sem teste/instalação/build local.
+
+## Hardening de gravação/aprovação — 2026-10-22
+Novo delta serializa comparação+gravação no gateway: expectedHash obrigatório para substituir, hash ausente = CREATE exclusivo, baseline removido não é recriado. Propostas Web exigem schema/origem, aprovação persistida e effectsHash canônico vigente, execução iniciada e conteúdo hash correspondente. Plano não permite remover aprovação/risco/estrutura nem editar durante execução. @de1a406 Cloud Quality 39776766236 SUCCESS; Hosted 39776766113 em execução; novo delta ainda não validado. Sem testes locais.

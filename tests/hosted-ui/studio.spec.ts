@@ -7,6 +7,27 @@ const enter = async (page: Page): Promise<void> => {
   await expect(page.getByRole('heading', { name: 'Em que vamos trabalhar?' })).toBeVisible()
 }
 
+test('gateway rejects competing stale saves and plans without persisted approval', async ({ page }) => {
+  await enter(page)
+  const outcome = await page.evaluate(async () => {
+    const initial = await window.studio.workspace.write({ relativePath: 'cas-hosted.txt', content: 'baseline' })
+    if (!initial.ok) throw new Error('Fixture creation failed')
+    const competing = await Promise.all(['first', 'second'].map((content) => window.studio.workspace.write({ relativePath: 'cas-hosted.txt', content, expectedHash: initial.value.hash })))
+    const unreviewed = await window.studio.workspace.write({ relativePath: 'cas-hosted.txt', content: 'unreviewed replacement' })
+    const plan = await window.studio.planning.create({ objective: 'Verificar rejeição de plano sem aprovação', mode: 'PLAN' })
+    if (!plan.ok) throw new Error('No plan')
+    const weakened = await window.studio.planning.update({ executionId: plan.value.execution.id, plan: { ...plan.value.plan, steps: plan.value.plan.steps.map((step) => ({ ...step, requiresApproval: false })) } })
+    const started = await window.studio.planning.start({ executionId: plan.value.execution.id })
+    const read = await window.studio.workspace.read({ relativePath: 'cas-hosted.txt' })
+    return { successful: competing.filter((result) => result.ok).length, unreviewed: unreviewed.ok, weakened: weakened.ok, started: started.ok, content: read.ok && read.value.content }
+  })
+  expect(outcome.successful).toBe(1)
+  expect(outcome.unreviewed).toBe(false)
+  expect(outcome.started).toBe(false)
+  expect(outcome.weakened).toBe(false)
+  expect(['first', 'second']).toContain(outcome.content)
+})
+
 test('manual file creation requires review and never replaces an existing file', async ({ page }) => {
   await enter(page)
   await page.locator('.ws-tools-menu summary').click()

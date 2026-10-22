@@ -162,6 +162,7 @@ const handleStudioRpc = async (request: Request, env: Env, workspaceId: string):
         const expectedHash = typeof input.expectedHash === 'string' ? input.expectedHash : null
         if (expectedHash !== null) {
           const exists = await sandbox.exists(`/workspace/${relativePath}`)
+          if (!exists.exists) return fail('STALE_WRITE', 'Arquivo removido após a leitura; escrita recusada.', 409)
           if (exists.exists) {
             const current = await sandbox.readFile(`/workspace/${relativePath}`, { encoding: 'utf-8' })
             const currentContent = typeof current.content === 'string' ? current.content : ''
@@ -170,7 +171,7 @@ const handleStudioRpc = async (request: Request, env: Env, workspaceId: string):
         }
         const parent = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''
         if (parent !== '') await sandbox.mkdir(`/workspace/${parent}`, { recursive: true })
-        await sandbox.writeFile(`/workspace/${relativePath}`, content)
+        await sandbox.writeFile(`/workspace/${relativePath}`, content, expectedHash ?? undefined)
         return ok({ relativePath, content, hash: await sha256(content), modifiedAt: new Date().toISOString() })
       }
       case 'workspace.search': {
