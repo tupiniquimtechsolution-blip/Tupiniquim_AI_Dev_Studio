@@ -1,6 +1,9 @@
 # Tupiniquim AI Dev Studio — Project Bible
 
-Atualizado em: 2026-09-22
+Atualizado em: 2026-10-22
+
+Checkpoint da retomada cloud e diferenças do inventário RC1 histórico:
+[Backlog e status](BACKLOG_E_STATUS.md) e [ledger da execução](../RELEASE/NONLOCAL_EXECUTION_2026-10-22.md). RELEASE-GREEN não comprovado; testes locais excluídos pelo proprietário.
 
 Este diretório é o pacote documental canônico de leitura executiva e operacional do projeto. Ele **não substitui** `AGENTS.md`, `.agent/MASTER_PLAN.md`, `.agent/REQUIREMENTS.md`, ADRs, testes ou o estado real do Git; ele organiza essas fontes para reduzir perda de contexto, divergência documental e decisões baseadas em memória de chat.
 

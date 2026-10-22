@@ -336,7 +336,7 @@
 .ws-drawer.wide { width: min(760px, 100%); }
 @media (prefers-reduced-motion: no-preference) {
   .ws-drawer { animation: ws-drawer-in .22s ease; }
-  @keyframes ws-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes ws-drawer-in { from { transform: translateX(24px); } to { transform: none; } }
 }
 .ws-drawer-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--wx-line); }
 .ws-drawer-head strong { font-size: 14.5px; }

@@ -27,6 +27,9 @@ test('terminal requires confirmation and keeps independent real PTY sessions', a
   const first = (await ids())[0]
   if (first === undefined) throw new Error('No PTY event')
   await page.evaluate((terminalId) => window.studio.terminal.write({ terminalId, data: 'TUPINIQUIM_TEST_SESSION=first\r' }), first)
+  // Presence-only check; never writes or prints the gateway credential value.
+  await page.evaluate((terminalId) => window.studio.terminal.write({ terminalId, data: 'if [ -z "${TUPINIQUIM_GATEWAY_TOKEN+x}" ]; then printf absent; else printf present; fi > terminal-environment.txt\r' }), first)
+  await expect.poll(async () => page.evaluate(async () => { const result = await window.studio.workspace.read({ relativePath: 'terminal-environment.txt' }); return result.ok ? result.value.content : null })).toBe('absent')
   await page.getByRole('button', { name: 'Nova sessão', exact: true }).click()
   page.once('dialog', (dialog) => { void dialog.accept() })
   await page.getByRole('button', { name: 'Iniciar terminal', exact: true }).click()
@@ -163,25 +166,25 @@ test('HUD has keyboard modals and four responsive layouts', async ({ page }, inf
     await page.setViewportSize({ width, height: 900 })
     await expect(page.getByLabel('Mensagem ao agente')).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
-    await page.screenshot({ path: info.outputPath(`hud-${width}.png`) })
+    await page.screenshot({ animations: 'disabled', path: info.outputPath(`hud-${width}.png`) })
   }
   await page.getByRole('button', { name: 'Tema escuro', exact: true }).click()
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
-    await page.screenshot({ path: info.outputPath(`hud-dark-${width}.png`) })
+    await page.screenshot({ animations: 'disabled', path: info.outputPath(`hud-dark-${width}.png`) })
   }
   await page.setViewportSize({ width: 390, height: 900 })
   await tools.click()
   await page.getByRole('button', { name: 'Preferências', exact: true }).click()
   await expect(page.getByLabel('Atalho: Arquivos')).toBeVisible()
-  await page.screenshot({ path: info.outputPath('preferences-dark-mobile.png') })
+  await page.screenshot({ animations: 'disabled', path: info.outputPath('preferences-dark-mobile.png') })
   await page.keyboard.press('Escape')
   await tools.click()
   await page.getByRole('button', { name: 'Control Center', exact: true }).click()
   await page.getByRole('button', { name: 'Toolbox', exact: true }).click()
-  await page.screenshot({ path: info.outputPath('control-center-dark-mobile.png') })
+  await page.screenshot({ animations: 'disabled', path: info.outputPath('control-center-dark-mobile.png') })
 })
 
 test('real temporary filesystem supports search, edit, diff and save', async ({ page }) => {

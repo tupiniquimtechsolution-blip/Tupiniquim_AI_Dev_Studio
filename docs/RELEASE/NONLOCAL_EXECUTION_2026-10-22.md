@@ -7,12 +7,12 @@ must not be used to claim 100% of V1 or RELEASE_GREEN while any required gate la
 
 | Work package | Execution / acceptance | State |
 | --- | --- | --- |
-| Hosted UI proof | Real ephemeral Worker, Durable Object and Runtime Gateway in CI; keyboard/modal/responsive/files/search/diff/save; first run exposed Tab edge and incorrect IME test target, corrected for rerun | SUCCESS at 69fae38; 39770100780 |
-| Workers AI missing binding | Explicit ERROR/not-configured; no simulated inference | IMPLEMENTED, CI PENDING |
-| Files creation | Manual review + persisted core manifest/ONCE approval, exclusive atomic publication, replay/expiry/path confinement and negative hosted/unit regressions | IMPLEMENTED, CI PENDING |
-| Prompt Architect | Immutable versions serialized in durable object, strict shared core, full panel + hosted browser test | IMPLEMENTED, CI PENDING |
-| Preferences | Configurable/persisted opt-in navigation shortcuts; shared schema/conflict checks; server contrast/import validation and hosted persistence regression | IMPLEMENTED, CI PENDING |
-| Evidence UI | Session history/export of actual runner results; truthful unavailable/manual gates and quiet secret scan; new hosted regression | IMPLEMENTED, CI PENDING |
+| Hosted UI proof | Real ephemeral Worker, Durable Object and Runtime Gateway in CI; keyboard/modal/responsive/files/search/diff/save; first run exposed Tab edge and incorrect IME test target, corrected for rerun | SUCCESS @3e181c5; 39777254020 |
+| Workers AI missing binding | Explicit ERROR/not-configured; no simulated inference | VALIDATED @3e181c5; scope below |
+| Files creation | Manual review + persisted core manifest/ONCE approval, exclusive atomic publication, replay/expiry/path confinement and negative hosted/unit regressions | VALIDATED @3e181c5; scope below |
+| Prompt Architect | Immutable versions serialized in durable object, strict shared core, full panel + hosted browser test | VALIDATED @3e181c5; scope below |
+| Preferences | Configurable/persisted opt-in navigation shortcuts; shared schema/conflict checks; server contrast/import validation and hosted persistence regression | VALIDATED @3e181c5; scope below |
+| Evidence UI | Session history/export of actual runner results; truthful unavailable/manual gates and quiet secret scan; new hosted regression | VALIDATED @3e181c5; scope below |
 | Toolbox audit | Pinned commits + MIT licences remotely rechecked; current catalog SHA-256 recorded in SOURCE_REAUDIT_2026-10-22.md; original artifacts absent | REFERENCE AUDIT COMPLETE; original archives UNVERIFIED |
 | Terminal sessions | Four panels, explicit manual shell confirmation, gateway resource/time caps, real Linux PTY regression | IMPLEMENTED, CI PENDING |
 | Documentation/Agenor | Reconcile per-task scope and exact-SHA evidence; no unearned completion | IN PROGRESS |
@@ -71,3 +71,9 @@ Web agent proposals now require persisted approval decisions bound to the curren
 Cloud Quality 39777254105 SUCCESS and Hosted Web UI 39777254020 SUCCESS. Covers reviewed CREATE/no-overwrite, stale concurrent writes, rejection of approval downgrade/start without approval, prompt full flow, shortcut persistence/rejection, evidence export, light/dark responsive HUD and browser-back draft preservation. All hosted execution occurred in the GitHub Linux fixture. No local tests/build/install, paid inference, production deployment or physical certification.
 
 Terminal follow-up implements up to four independent panels and explicit shell confirmation. Gateway caps four active PTYs per workspace and 32 total, expires at 15min without input or 60min lifetime. New hosted test observes two real PTYs, uses synthetic shell variables/files to prove isolation and verifies close cleanup; timer regression uses fake time in remote unit tests. This new delta requires its own CI; Desktop/ConPTY remains deferred.
+
+## Documentation and subprocess boundary
+
+Project Bible entrypoint, backlog and traceability now distinguish the historical physical RC1 inventory from the proven cloud checkpoint. Remaining implementation tasks are explicitly retained; this ledger does not declare all install-independent work completed. Notion/Miro tasks #13/#20 moved to Em Andamento; #19/#24/#27/#29 retain that state with @3e181c5 evidence. No historical completion was recertified.
+
+Gateway subprocesses now receive the existing restricted environment allowlist rather than all gateway credentials. Hosted checks only token-name presence/absence in the child shell and never prints its value. This does not sandbox all host filesystem access: manual shell confirmation and trusted Runtime host remain required. New screenshots disable finite animations; drawer opacity stays integral during entry.

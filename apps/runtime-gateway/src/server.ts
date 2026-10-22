@@ -11,6 +11,7 @@ import { resolveConfinedWorkspacePath } from './workspace-path.ts'
 import { createWorkspaceFile } from './workspace-create.ts'
 import { writeWorkspaceFile } from './workspace-write.ts'
 import { terminalLifetime } from './terminal-lifetime.ts'
+import { createRestrictedEnvironment } from '../../../packages/adapters/src/secret-environment.ts'
 
 type JsonRecord = Record<string, unknown>
 
@@ -70,7 +71,7 @@ const runProcess = async (
   cwd: string,
   timeoutMs = 180_000
 ): Promise<{ code: number; stdout: string; stderr: string }> => new Promise((resolve, reject) => {
-  const child = spawn(executable, args, { cwd, windowsHide: true, env: process.env })
+  const child = spawn(executable, args, { cwd, windowsHide: true, env: createRestrictedEnvironment() })
   let stdout = ''
   let stderr = ''
   const timer = setTimeout(() => {
@@ -236,7 +237,7 @@ const attachTerminal = async (request: IncomingMessage, socket: Duplex, head: Bu
   const rows = Math.max(5, Math.min(200, Number(url.searchParams.get('rows') ?? 30)))
   const shell = process.platform === 'win32' ? (process.env.TUPINIQUIM_GATEWAY_SHELL?.trim() || 'powershell.exe') : (process.env.SHELL?.trim() || '/bin/bash')
   const args = process.platform === 'win32' ? ['-NoLogo', '-NoProfile'] : ['--noprofile', '--norc']
-  const terminal = pty.spawn(shell, args, { cwd, cols, rows, name: 'xterm-256color', env: process.env })
+  const terminal = pty.spawn(shell, args, { cwd, cols, rows, name: 'xterm-256color', env: createRestrictedEnvironment() })
   activeTerminals.set(workspaceId, count + 1)
   const lifetime = terminalLifetime(() => {
     if (!socket.destroyed) socket.write(frame(0x1, Buffer.from(JSON.stringify({ type: 'error', message: 'Sessão encerrada por limite de inatividade (15min) ou duração (60min).' }), 'utf8')))

@@ -465,3 +465,6 @@ Manager de até 4 sessões Web/Desktop com histórico visual independente e limp
 
 ## 2026-10-22 — Correção de contrato opcional
 Cloud Quality 39777878179 encontrou exactOptionalPropertyTypes no encaminhamento de platform do manager de terminais. Normalizar ausência para null ao chamar TerminalPane. Sem teste local; rerun remoto requerido.
+
+## 2026-10-22 — Checkpoint documental e higiene de ambiente
+Reconciliados README/Backlog/Matriz da Bible, preservando inventário físico e pendências reais. Gateway reutiliza createRestrictedEnvironment para comandos/PTYs em vez de herdar process.env integral. Teste hosted verifica somente ausência do nome do token no shell. Drawer entra sem fade de texto; screenshots terminam animações finitas para revisão visual fiel. Sem execução local.

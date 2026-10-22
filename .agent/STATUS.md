@@ -251,3 +251,6 @@ Novo delta serializa comparação+gravação no gateway: expectedHash obrigatór
 
 ## Terminal multissessão — 2026-10-22
 @3e181c5: Cloud Quality 39777254105 e Hosted Web UI 39777254020 SUCCESS; inclui criação/concorrência, perfis, evidências, temas e cancelamento de Voltar com buffer preservado. Próximo delta: 4 painéis de terminal independentes; confirmação antes de shell real; fechamento encerra sessões; gateway limita 4/workspace, 32 total, 15min idle/60min duração. Unit timeout com relógio controlado e hosted de 2 PTYs reais isolados adicionados. Nenhum comando/teste local; ConPTY físico não certificado.
+
+## Auditoria documental e ambiente de subprocessos — 2026-10-22
+Bible/Backlog/Matriz reconciliados com checkpoint cloud e inventário RC1 histórico; implementações ainda pendentes listadas explicitamente. Notion/Miro #13 e #20 passaram para Em Andamento; #19/#24/#27/#29 receberam evidência @3e181c5, sem conclusão física. Subprocessos gateway passam a usar allowlist de ambiente existente no adapter, excluindo token do gateway e credenciais ambientais; hosted testa apenas presença/ausência sem imprimir valores. Capturas estabilizadas ao terminar animações; drawer preserva opacidade integral. Novo delta aguarda CI.
