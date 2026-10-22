@@ -1,3 +1,5 @@
+import { uiProfileSchema, uiProfileImportInputSchema } from '../../../packages/contracts/src/settings'
+import { contrastRatio } from '../../../packages/core/src/profile-contrast'
 import { aiText as sharedAiText } from './ai-text'
 import { WEB_PROVIDER, resolveWebModel } from './model-catalog'
 import { gateLockReason, getRemoteSandbox, remoteRuntimeStatus, type RemoteRuntimeConfig } from './remote-runtime'
@@ -367,10 +369,32 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ action: action.slice('full.prompt.'.length), input })
       })
-    case 'full.settings.get': { let profile = await stateGet<JsonRecord>(env, workspaceId, 'ui-profile'); if (profile === null) { profile = defaultProfile(); await statePut(env, workspaceId, 'ui-profile', profile) } return ok(profile) }
-    case 'full.settings.save': { if (input.profile === null || typeof input.profile !== 'object') return fail('INVALID_PROFILE', 'Perfil inválido.'); const profile = { ...(input.profile as JsonRecord), updatedAt: now }; await statePut(env, workspaceId, 'ui-profile', profile); return ok(profile) }
-    case 'full.settings.export': return ok(JSON.stringify(await stateGet<JsonRecord>(env, workspaceId, 'ui-profile') ?? defaultProfile(), null, 2))
-    case 'full.settings.import': { try { const profile = JSON.parse(String(input.serialized ?? '')) as JsonRecord; profile.updatedAt = now; await statePut(env, workspaceId, 'ui-profile', profile); return ok(profile) } catch { return fail('INVALID_PROFILE', 'Perfil importado não é JSON válido.') } }
+    case 'full.settings.get': {
+      const stored = await stateGet<unknown>(env, workspaceId, 'ui-profile')
+      const parsed = uiProfileSchema.safeParse(stored ?? defaultProfile())
+      if (!parsed.success) return fail('INVALID_PROFILE', 'Preferências persistidas inválidas.')
+      if (stored === null) await statePut(env, workspaceId, 'ui-profile', parsed.data)
+      return ok(parsed.data)
+    }
+    case 'full.settings.save':
+    case 'full.settings.import': {
+      let candidate: unknown = input.profile
+      if (action === 'full.settings.import') {
+        const serialized = uiProfileImportInputSchema.safeParse(input)
+        if (!serialized.success) return fail('INVALID_PROFILE', 'Importação inválida.')
+        try { candidate = JSON.parse(serialized.data.serialized) as unknown } catch { return fail('INVALID_PROFILE', 'Perfil importado não é JSON válido.') }
+      }
+      const parsed = uiProfileSchema.safeParse(candidate)
+      if (!parsed.success) return fail('INVALID_PROFILE', parsed.error.issues.map((issue) => issue.message).join(' '))
+      const profile = { ...parsed.data, updatedAt: now }
+      if (contrastRatio(profile.theme.text, profile.theme.background) < 4.5 || contrastRatio(profile.theme.accent, profile.theme.background) < 3) return fail('INVALID_PROFILE', 'Contraste do perfil abaixo de WCAG AA.')
+      await statePut(env, workspaceId, 'ui-profile', profile)
+      return ok(profile)
+    }
+    case 'full.settings.export': {
+      const parsed = uiProfileSchema.safeParse(await stateGet<unknown>(env, workspaceId, 'ui-profile') ?? defaultProfile())
+      return parsed.success ? ok(JSON.stringify(parsed.data, null, 2)) : fail('INVALID_PROFILE', 'Preferências persistidas inválidas.')
+    }
     case 'full.visual.list': return ok(await stateGet<JsonRecord[]>(env, workspaceId, 'visual-assets') ?? [])
     case 'full.visual.add': { const items = await stateGet<JsonRecord[]>(env, workspaceId, 'visual-assets') ?? []; const asset = { ...input, id: crypto.randomUUID(), createdAt: now }; await statePut(env, workspaceId, 'visual-assets', [...items, asset]); return ok(asset) }
     case 'full.visual.use': { const items = await stateGet<JsonRecord[]>(env, workspaceId, 'visual-assets') ?? []; const asset = items.find((item) => item.id === input.assetId); return asset === undefined ? fail('VISUAL_ASSET_NOT_FOUND', 'Asset visual não encontrado.', 404) : ok(asset) }

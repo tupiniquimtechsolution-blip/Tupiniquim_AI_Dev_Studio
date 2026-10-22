@@ -1,3 +1,5 @@
+import { ShortcutPreferences } from '../components/ShortcutPreferences'
+import { shortcutActions, shortcutsSchema, type Shortcuts } from '../../../../../../packages/contracts/src/shortcuts'
 import { Activity, Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, FolderTree, GitBranch, LayoutPanelLeft, Save, Settings2, ShieldCheck, Sparkles, TerminalSquare, X } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AIProviderKind, AIStatus, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, ProposalStatus, SystemInfo, WorkspaceWriteProposal } from '@tupiniquim/contracts'
@@ -32,7 +34,7 @@ const modes: Array<{ mode: Mode; label: string }> = [
   { mode: 'REVIEW', label: 'Review' }, { mode: 'DEBUG', label: 'Debug' }, { mode: 'PROMPT', label: 'Prompt' }, { mode: 'VISUAL', label: 'Visual' }
 ]
 
-type StudioTool = 'files' | 'terminal' | 'git' | 'activity' | 'prompts'
+type StudioTool = 'files' | 'terminal' | 'git' | 'activity' | 'prompts' | 'preferences'
 
 /** Espelho sanitizado do executionRuntime do /api/health (nunca contém token). */
 export interface ExecutionRuntimeStatusPayload {
@@ -86,6 +88,14 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const [runtime, setRuntime] = useState<ExecutionRuntimeView>(executionRuntimeView(null))
   const [runtimeStatus, setRuntimeStatus] = useState<ExecutionRuntimeStatusPayload | null>(null)
   const [tool, setTool] = useState<StudioTool | null>(null)
+  const [shortcuts, setShortcuts] = useState<Shortcuts>({})
+  useEffect(() => {
+    let active = true
+    void window.studio.settings.get().then((result) => {
+      if (active && result.ok) { const parsed = shortcutsSchema.safeParse(result.value.shortcuts ?? {}); if (parsed.success) setShortcuts(parsed.data) }
+    }).catch(() => undefined)
+    return () => { active = false }
+  }, [])
   const [promptDirty, setPromptDirty] = useState(false)
   const [promptBusy, setPromptBusy] = useState(false)
   const [showControlCenter, setShowControlCenter] = useState(false)
@@ -504,7 +514,18 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const conversationEmpty = conversation.length === 0 && planned === null && proposal === null
 
   return (
-    <div className="web-studio">
+    <div className="web-studio" onKeyDown={(event) => {
+      if (event.defaultPrevented || event.repeat || event.nativeEvent.isComposing || event.getModifierState('AltGraph') || tool !== null || showControlCenter) return
+      const target = event.target as HTMLElement
+      if (target.closest('input, textarea, select, [contenteditable="true"], .monaco-editor')) return
+      const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
+      if (!mod || !event.altKey || event.shiftKey) return
+      const action = shortcutActions.find((key) => shortcuts[key] === `Mod+Alt+${event.code}`)
+      if (action === undefined) return
+      event.preventDefault()
+      if (action === 'composer') composerRef.current?.focus()
+      else openTool(action)
+    }}>
       <header className="ws-topbar">
         <div className="brand"><span className="ws-brand-mark" aria-hidden="true"><Braces size={16} /></span><strong>Tupiniquim</strong><span className="ws-brand-sub">DEV AI STUDIO</span></div>
         <button className="project-switcher" title="Workspace lógico da sessão Web" onClick={() => { void syncWorkspace() }}><Boxes size={14} aria-hidden="true" /><span>{workspaceName}</span><ChevronsUpDown size={12} aria-hidden="true" /></button>
@@ -548,6 +569,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                 <button className={tool === 'terminal' ? 'active' : ''} aria-pressed={tool === 'terminal'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('terminal') }}><TerminalSquare size={16} aria-hidden="true" /><span>Terminal</span></button>
                 <button className={tool === 'git' ? 'active' : ''} aria-pressed={tool === 'git'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('git') }}><GitBranch size={16} aria-hidden="true" /><span>Git</span></button>
                 <button className={tool === 'activity' ? 'active' : ''} aria-pressed={tool === 'activity'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('activity') }}><Activity size={16} aria-hidden="true" /><span>Atividade</span></button>
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('preferences') }}><Settings2 size={16} aria-hidden="true" /><span>Preferências</span></button>
                 <button className={tool === 'prompts' ? 'active' : ''} aria-pressed={tool === 'prompts'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('prompts') }}><Braces size={16} aria-hidden="true" /><span>Prompt Architect</span></button>
               </nav>
               <span className="ws-tools-group-title ws-tools-group-separator">Configurações e áreas</span>
@@ -673,7 +695,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
             className={`ws-drawer${tool === 'terminal' ? ' wide' : ''}`}
             role="dialog"
             aria-modal="true"
-            aria-label={tool === 'files' ? 'Arquivos do workspace' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : 'Atividade da sessão'}
+            aria-label={tool === 'files' ? 'Arquivos do workspace' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : tool === 'preferences' ? 'Preferências' : 'Atividade da sessão'}
             onCancel={(event) => { event.preventDefault(); closeTool() }}
             onClick={(event) => {
               if (event.target !== event.currentTarget) return
@@ -682,11 +704,11 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
             }}
           >
             <header className="ws-drawer-head">
-              <strong>{tool === 'files' ? 'Arquivos' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : 'Atividade'}</strong>
+              <strong>{tool === 'files' ? 'Arquivos' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : tool === 'preferences' ? 'Preferências' : 'Atividade'}</strong>
               <span className={`ws-runtime-chip tone-${runtime.tone}`}>{runtime.label}</span>
               <button className="ws-icon-btn" autoFocus title="Fechar painel" disabled={tool === 'prompts' && promptBusy} onClick={closeTool}><X size={16} aria-hidden="true" /></button>
             </header>
-            {!runtime.osCapabilities && tool !== 'activity' && tool !== 'prompts'
+            {!runtime.osCapabilities && tool !== 'activity' && tool !== 'prompts' && tool !== 'preferences'
               ? (
                   <div className="ws-runtime-lock" role="status">
                     <TerminalSquare size={22} aria-hidden="true" />
@@ -701,6 +723,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                 )
               : (
                   <div className="ws-drawer-body">
+                    {tool === 'preferences' && <ShortcutPreferences onSaved={setShortcuts} />}
                     {tool === 'prompts' && <Suspense fallback={<p role="status">Carregando Prompt Architect…</p>}><PromptPane onDirtyChange={setPromptDirty} onBusyChange={setPromptBusy} /></Suspense>}
                     {tool === 'files' && (
                       <div className="ws-files">

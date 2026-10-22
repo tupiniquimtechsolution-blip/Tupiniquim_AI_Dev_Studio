@@ -230,3 +230,7 @@ Capacidades a certificar quando conectado:
 - CONTAINERS PAID: REMOVIDO
 - REMOTE RUNTIME: IMPLEMENTED / NOT CONFIGURED
 - NOVA MENSALIDADE OBRIGATÓRIA: ZERO dentro das franquias Free
+
+## Preferências Web — 2026-10-22
+Atalhos opt-in de navegação persistidos no perfil; sem execução de comandos. Contrato compartilhado rejeita duplicatas e combinações fora do allowlist. Worker valida save/import/get/export e contraste WCAG. Novo teste hosted cobre persistência, acionamento, suspensão ao digitar e rejeições do servidor. CI remoto pendente; sem testes locais.
+

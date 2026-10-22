@@ -441,3 +441,7 @@ Merge Wave17 + Google Tasks; entrypoint de packaging corrigido, Monaco offline, 
 
 ## 2026-10-22 — Hosted browser evidence and CI repair
 Hosted Web UI 39770100780 SUCCESS at 69fae38. Cloud Quality 39770100616 stopped at lint: three test storage methods declared async without await. Return explicit resolved promises; no local tests executed. Remaining gates await rerun.
+
+## 2026-10-22 — Preferências e fronteira de validação
+Painel de atalhos Web, binding explícito por ação, desativado por padrão; preserva perfis legados. Save/import Web agora validam schema e contraste compartilhado com desktop; perfil inválido não é persistido. Regressões unitárias e hosted adicionadas para execução exclusiva no GitHub.
+

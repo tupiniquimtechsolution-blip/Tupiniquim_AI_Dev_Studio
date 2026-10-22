@@ -7,6 +7,39 @@ const enter = async (page: Page): Promise<void> => {
   await expect(page.getByRole('heading', { name: 'Em que vamos trabalhar?' })).toBeVisible()
 }
 
+test('preferences persist shortcuts and reject invalid profiles on the server', async ({ page }) => {
+  await enter(page)
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click()
+  await page.getByLabel('Atalho: Atividade').selectOption('Mod+Alt+KeyJ')
+  await page.getByLabel('Atalho: Arquivos').selectOption('Mod+Alt+KeyJ')
+  await page.getByRole('button', { name: 'Salvar atalhos' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Atalho duplicado.' })).toBeVisible()
+  await page.getByLabel('Atalho: Arquivos').selectOption('')
+  await page.getByRole('button', { name: 'Salvar atalhos' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Atalhos salvos.' })).toBeVisible()
+  await page.reload()
+  await expect(page.locator('.web-studio')).toBeVisible()
+  await page.locator('.ws-tools-menu summary').focus()
+  await page.keyboard.press('Control+Alt+j')
+  await expect(page.getByRole('dialog', { name: 'Atividade da sessão' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await page.getByLabel('Mensagem ao agente').focus()
+  await page.keyboard.press('Control+Alt+j')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  const rejected = await page.evaluate(async () => {
+    const current = await window.studio.settings.get()
+    if (!current.ok) throw new Error('Missing profile')
+    const invalid = { ...current.value, theme: { ...current.value.theme, text: current.value.theme.background } }
+    const lowContrast = await window.studio.settings.save({ profile: invalid })
+    const duplicate = await window.studio.settings.save({ profile: { ...current.value, shortcuts: { files: 'Mod+Alt+KeyF', activity: 'Mod+Alt+KeyF' } } })
+    const imported = await window.studio.settings.import({ serialized: JSON.stringify({ ...current.value, density: 'INVALID' }) })
+    const preserved = await window.studio.settings.get()
+    return { lowContrast: lowContrast.ok, duplicate: duplicate.ok, imported: imported.ok, preserved: preserved.ok && preserved.value.shortcuts?.activity }
+  })
+  expect(rejected).toEqual({ lowContrast: false, duplicate: false, imported: false, preserved: 'Mod+Alt+KeyJ' })
+})
+
 test('HUD has keyboard modals and four responsive layouts', async ({ page }, info) => {
   await enter(page)
   const tools = page.locator('.ws-tools-menu summary')

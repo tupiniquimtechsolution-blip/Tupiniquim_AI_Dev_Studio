@@ -7,11 +7,11 @@ must not be used to claim 100% of V1 or RELEASE_GREEN while any required gate la
 
 | Work package | Execution / acceptance | State |
 | --- | --- | --- |
-| Hosted UI proof | Real ephemeral Worker, Durable Object and Runtime Gateway in CI; keyboard/modal/responsive/files/search/diff/save; first run exposed Tab edge and incorrect IME test target, corrected for rerun | FIXED, RERUN PENDING |
+| Hosted UI proof | Real ephemeral Worker, Durable Object and Runtime Gateway in CI; keyboard/modal/responsive/files/search/diff/save; first run exposed Tab edge and incorrect IME test target, corrected for rerun | SUCCESS at 69fae38; 39770100780 |
 | Workers AI missing binding | Explicit ERROR/not-configured; no simulated inference | IMPLEMENTED, CI PENDING |
 | Files creation | Approved plan/effect, create-only atomic operation, no overwrite; negative tests | PENDING |
 | Prompt Architect | Immutable versions serialized in durable object, strict shared core, full panel + hosted browser test | IMPLEMENTED, CI PENDING |
-| Preferences | Configurable/persisted shortcuts, validation and conflict handling | PENDING |
+| Preferences | Configurable/persisted opt-in navigation shortcuts; shared schema/conflict checks; server contrast/import validation and hosted persistence regression | IMPLEMENTED, CI PENDING |
 | Evidence UI | Display actual runner records; unavailable capabilities remain unavailable | PENDING |
 | Toolbox audit | Source/licence/hashes of versioned packs; reconcile historical branches without bulk merges | PENDING |
 | Documentation/Agenor | Reconcile per-task scope and exact-SHA evidence; no unearned completion | IN PROGRESS |
