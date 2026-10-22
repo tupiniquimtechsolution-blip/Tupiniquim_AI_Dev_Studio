@@ -445,3 +445,5 @@ Hosted Web UI 39770100780 SUCCESS at 69fae38. Cloud Quality 39770100616 stopped 
 ## 2026-10-22 — Preferências e fronteira de validação
 Painel de atalhos Web, binding explícito por ação, desativado por padrão; preserva perfis legados. Save/import Web agora validam schema e contraste compartilhado com desktop; perfil inválido não é persistido. Regressões unitárias e hosted adicionadas para execução exclusiva no GitHub.
 
+## 2026-10-22 — Evidências fiéis no gateway
+Gates manuais não retornam PASS por grep/build parcial. Supply-chain indisponível sem aprovação de instalação. Quality inclui lint/typecheck/unit/integration/security/build; falha interrompe sequência. Secret scan usa modo quiet e não retorna linhas/caminhos sensíveis; resultados de comandos expõem apenas execução e exit code. Regressões remotas adicionadas. Sem execução local.

@@ -234,3 +234,5 @@ Capacidades a certificar quando conectado:
 ## Preferências Web — 2026-10-22
 Atalhos opt-in de navegação persistidos no perfil; sem execução de comandos. Contrato compartilhado rejeita duplicatas e combinações fora do allowlist. Worker valida save/import/get/export e contraste WCAG. Novo teste hosted cobre persistência, acionamento, suspensão ao digitar e rejeições do servidor. CI remoto pendente; sem testes locais.
 
+## Fronteira dos gates — 2026-10-22
+Cloud Quality 39774664469 SUCCESS @89d51aa (preferências); hosted pendente. Gateway agora distingue NOT_AVAILABLE de aceite manual e não devolve conteúdo de scanner. Novo delta aguarda gates remotos. Notion/Miro #27 e #29 atualizados como Em Andamento, preservando aceite físico/produção pendente.

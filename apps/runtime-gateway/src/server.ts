@@ -6,6 +6,7 @@ import path from 'node:path'
 import { spawn } from 'node:child_process'
 import * as pty from 'node-pty'
 import { searchWorkspaceFiles } from './workspace-search.ts'
+import { executeGatewayGate } from './gate-runner.ts'
 
 type JsonRecord = Record<string, unknown>
 
@@ -116,34 +117,6 @@ const searchWorkspace = async (workspaceId: string, query: string, limit: number
   return searchWorkspaceFiles(root, query, limit)
 }
 
-const gate = async (workspaceId: string, gateId: string): Promise<{ state: 'PASS' | 'FAIL'; evidence: string }> => {
-  const cwd = await workspaceRoot(workspaceId)
-  const steps: Record<string, Array<[string, string[]]>> = {
-    'quality-gates': [[executable('pnpm'), ['lint']], [executable('pnpm'), ['typecheck']], [executable('pnpm'), ['test:unit']]],
-    'dependency-audit': [[executable('pnpm'), ['audit', '--audit-level', 'high']]],
-    'security-review': [[executable('pnpm'), ['test:security']]],
-    'architecture-review': [[executable('pnpm'), ['typecheck']]],
-    'supply-chain': [[executable('pnpm'), ['install', '--frozen-lockfile']]],
-    'release-checklist': [[executable('pnpm'), ['build']]],
-    'privacy-lgpd': [['git', ['grep', '-niE', '(lgpd|privacy|privacidade)', '--', 'AGENTS.md', 'docs', '.agent']]],
-    'accessibility-wcag': [['git', ['grep', '-niE', '(aria-|accessib|wcag)', '--', 'apps', 'packages']]]
-  }
-  if (gateId === 'secret-scan') {
-    const result = await runProcess('git', ['grep', '-nE', '(sk-(proj-)?[A-Za-z0-9_-]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)', '--', '.', ':!pnpm-lock.yaml'], cwd)
-    if (result.code === 1) return { state: 'PASS', evidence: 'Nenhum padrão de secret encontrado.' }
-    return { state: 'FAIL', evidence: (result.stdout + '\n' + result.stderr).trim().slice(-12_000) || `git grep terminou com código ${result.code}` }
-  }
-  const commands = steps[gateId]
-  if (!commands) throw new Error('Gate desconhecido.')
-  let evidence = ''
-  for (const [bin, args] of commands) {
-    const result = await runProcess(bin, args, cwd)
-    evidence += `$ ${bin} ${args.join(' ')}\n${result.stdout}\n${result.stderr}\n`
-    if (result.code !== 0) return { state: 'FAIL', evidence: evidence.trim().slice(-12_000) }
-  }
-  return { state: 'PASS', evidence: evidence.trim().slice(-12_000) || 'Gate concluído.' }
-}
-
 const stringArg = (record: JsonRecord, key: string, fallback = ''): string => {
   const value = record[key]
   return typeof value === 'string' ? value : fallback
@@ -208,7 +181,7 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
     if (result.code !== 0) throw new Error(result.stderr || 'Falha ao clonar workspace.')
     return { cloned: true, detail: result.stdout || result.stderr || 'Clone concluído.' }
   }
-  if (method === 'control.gate') return gate(workspaceId, stringArg(args, 'gateId'))
+  if (method === 'control.gate') return executeGatewayGate(stringArg(args, 'gateId'), async (bin, argv) => runProcess(bin === 'pnpm' ? executable('pnpm') : bin, argv, await workspaceRoot(workspaceId)))
   if (method === 'workspace.backup-create') {
     const id = createHash('sha256').update(`${workspaceId}:${Date.now()}:${stringArg(args, 'name')}`).digest('hex').slice(0, 32)
     const source = await workspaceRoot(workspaceId)

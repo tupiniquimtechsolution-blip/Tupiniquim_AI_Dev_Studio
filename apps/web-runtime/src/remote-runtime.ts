@@ -152,7 +152,7 @@ export const getRemoteSandbox = (env: RemoteRuntimeConfig, workspaceId: string) 
       runtimeRpc(env, workspaceId, 'git.diff', { relativePath }),
     bootstrapRepo: async (repository: string, ref: string): Promise<{ cloned: boolean; detail: string }> =>
       runtimeRpc(env, workspaceId, 'workspace.bootstrap-repo', { repository, ref }),
-    runGate: async (gateId: string): Promise<{ state: 'PASS' | 'FAIL'; evidence: string }> =>
+    runGate: async (gateId: string): Promise<{ state: 'PASS' | 'FAIL' | 'NOT_AVAILABLE'; evidence: string }> =>
       runtimeRpc(env, workspaceId, 'control.gate', { gateId }),
     createBackup: async (options: { dir: string; name: string; ttl: number; gitignore: boolean }): Promise<JsonRecord> =>
       runtimeRpc(env, workspaceId, 'workspace.backup-create', options),
