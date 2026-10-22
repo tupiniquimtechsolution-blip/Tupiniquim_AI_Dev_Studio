@@ -7,6 +7,8 @@ import { spawn } from 'node:child_process'
 import * as pty from 'node-pty'
 import { searchWorkspaceFiles } from './workspace-search.ts'
 import { executeGatewayGate } from './gate-runner.ts'
+import { resolveConfinedWorkspacePath } from './workspace-path.ts'
+import { createWorkspaceFile } from './workspace-create.ts'
 
 type JsonRecord = Record<string, unknown>
 
@@ -42,13 +44,7 @@ const workspaceRoot = async (workspaceId: string): Promise<string> => {
 }
 
 const resolveWorkspacePath = async (workspaceId: string, requested: string): Promise<string> => {
-  const root = await workspaceRoot(workspaceId)
-  const relative = requested.replace(/\\/g, '/').replace(/^\/workspace\/?/, '').replace(/^\/+/, '')
-  if (relative.includes('\0') || relative.split('/').some((part) => part === '..')) throw new Error('Caminho inválido.')
-  const target = path.resolve(root, relative)
-  const rootPrefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
-  if (target !== root && !target.startsWith(rootPrefix)) throw new Error('Caminho fora do workspace.')
-  return target
+  return resolveConfinedWorkspacePath(await workspaceRoot(workspaceId), requested)
 }
 
 const readBody = async (request: IncomingMessage): Promise<JsonRecord> => {
@@ -142,6 +138,10 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
     return null
   }
   if (method === 'fs.read-file') return { content: await fs.readFile(await resolveWorkspacePath(workspaceId, stringArg(args, 'path')), 'utf8') }
+  if (method === 'fs.create-file') {
+    await createWorkspaceFile(await workspaceRoot(workspaceId), stringArg(args, 'path'), stringArg(args, 'content'))
+    return null
+  }
   if (method === 'fs.write-file') {
     const target = await resolveWorkspacePath(workspaceId, stringArg(args, 'path'))
     await fs.mkdir(path.dirname(target), { recursive: true })

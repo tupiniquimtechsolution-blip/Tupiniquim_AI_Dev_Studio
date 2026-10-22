@@ -1,4 +1,5 @@
 import { ShortcutPreferences } from '../components/ShortcutPreferences'
+import { WorkspaceCreatePane } from '../components/WorkspaceCreatePane'
 import { shortcutActions, shortcutsSchema, type Shortcuts } from '../../../../../../packages/contracts/src/shortcuts'
 import { Activity, Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, FolderTree, GitBranch, LayoutPanelLeft, Save, Settings2, ShieldCheck, Sparkles, TerminalSquare, X } from 'lucide-react'
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -728,6 +729,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                     {tool === 'files' && (
                       <div className="ws-files">
                         <div className="ws-files-tree">
+                          <WorkspaceCreatePane onCreated={() => { void syncWorkspace() }} />
                           <WorkspaceFileBrowser entries={files} selected={document?.relativePath} onSelect={(path) => void openFile(path)} onRefresh={() => void syncWorkspace()} />
                         </div>
                         <div className="ws-files-editor">

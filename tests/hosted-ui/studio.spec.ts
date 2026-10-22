@@ -7,6 +7,32 @@ const enter = async (page: Page): Promise<void> => {
   await expect(page.getByRole('heading', { name: 'Em que vamos trabalhar?' })).toBeVisible()
 }
 
+test('manual file creation requires review and never replaces an existing file', async ({ page }) => {
+  await enter(page)
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Arquivos', exact: true }).click()
+  await page.getByText('Novo arquivo', { exact: true }).click()
+  await page.getByLabel('Caminho do novo arquivo').fill('approved-hosted.txt')
+  await page.getByLabel('Conteúdo do novo arquivo').fill('Conteúdo revisado no navegador')
+  await page.getByRole('button', { name: 'Preparar revisão', exact: true }).click()
+  await expect(page.getByLabel('Conteúdo do novo arquivo')).toHaveAttribute('readonly', '')
+  const absent = await page.evaluate(() => window.studio.workspace.read({ relativePath: 'approved-hosted.txt' }))
+  expect(absent.ok).toBe(false)
+  await page.getByRole('button', { name: 'Aprovar e criar arquivo' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Arquivo criado: approved-hosted.txt' })).toBeVisible()
+  const original = await page.evaluate(() => window.studio.workspace.read({ relativePath: 'approved-hosted.txt' }))
+  expect(original.ok && original.value.content).toBe('Conteúdo revisado no navegador')
+  const denied = await page.evaluate(async () => {
+    const prepared = await window.studio.workspace.prepareCreate?.({ relativePath: 'approved-hosted.txt', content: 'tentativa de sobrescrita' })
+    if (!prepared?.ok) throw new Error('No review')
+    const result = await window.studio.workspace.approveCreate?.({ reviewId: prepared.value.id })
+    const bypass = await window.studio.planning.applyWorkspaceWrite({ executionId: crypto.randomUUID(), stepId: crypto.randomUUID(), effectId: crypto.randomUUID(), relativePath: 'approved-hosted.txt', content: 'bypass' })
+    const preserved = await window.studio.workspace.read({ relativePath: 'approved-hosted.txt' })
+    return { replacement: result?.ok, bypass: bypass.ok, preserved: preserved.ok && preserved.value.content }
+  })
+  expect(denied).toEqual({ replacement: false, bypass: false, preserved: 'Conteúdo revisado no navegador' })
+})
+
 test('Evidence UI records actual unavailable gates without claiming acceptance', async ({ page }) => {
   await enter(page)
   await page.locator('.ws-tools-menu summary').click()

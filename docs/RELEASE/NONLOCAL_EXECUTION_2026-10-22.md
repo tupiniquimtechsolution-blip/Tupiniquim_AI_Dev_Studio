@@ -9,7 +9,7 @@ must not be used to claim 100% of V1 or RELEASE_GREEN while any required gate la
 | --- | --- | --- |
 | Hosted UI proof | Real ephemeral Worker, Durable Object and Runtime Gateway in CI; keyboard/modal/responsive/files/search/diff/save; first run exposed Tab edge and incorrect IME test target, corrected for rerun | SUCCESS at 69fae38; 39770100780 |
 | Workers AI missing binding | Explicit ERROR/not-configured; no simulated inference | IMPLEMENTED, CI PENDING |
-| Files creation | Approved plan/effect, create-only atomic operation, no overwrite; negative tests | PENDING |
+| Files creation | Manual review + persisted core manifest/ONCE approval, exclusive atomic publication, replay/expiry/path confinement and negative hosted/unit regressions | IMPLEMENTED, CI PENDING |
 | Prompt Architect | Immutable versions serialized in durable object, strict shared core, full panel + hosted browser test | IMPLEMENTED, CI PENDING |
 | Preferences | Configurable/persisted opt-in navigation shortcuts; shared schema/conflict checks; server contrast/import validation and hosted persistence regression | IMPLEMENTED, CI PENDING |
 | Evidence UI | Session history/export of actual runner results; truthful unavailable/manual gates and quiet secret scan; new hosted regression | IMPLEMENTED, CI PENDING |
@@ -46,3 +46,9 @@ retains immutable IDs/versions, rejects missing/unknown variables and provides
 validation/compilation/comparison/export through the new panel. Unit regression
 includes concurrent versions and object restart; hosted browser regression
 covers the end-to-end panel. No earlier lost versions can be reconstructed.
+
+## Remote checkpoint before reviewed creation
+
+Head 21e75fe: Cloud Quality 39775354329 SUCCESS; Hosted Web UI 39775354325 SUCCESS. Includes preferences persistence and server rejection paths, evidence export and truthful unavailable gates. Reviewed CREATE is a later delta requiring its own checks. No production or physical certification implied.
+
+CREATE requires an existing parent directory. Failed/expired reviews require preparing a new review; no automatic overwrite/retry. Gateway path checks assume the host is trusted against concurrent filesystem tampering by another privileged process. Original agent proposal materialization remains a separate path and still needs its own hardening/acceptance; manual CREATE evidence must not certify it.

@@ -450,3 +450,6 @@ Gates manuais não retornam PASS por grep/build parcial. Supply-chain indisponí
 
 ## 2026-10-22 — Evidências da sessão e reauditoria de fontes
 Control Center mantém até 50 resultados reais nesta sessão e exporta JSON. Erro de transporte = NOT_AVAILABLE, sem PASS/FAIL inventado. Hosted regression não executa comandos: gate manual retorna indisponibilidade real. Fontes pinadas do Knowledge Pack e MIT confirmados via GitHub; hashes dos catálogos registrados, arquivos originais ausentes explicitamente não revalidados.
+
+## 2026-10-22 — CREATE aprovado, sem sobrescrita
+UI Web Novo arquivo prepara revisão imutável, exibe caminho/conteúdo/hash/risco/origem usuário, exige aprovação explícita. DO usa PlanApprovalService, scope ONCE, claim/complete effect, registro TOOL e replay guard. Gateway usa temporário irmão + link exclusivo. Regressões para concorrência, persistência após restart, expiração/injeção e UI real. Resolvedor gateway rejeita links e caminhos Windows ambíguos. Não concede proveniência de agente a rascunho humano. Nenhum teste local.

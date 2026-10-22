@@ -14,6 +14,7 @@ import type {
   VisualAsset,
   WorkspaceWriteProposal
 } from '@tupiniquim/contracts'
+import type { WorkspaceCreateReview } from '../../../../../packages/contracts/src/workspace-create'
 
 const WORKSPACE_KEY = 'tupiniquim.web.workspace-id'
 const MODEL_KEY = 'tupiniquim.web.model'
@@ -61,6 +62,8 @@ const rpc = async <T>(action: string, input?: unknown): Promise<Result<T>> => {
 const sleep = async (milliseconds: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 
 export const installWebFullOverrides = (): void => {
+  window.studio.workspace.prepareCreate = (input) => rpc<WorkspaceCreateReview>('full.workspace.prepare-create', input)
+  window.studio.workspace.approveCreate = (input) => rpc('full.workspace.approve-create', input)
   const agentListeners = new Set<(event: AIEvent) => void>()
   const proposalListeners = new Set<(proposal: WorkspaceWriteProposal) => void>()
 

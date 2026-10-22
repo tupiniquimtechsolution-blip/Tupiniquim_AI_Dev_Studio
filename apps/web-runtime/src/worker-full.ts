@@ -254,6 +254,12 @@ const googleFetch = async (env: Env, workspaceId: string, path: string, init: Re
 const handleStateRpc = async (request: Request, env: Env, workspaceId: string, action: string, input: JsonRecord): Promise<Response | null> => {
   const now = new Date().toISOString()
   switch (action) {
+    case 'full.workspace.prepare-create':
+    case 'full.workspace.approve-create': {
+      const runtime = await remoteRuntimeStatus(env)
+      if (runtime.state !== 'READY') return fail('REMOTE_RUNTIME_OFFLINE', 'Runtime indisponível para criar arquivos.', 503, true)
+      return stateStub(env, workspaceId).fetch('https://state.local/workspace-create', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId, action: action === 'full.workspace.prepare-create' ? 'prepare' : 'approve', input }) })
+    }
     case 'full.workspace.bootstrap': {
       const runtime = await remoteRuntimeStatus(env)
       if (runtime.state !== 'READY') {

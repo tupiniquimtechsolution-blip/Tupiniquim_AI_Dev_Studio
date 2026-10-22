@@ -1,4 +1,6 @@
 import { PromptArchitect } from '../../../packages/core/src/prompt-architect'
+import { WorkspaceCreateService } from './workspace-create'
+import { getRemoteSandbox, type RemoteRuntimeConfig } from './remote-runtime'
 import { promptSaveInputSchema, promptCompileInputSchema, promptCompareInputSchema, promptIdInputSchema, promptLintInputSchema, promptTemplateSchema } from '../../../packages/contracts/src/prompt'
 
 type DurableStorage = {
@@ -15,7 +17,10 @@ const json = (body: unknown, init: ResponseInit = {}): Response => Response.json
 
 export class WebState {
   private promptQueue: Promise<void> = Promise.resolve()
-  constructor(private readonly state: DurableState) {}
+  private readonly fileCreation: WorkspaceCreateService
+  constructor(private readonly state: DurableState, private readonly env: RemoteRuntimeConfig = {}) {
+    this.fileCreation = new WorkspaceCreateService(state.storage)
+  }
 
   private async promptRequest(request: Request): Promise<Response> {
     const preceding = this.promptQueue
@@ -49,6 +54,16 @@ export class WebState {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname === '/workspace-create' && request.method === 'POST') {
+      try {
+        const body = await request.json() as { action: string; input: unknown; workspaceId: string }
+        if (!/^[a-zA-Z0-9_-]{8,96}$/.test(body.workspaceId)) throw new Error('Workspace inválido.')
+        const sandbox = getRemoteSandbox(this.env, body.workspaceId)
+        if (body.action !== 'prepare' && body.action !== 'approve') throw new Error('Ação inválida.')
+        const value = body.action === 'prepare' ? await this.fileCreation.prepare(body.input) : await this.fileCreation.approve(body.input, (path, content) => sandbox.createFile(path, content))
+        return json({ ok: true, value })
+      } catch { return json({ ok: false, error: { code: 'WORKSPACE_CREATE_FAILED', message: 'Criação não confirmada. Verifique caminho, diretório pai, arquivo existente e validade da revisão. Para tentar novamente, prepare uma nova revisão.', retryable: false } }, { status: 409 }) }
+    }
     if (url.pathname === '/prompt' && request.method === 'POST') return this.promptRequest(request)
     const key = url.searchParams.get('key')?.trim() ?? ''
     if (key === '' || key.length > 512) return json({ ok: false, error: 'INVALID_KEY' }, { status: 400 })

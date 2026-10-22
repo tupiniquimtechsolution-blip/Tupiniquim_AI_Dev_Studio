@@ -239,3 +239,6 @@ Cloud Quality 39774664469 SUCCESS @89d51aa (preferências); hosted pendente. Gat
 
 ## Continuação das evidências — 2026-10-22
 Histórico/export de resultados da sessão adicionado; pendente CI remoto. SOURCE_REAUDIT_2026-10-22 documenta commits/licenças e limites dos hashes. Hosted @89d51aa cancelado por nova revisão; não alegar sucesso desse head. Nenhum teste local ou deploy.
+
+## Criação manual revisada — 2026-10-22
+Head anterior 21e75fe: Cloud Quality 39775354329 e Hosted Web UI 39775354325 SUCCESS. Novo delta implementa CREATE manual Web com manifesto/approval ONCE do core, revisão persistida com validade de 10min, hash do conteúdo e trilha de eventos. Gateway publica arquivo completo por link exclusivo e nunca substitui destino; pai deve existir. Links/traversal/ADS/dispositivos rejeitados. Caminho legado sem manifesto bloqueado. Novo delta aguarda CI remoto; sem testes locais ou publicação.
