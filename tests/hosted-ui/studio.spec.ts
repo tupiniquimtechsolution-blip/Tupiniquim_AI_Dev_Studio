@@ -7,6 +7,21 @@ const enter = async (page: Page): Promise<void> => {
   await expect(page.getByRole('heading', { name: 'Em que vamos trabalhar?' })).toBeVisible()
 }
 
+test('Evidence UI records actual unavailable gates without claiming acceptance', async ({ page }) => {
+  await enter(page)
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Control Center', exact: true }).click()
+  await page.getByRole('button', { name: 'Toolbox', exact: true }).click()
+  await page.getByRole('button', { name: 'LGPD / Privacidade', exact: true }).click()
+  const history = page.getByRole('region', { name: 'Evidências da sessão' })
+  await expect(history).toContainText('privacy-lgpd · NOT_AVAILABLE')
+  await history.locator('summary').click()
+  await expect(history).toContainText('Nenhum executor de aceite completo registrado')
+  const downloading = page.waitForEvent('download')
+  await history.getByRole('button', { name: 'Exportar evidências da sessão' }).click()
+  expect((await downloading).suggestedFilename()).toBe('tupiniquim-session-evidence.json')
+})
+
 test('preferences persist shortcuts and reject invalid profiles on the server', async ({ page }) => {
   await enter(page)
   await page.locator('.ws-tools-menu summary').click()

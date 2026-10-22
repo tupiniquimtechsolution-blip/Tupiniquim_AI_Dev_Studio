@@ -12,8 +12,8 @@ must not be used to claim 100% of V1 or RELEASE_GREEN while any required gate la
 | Files creation | Approved plan/effect, create-only atomic operation, no overwrite; negative tests | PENDING |
 | Prompt Architect | Immutable versions serialized in durable object, strict shared core, full panel + hosted browser test | IMPLEMENTED, CI PENDING |
 | Preferences | Configurable/persisted opt-in navigation shortcuts; shared schema/conflict checks; server contrast/import validation and hosted persistence regression | IMPLEMENTED, CI PENDING |
-| Evidence UI | Display actual runner records; unavailable capabilities remain unavailable | PENDING |
-| Toolbox audit | Source/licence/hashes of versioned packs; reconcile historical branches without bulk merges | PENDING |
+| Evidence UI | Session history/export of actual runner results; truthful unavailable/manual gates and quiet secret scan; new hosted regression | IMPLEMENTED, CI PENDING |
+| Toolbox audit | Pinned commits + MIT licences remotely rechecked; current catalog SHA-256 recorded in SOURCE_REAUDIT_2026-10-22.md; original artifacts absent | REFERENCE AUDIT COMPLETE; original archives UNVERIFIED |
 | Documentation/Agenor | Reconcile per-task scope and exact-SHA evidence; no unearned completion | IN PROGRESS |
 
 External dependencies (not completed): physical Windows/ConPTY/package/provider

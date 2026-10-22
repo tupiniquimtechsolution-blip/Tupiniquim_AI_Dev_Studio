@@ -236,3 +236,6 @@ Atalhos opt-in de navegação persistidos no perfil; sem execução de comandos.
 
 ## Fronteira dos gates — 2026-10-22
 Cloud Quality 39774664469 SUCCESS @89d51aa (preferências); hosted pendente. Gateway agora distingue NOT_AVAILABLE de aceite manual e não devolve conteúdo de scanner. Novo delta aguarda gates remotos. Notion/Miro #27 e #29 atualizados como Em Andamento, preservando aceite físico/produção pendente.
+
+## Continuação das evidências — 2026-10-22
+Histórico/export de resultados da sessão adicionado; pendente CI remoto. SOURCE_REAUDIT_2026-10-22 documenta commits/licenças e limites dos hashes. Hosted @89d51aa cancelado por nova revisão; não alegar sucesso desse head. Nenhum teste local ou deploy.

@@ -447,3 +447,6 @@ Painel de atalhos Web, binding explícito por ação, desativado por padrão; pr
 
 ## 2026-10-22 — Evidências fiéis no gateway
 Gates manuais não retornam PASS por grep/build parcial. Supply-chain indisponível sem aprovação de instalação. Quality inclui lint/typecheck/unit/integration/security/build; falha interrompe sequência. Secret scan usa modo quiet e não retorna linhas/caminhos sensíveis; resultados de comandos expõem apenas execução e exit code. Regressões remotas adicionadas. Sem execução local.
+
+## 2026-10-22 — Evidências da sessão e reauditoria de fontes
+Control Center mantém até 50 resultados reais nesta sessão e exporta JSON. Erro de transporte = NOT_AVAILABLE, sem PASS/FAIL inventado. Hosted regression não executa comandos: gate manual retorna indisponibilidade real. Fontes pinadas do Knowledge Pack e MIT confirmados via GitHub; hashes dos catálogos registrados, arquivos originais ausentes explicitamente não revalidados.
