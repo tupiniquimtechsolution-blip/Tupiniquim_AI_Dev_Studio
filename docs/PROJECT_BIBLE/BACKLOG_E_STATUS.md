@@ -1,6 +1,45 @@
 # Backlog e Status Canônico
 
-Atualizado em: 2026-09-22
+Atualizado em: 2026-10-22
+
+## Checkpoint de evidência — 2026-10-22
+
+`92d05f4`: Cloud Quality `39826094603` SUCCESS + Hosted Web UI
+`39826094506` SUCCESS (**10 cenários**). Inclui os fluxos Web abaixo, terminais
+Linux reais, biblioteca visual com arquivo real/licença declarada, histórico
+persistido de até 100 receipts por workspace e consulta Git confinada (sem
+repo pai, hooks ou nomes truncados). Nenhuma instalação/teste/build local.
+
+A biblioteca visual não transforma arquivos nem comprova direitos externamente.
+Git continua somente leitura nesta UI; commit/checkpoint/restore pendentes.
+Demais pendências de implementação e homologação permanecem no ledger.
+Esse checkpoint não fecha V1, RC1 física ou RELEASE-GREEN.
+
+## Checkpoint operacional cloud anterior
+
+PR #89 DRAFT, branch `fix/hud-accessibility-release-audit-20261016`, base
+`integration/ai-lab-toolbox-unified` @ `70c0c97`. Sem merge ou deploy.
+`3e181c5` passou Cloud Quality `39777254105` e Hosted Web UI `39777254020`:
+Files create/search/edit/diff/save e concorrência, Prompt Architect completo,
+atalhos persistidos, evidências da sessão, temas responsivos e cancelamento de
+Voltar preservando buffer. Terminal multissessão/limites é delta posterior,
+aguardando evidência própria. Detalhes em
+`docs/RELEASE/NONLOCAL_EXECUTION_2026-10-22.md`.
+
+As seções RC1 abaixo preservam o inventário físico de setembro. A política atual
+é cloud-first: `.agent/MASTER_PLAN.md` registra Waves 2–5 consolidadas no escopo
+cloud, enquanto aceites físicos e de release seguem específicos. Não usar o
+inventário histórico para reabrir/reexecutar Waves nem para fechar RC1 física.
+
+Continuam pendentes implementações/aceites completos de Git commit/checkpoint/
+restore, perfis de autonomia no runtime, Research browser-second, modos/Visual
+Lab, Preview IPC/UI/package e Composer/ingestão contínua. Existem ainda gates
+externos de Runtime/Tunnel/Access/OAuth/inferência e Windows/ConPTY. Esta retomada
+não representa 100% de V1 nem conclusão de todas as implementações possíveis.
+
+Nenhuma instalação, teste, build ou startup executado na máquina do proprietário.
+Gates e testes desta retomada rodaram exclusivamente no GitHub. RELEASE-GREEN
+continua sem comprovação.
 
 Este ledger resume o que está concluído, em andamento, bloqueado e pendente. Status operacional deve ser refletido pelo Agenor no Notion/Miro, mas GitHub/evidência real continua sendo a fonte primária.
 
@@ -77,7 +116,7 @@ Homologar OAuth desktop humano e fluxo funcional sem credencial automática; sem
 ### P-V1-15 — Closeout
 Auditoria externa, changelog/known issues/test results/status/handoff, Issue #24 GREEN, checkpoint/tag Master Wave 1.
 
-## Master Wave 2 — pendente após V1
+## Master Wave 2 — escopo histórico; checkpoint cloud em MASTER_PLAN
 
 - Research Agent completo.
 - Knowledge/RAG Registry por projeto com citations.
@@ -87,7 +126,7 @@ Auditoria externa, changelog/known issues/test results/status/handoff, Issue #24
 - Skill Registry + Skill Gate (licença, custo, permissões, dependências, provenance, aprovação).
 - Catálogos de conhecimento/design como fontes não autoritativas e loadouts sob demanda.
 
-## Master Wave 3 — pendente
+## Master Wave 3 — escopo histórico; checkpoint cloud em MASTER_PLAN
 
 - Dev Studio completo e hardening.
 - Browser QA ampliado.
@@ -95,7 +134,7 @@ Auditoria externa, changelog/known issues/test results/status/handoff, Issue #24
 - Dogfood de fluxos completos de desenvolvimento.
 - Release/process hardening.
 
-## Master Wave 4 — pendente
+## Master Wave 4 — escopo histórico; checkpoint cloud em MASTER_PLAN
 
 - Materialização do Agent Registry em contratos/runtime.
 - Master Planner.
@@ -108,7 +147,7 @@ Auditoria externa, changelog/known issues/test results/status/handoff, Issue #24
 - Coding Worker consolidado.
 - Agents → Projects/Threads, equipes, loadouts e memória isolados por projeto.
 
-## Master Wave 5 — pendente
+## Master Wave 5 — escopo histórico; checkpoint cloud em MASTER_PLAN
 
 - Illustrator/Media Agent.
 - Open Generative AI capability source.

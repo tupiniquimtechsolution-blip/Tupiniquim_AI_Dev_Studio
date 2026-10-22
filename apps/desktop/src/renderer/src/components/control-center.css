@@ -7,3 +7,28 @@
 .cc-runtime.tone-danger{border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.07)}
 .cc-runtime.tone-muted{border-color:rgba(148,163,184,.3)}
 .cc-runtime small{max-width:560px;line-height:1.45}
+
+/* Native top-layer modal: contain focus, inert background and Escape. */
+dialog.control-center { padding:0; margin:auto; max-width:94vw; max-height:88dvh; }
+dialog.control-center:not([open]) { display:none; }
+.control-center::backdrop { background:rgba(3,7,18,.72); }
+.control-center :focus-visible { outline:2px solid var(--accent,#27c483); outline-offset:2px; }
+.control-center>header button { min-width:44px; min-height:44px; }
+.control-center-body>main { min-width:0; }
+.control-center .cc-card { min-width:0; flex-wrap:wrap; background:var(--raised,#182127); }
+.control-center .cc-card>div { min-width:0; overflow-wrap:anywhere; }
+.control-center .cc-stack input,.control-center .cc-stack select { min-width:0; max-width:100%; font:inherit; }
+.control-center>header small,.control-center .cc-card small,.control-center .cc-stack p,.control-center .cc-stack label { color:var(--muted,#93a4af); }
+.control-center-body>nav { background:var(--raised,#182127); }
+.control-center-body>nav button.active { border-color:var(--accent,#27c483); background:var(--surface,#11171c); }
+@media(max-width:760px) {
+  .control-center-body>main { padding:16px; }
+  .control-center-body>nav { flex-shrink:0; }
+  .control-center-body>nav button { flex-shrink:0; }
+}
+@media(pointer:coarse) { .control-center button { min-height:44px; } }
+
+.control-center .cc-evidence { background:var(--deck,var(--surface)); color:var(--text); overflow-wrap:anywhere; }
+.control-center .cc-note { background:var(--surface); color:var(--text); border-color:var(--warning); }
+.control-center .cc-badge { color:var(--text); background:var(--selected,var(--raised)); }
+.control-center details summary { min-height:44px; padding-block:10px; cursor:pointer; overflow-wrap:anywhere; }

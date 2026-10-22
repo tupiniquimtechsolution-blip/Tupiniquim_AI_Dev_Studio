@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { WorkspaceCreateReview, workspaceCreateInputSchema, workspaceCreateApprovalSchema } from './workspace-create'
 import type { Result } from './result'
 import { aiProviderKindSchema, type AIEvent, type AIStatus, type AIThreadHistory, type AgentTurnReference, type LocalModel, type ProposalStatus, type TupiniquimConversation, type agentInterruptInputSchema, type agentLocalModelSelectInputSchema, type agentProviderSelectInputSchema, type agentSendInputSchema, type agentThreadIdInputSchema } from './ai'
 import { actionManifestSchema, approvalScopeSchema, modeSchema, planSchema, type ApprovalDecision, type Execution, type FlightRecorderEvent, type Plan } from './domain'
@@ -194,6 +195,9 @@ export interface PlannedExecution {
 export interface StudioApi {
   system: { info(): Promise<Result<SystemInfo>> }
   workspace: {
+    /** Web-only reviewed CREATE. Missing means unavailable on this surface. */
+    prepareCreate?(input: z.input<typeof workspaceCreateInputSchema>): Promise<Result<WorkspaceCreateReview>>
+    approveCreate?(input: z.input<typeof workspaceCreateApprovalSchema>): Promise<Result<FileDocument>>
     pick(): Promise<Result<string | null>>
     configure(input: z.input<typeof configureWorkspaceInputSchema>): Promise<Result<string>>
     list(input: z.input<typeof listFilesInputSchema>): Promise<Result<FileEntry[]>>

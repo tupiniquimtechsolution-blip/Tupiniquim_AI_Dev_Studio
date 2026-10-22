@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tupiniquim-hosted-ui-qa-only",
+  "main": "apps/web-runtime/src/worker-secure.ts",
+  "compatibility_date": "2026-09-26",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": { "directory": "./out/renderer", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*", "/ws/*"] },
+  "durable_objects": { "bindings": [{ "name": "STATE", "class_name": "WebState" }] },
+  "migrations": [{ "tag": "hosted-ui-v1", "new_sqlite_classes": ["WebState"] }],
+  "vars": {
+    "WEB_ALLOW_ANONYMOUS": "true",
+    "WEB_WORKSPACE_BACKUP_ENABLED": "false",
+    "WEB_REMOTE_RUNTIME_ENABLED": "true",
+    "REMOTE_RUNTIME_URL": "http://127.0.0.1:43721",
+    "REMOTE_RUNTIME_TOKEN": "synthetic-loopback-ci-fixture-only"
+  }
+}

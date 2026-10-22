@@ -1,3 +1,8 @@
+import { planSchema, approvalDecisionSchema } from '../../../packages/contracts/src/domain'
+import { approvalDecideInputSchema, workspaceWriteProposalSchema, planCreateInputSchema, planUpdateInputSchema } from '../../../packages/contracts/src/ipc'
+import { manifestEffectsHash } from '../../../packages/core/src/plan-approval'
+import { uiProfileSchema, uiProfileImportInputSchema } from '../../../packages/contracts/src/settings'
+import { contrastRatio } from '../../../packages/core/src/profile-contrast'
 import { aiText as sharedAiText } from './ai-text'
 import { WEB_PROVIDER, resolveWebModel } from './model-catalog'
 import { gateLockReason, getRemoteSandbox, remoteRuntimeStatus, type RemoteRuntimeConfig } from './remote-runtime'
@@ -252,6 +257,12 @@ const googleFetch = async (env: Env, workspaceId: string, path: string, init: Re
 const handleStateRpc = async (request: Request, env: Env, workspaceId: string, action: string, input: JsonRecord): Promise<Response | null> => {
   const now = new Date().toISOString()
   switch (action) {
+    case 'full.workspace.prepare-create':
+    case 'full.workspace.approve-create': {
+      const runtime = await remoteRuntimeStatus(env)
+      if (runtime.state !== 'READY') return fail('REMOTE_RUNTIME_OFFLINE', 'Runtime indisponível para criar arquivos.', 503, true)
+      return stateStub(env, workspaceId).fetch('https://state.local/workspace-create', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId, action: action === 'full.workspace.prepare-create' ? 'prepare' : 'approve', input }) })
+    }
     case 'full.workspace.bootstrap': {
       const runtime = await remoteRuntimeStatus(env)
       if (runtime.state !== 'READY') {
@@ -303,8 +314,9 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
       return ok(stored?.status ?? 'EXPIRED')
     }
     case 'full.planning.create': {
-      const objective = typeof input.objective === 'string' ? input.objective.trim() : ''
-      if (objective.length < 3) return fail('INVALID_OBJECTIVE', 'Objetivo do plano inválido.')
+      const validated = planCreateInputSchema.safeParse(input)
+      if (!validated.success) return fail('INVALID_OBJECTIVE', 'Objetivo ou modo do plano inválido.')
+      const objective = validated.data.objective
       const stepId = crypto.randomUUID(); const planId = crypto.randomUUID(); const executionId = crypto.randomUUID()
       const value = { plan: { id: planId, title: objective.slice(0, 100), objective, steps: [{ id: stepId, title: 'Implementar objetivo', description: objective, status: 'PENDING', risk: 'LOW', requiresApproval: true, effects: [] }], createdAt: now, updatedAt: now }, execution: { id: executionId, planId, mode: typeof input.mode === 'string' ? input.mode : 'PLAN', state: 'PLAN', permissionProfile: 'ASSISTED', workspaceRoot: '/workspace', activeStepId: stepId, threadId: null, approvalIds: [], completedEffectIds: [], createdAt: now, updatedAt: now } }
       await statePut(env, workspaceId, `plan:${executionId}`, value)
@@ -316,36 +328,78 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
       return value === null ? fail('PLAN_NOT_FOUND', 'Plano não encontrado.', 404) : ok(value)
     }
     case 'full.planning.update': {
-      const key = `plan:${String(input.executionId ?? '')}`; const current = await stateGet<JsonRecord>(env, workspaceId, key)
-      if (current === null || input.plan === null || typeof input.plan !== 'object') return fail('PLAN_NOT_FOUND', 'Plano não encontrado.', 404)
-      current.plan = { ...(input.plan as JsonRecord), updatedAt: now }; await statePut(env, workspaceId, key, current); return ok(current.plan)
+      const checked = planUpdateInputSchema.safeParse(input)
+      if (!checked.success) return fail('INVALID_PLAN', 'Plano inválido.')
+      const key = `plan:${checked.data.executionId}`
+      const current = await stateGet<JsonRecord>(env, workspaceId, key)
+      const previous = planSchema.safeParse(current?.plan)
+      if (current === null || !previous.success) return fail('PLAN_NOT_FOUND', 'Plano não encontrado.', 404)
+      const state = (current.execution as JsonRecord).state
+      if (state !== 'PLAN' && state !== 'WAITING_APPROVAL') return fail('INVALID_EXECUTION_STATE', 'Plano não pode ser editado durante execução.', 409)
+      const next = checked.data.plan
+      if (next.id !== previous.data.id || next.steps.length !== previous.data.steps.length || next.steps.some((step, index) => {
+        const old = previous.data.steps[index]
+        return old === undefined || step.id !== old.id || step.description !== old.description || step.status !== old.status || step.risk !== old.risk || step.requiresApproval !== old.requiresApproval
+      })) return fail('INVALID_PLAN', 'Estrutura, risco, aprovação e estado dos passos são imutáveis.')
+      current.plan = { ...next, createdAt: previous.data.createdAt, updatedAt: now }
+      await statePut(env, workspaceId, key, current)
+      return ok(current.plan)
     }
     case 'full.planning.decide': {
-      const executionId = String(input.executionId ?? ''); const stepId = String(input.stepId ?? ''); const current = await stateGet<JsonRecord>(env, workspaceId, `plan:${executionId}`)
+      const checked = approvalDecideInputSchema.safeParse(input)
+      if (!checked.success) return fail('INVALID_APPROVAL', 'Decisão de aprovação inválida.')
+      const executionId = checked.data.executionId; const stepId = checked.data.stepId; const current = await stateGet<JsonRecord>(env, workspaceId, `plan:${executionId}`)
       if (current === null) return fail('PLAN_NOT_FOUND', 'Plano não encontrado.', 404)
+      const currentState = (current.execution as JsonRecord).state
+      if (currentState !== 'PLAN' && currentState !== 'WAITING_APPROVAL') return fail('INVALID_EXECUTION_STATE', 'Execução não aceita novas decisões.', 409)
       const plan = current.plan as JsonRecord; const steps = Array.isArray(plan.steps) ? plan.steps as JsonRecord[] : []; const step = steps.find((item) => item.id === stepId)
-      if (step === undefined) return fail('STEP_NOT_FOUND', 'Passo não encontrado.', 404)
+      if (step === undefined || step.requiresApproval !== true) return fail('STEP_NOT_FOUND', 'Passo de aprovação não encontrado.', 404)
       const effect = Array.isArray(step.effects) ? (step.effects as JsonRecord[])[0] : undefined; const proposalId = effect !== undefined && effect.source && typeof effect.source === 'object' ? String((effect.source as JsonRecord).proposalId ?? '') : ''
       if (proposalId === '') return fail('PROPOSAL_NOT_FOUND', 'Proposta vinculada não encontrada.', 404)
       const stored = await stateGet<JsonRecord>(env, workspaceId, `proposal:${proposalId}`); if (stored === null) return fail('PROPOSAL_NOT_FOUND', 'Proposta não encontrada.', 404)
+      const linked = workspaceWriteProposalSchema.safeParse(stored.proposal)
+      if (!linked.success || linked.data.executionId !== executionId || linked.data.stepId !== stepId || !Array.isArray(step.effects) || step.effects.length !== 1 || manifestEffectsHash(planSchema.parse(current.plan).steps.find((item) => item.id === stepId)?.effects ?? []) !== manifestEffectsHash([linked.data.effect])) return fail('STALE_PROPOSAL', 'Proposta não corresponde ao manifesto exibido.', 409)
       stored.status = input.decision === 'APPROVED' ? 'APPROVED' : 'DENIED'; await statePut(env, workspaceId, `proposal:${proposalId}`, stored)
-      const decision = { id: crypto.randomUUID(), executionId, stepId, action: 'workspace.write', target: String(effect?.target ?? '/workspace'), risk: String(effect?.risk ?? 'LOW'), effectsHash: await sha256(JSON.stringify(step.effects ?? [])), scope: input.scope ?? 'ONCE', decision: input.decision, decidedAt: now }
+      const decision = { id: crypto.randomUUID(), executionId, stepId, action: 'workspace.write', target: String(effect?.target ?? '/workspace'), risk: String(effect?.risk ?? 'LOW'), effectsHash: manifestEffectsHash(planSchema.parse(current.plan).steps.find((item) => item.id === stepId)?.effects ?? []), scope: input.scope ?? 'ONCE', decision: input.decision, decidedAt: now }
+      await statePut(env, workspaceId, `approval:${decision.id}`, approvalDecisionSchema.parse(decision))
       const execution = current.execution as JsonRecord; const approvals = Array.isArray(execution.approvalIds) ? execution.approvalIds as string[] : []; execution.approvalIds = [...approvals, decision.id]; execution.state = input.decision === 'APPROVED' ? 'WAITING_APPROVAL' : 'BLOCKED'; execution.updatedAt = now; await statePut(env, workspaceId, `plan:${executionId}`, current)
       await appendExecutionEvent(env, workspaceId, executionId, { id: crypto.randomUUID(), at: now, state: execution.state, category: 'APPROVAL', title: input.decision === 'APPROVED' ? 'Proposta aprovada.' : 'Proposta negada.', severity: input.decision === 'APPROVED' ? 'SUCCESS' : 'WARNING' })
       return ok(decision)
     }
     case 'full.planning.start': {
       const executionId = String(input.executionId ?? ''); const current = await stateGet<JsonRecord>(env, workspaceId, `plan:${executionId}`); if (current === null) return fail('PLAN_NOT_FOUND', 'Plano não encontrado.', 404)
+      const plan = planSchema.safeParse(current.plan)
+      const pending = current.execution as JsonRecord
+      if (!plan.success || pending.state !== 'WAITING_APPROVAL') return fail('APPROVAL_REQUIRED', 'Plano deve aguardar aprovação válida.', 409)
+      const decisions = await Promise.all((Array.isArray(pending.approvalIds) ? pending.approvalIds as string[] : []).map((id) => stateGet<JsonRecord>(env, workspaceId, `approval:${id}`)))
+      for (const step of plan.data.steps.filter((item) => item.requiresApproval)) {
+        const matching = decisions.filter((decision) => decision !== null && decision.stepId === step.id && decision.effectsHash === manifestEffectsHash(step.effects))
+        if (step.effects.length === 0 || matching.some((decision) => decision?.decision === 'DENIED') || !matching.some((decision) => decision?.decision === 'APPROVED')) return fail('APPROVAL_REQUIRED', 'Manifesto sem aprovação vigente.', 409)
+      }
       const execution = current.execution as JsonRecord; execution.state = 'EXECUTION'; execution.updatedAt = now; await statePut(env, workspaceId, `plan:${executionId}`, current)
       await appendExecutionEvent(env, workspaceId, executionId, { id: crypto.randomUUID(), at: now, state: 'EXECUTION', category: 'STATE', title: 'Execução autorizada.', severity: 'SUCCESS' }); return ok(execution)
     }
     case 'full.planning.events': return ok(await stateGet<JsonRecord[]>(env, workspaceId, `execution-events:${String(input.executionId ?? '')}`) ?? [])
     case 'full.planning.apply-proposal': {
       const proposalId = String(input.proposalId ?? ''); const stored = await stateGet<JsonRecord>(env, workspaceId, `proposal:${proposalId}`); if (stored === null || stored.status !== 'APPROVED') return fail('PROPOSAL_NOT_APPROVED', 'Proposta não aprovada.', 409)
-      const proposal = stored.proposal as JsonRecord; const effect = proposal.effect as JsonRecord; const relativePath = safePath(effect.target); const content = typeof stored.content === 'string' ? stored.content : null; if (relativePath === null || content === null) return fail('INVALID_PROPOSAL', 'Proposta inválida.')
+      const parsedProposal = workspaceWriteProposalSchema.safeParse(stored.proposal)
+      if (!parsedProposal.success) return fail('INVALID_PROPOSAL', 'Proposta inválida.')
+      const proposal = parsedProposal.data
+      const effect = proposal.effect
+      const approvedPlan = await stateGet<JsonRecord>(env, workspaceId, `plan:${proposal.executionId}`)
+      const parsedPlan = planSchema.safeParse(approvedPlan?.plan)
+      const execution = approvedPlan?.execution as JsonRecord | undefined
+      const step = parsedPlan.success ? parsedPlan.data.steps.find((item) => item.id === proposal.stepId) : undefined
+      if (execution?.state !== 'EXECUTION' || step === undefined || !step.requiresApproval || !step.effects.some((item) => item.id === effect.id && manifestEffectsHash([item]) === manifestEffectsHash([effect]))) return fail('STALE_APPROVAL', 'Plano atual não corresponde à proposta aprovada.', 409)
+      if (Array.isArray(execution.completedEffectIds) && execution.completedEffectIds.includes(effect.id)) return fail('EFFECT_ALREADY_APPLIED', 'Efeito já materializado.', 409)
+      const decisions = await Promise.all((Array.isArray(execution.approvalIds) ? execution.approvalIds as string[] : []).map((id) => stateGet<JsonRecord>(env, workspaceId, `approval:${id}`)))
+      const matching = decisions.filter((decision) => decision !== null && decision.stepId === step.id && decision.effectsHash === manifestEffectsHash(step.effects))
+      if (matching.some((decision) => decision?.decision === 'DENIED') || !matching.some((decision) => decision?.decision === 'APPROVED')) return fail('STALE_APPROVAL', 'Aprovação persistida ausente ou desatualizada.', 409)
+      const relativePath = safePath(effect.target); const content = typeof stored.content === 'string' ? stored.content : null; if (relativePath === null || content === null || await sha256(content) !== effect.payloadHash) return fail('INVALID_PROPOSAL', 'Conteúdo não corresponde ao manifesto.')
       const sandbox = await ensureWorkspace(env, workspaceId); const target = `/workspace/${relativePath}`; const exists = await sandbox.exists(target); const expected = typeof effect.expectedTargetHash === 'string' ? effect.expectedTargetHash : null
+      if ((effect.operation === 'CREATE' && exists.exists) || (effect.operation === 'REPLACE' && (!exists.exists || expected === null))) return fail('STALE_WRITE', 'Destino não corresponde ao baseline aprovado.', 409)
       if (expected !== null && exists.exists) { const currentFile = await sandbox.readFile(target, { encoding: 'utf-8' }); if (await sha256(typeof currentFile.content === 'string' ? currentFile.content : '') !== expected) return fail('STALE_WRITE', 'Arquivo mudou após a aprovação.', 409) }
-      const parent = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''; if (parent !== '') await sandbox.mkdir(`/workspace/${parent}`, { recursive: true }); await sandbox.writeFile(target, content)
+      const parent = relativePath.includes('/') ? relativePath.slice(0, relativePath.lastIndexOf('/')) : ''; if (parent !== '') await sandbox.mkdir(`/workspace/${parent}`, { recursive: true }); await sandbox.writeFile(target, content, expected ?? undefined)
       let persistence: JsonRecord
       try {
         persistence = await createWorkspaceCheckpoint(env, workspaceId, sandbox)
@@ -357,43 +411,68 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
       await appendExecutionEvent(env, workspaceId, executionId, { id: crypto.randomUUID(), at: now, state: 'COMPLETED', category: 'TOOL', title: 'workspace.write materializado.', detail: relativePath, severity: 'SUCCESS' })
       return ok({ effectId: String(effect.id), relativePath, hash: await sha256(content), modifiedAt: now, persistence })
     }
-    case 'full.prompt.list': return ok(await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? [])
-    case 'full.prompt.save': {
-      const items = await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? []; const name = String(input.name ?? '').trim(); const prior = items.find((item) => item.name === name); const template = { id: prior?.id ?? crypto.randomUUID(), name, version: Number(prior?.version ?? 0) + 1, content: String(input.content ?? ''), variables: Array.isArray(input.variables) ? input.variables : [], createdAt: prior?.createdAt ?? now, updatedAt: now }; await statePut(env, workspaceId, 'prompts', [...items.filter((item) => item.id !== template.id), template]); return ok(template)
+    case 'full.prompt.list':
+    case 'full.prompt.save':
+    case 'full.prompt.compile':
+    case 'full.prompt.compare':
+    case 'full.prompt.lint':
+    case 'full.prompt.export':
+      return stateStub(env, workspaceId).fetch('https://state.local/prompt', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: action.slice('full.prompt.'.length), input })
+      })
+    case 'full.settings.get': {
+      const stored = await stateGet<unknown>(env, workspaceId, 'ui-profile')
+      const parsed = uiProfileSchema.safeParse(stored ?? defaultProfile())
+      if (!parsed.success) return fail('INVALID_PROFILE', 'Preferências persistidas inválidas.')
+      if (stored === null) await statePut(env, workspaceId, 'ui-profile', parsed.data)
+      return ok(parsed.data)
     }
-    case 'full.prompt.compile': {
-      const items = await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? []; const template = items.find((item) => item.id === input.templateId); if (template === undefined) return fail('PROMPT_NOT_FOUND', 'Template não encontrado.', 404); let content = String(template.content ?? ''); const values = input.values !== null && typeof input.values === 'object' ? input.values as JsonRecord : {}; const variables = Array.isArray(template.variables) ? template.variables as JsonRecord[] : []; for (const variable of variables) { const name = String(variable.name ?? ''); content = content.replaceAll(`{{${name}}}`, typeof values[name] === 'string' ? values[name] as string : String(variable.defaultValue ?? '')) } return ok({ templateId: template.id, version: template.version, content, hash: await sha256(content), compiledAt: now, lint: [] })
+    case 'full.settings.save':
+    case 'full.settings.import': {
+      let candidate: unknown = input.profile
+      if (action === 'full.settings.import') {
+        const serialized = uiProfileImportInputSchema.safeParse(input)
+        if (!serialized.success) return fail('INVALID_PROFILE', 'Importação inválida.')
+        try { candidate = JSON.parse(serialized.data.serialized) as unknown } catch { return fail('INVALID_PROFILE', 'Perfil importado não é JSON válido.') }
+      }
+      const parsed = uiProfileSchema.safeParse(candidate)
+      if (!parsed.success) return fail('INVALID_PROFILE', parsed.error.issues.map((issue) => issue.message).join(' '))
+      const profile = { ...parsed.data, updatedAt: now }
+      if (contrastRatio(profile.theme.text, profile.theme.background) < 4.5 || contrastRatio(profile.theme.accent, profile.theme.background) < 3) return fail('INVALID_PROFILE', 'Contraste do perfil abaixo de WCAG AA.')
+      await statePut(env, workspaceId, 'ui-profile', profile)
+      return ok(profile)
     }
-    case 'full.prompt.compare': {
-      const items = await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? []; const left = items.find((item) => item.id === input.leftId); const right = items.find((item) => item.id === input.rightId); if (!left || !right) return fail('PROMPT_NOT_FOUND', 'Template não encontrado.', 404); const leftLines = new Set(String(left.content ?? '').split('\n')); const rightLines = new Set(String(right.content ?? '').split('\n')); return ok({ left, right, added: [...rightLines].filter((line) => !leftLines.has(line)), removed: [...leftLines].filter((line) => !rightLines.has(line)) })
+    case 'full.settings.export': {
+      const parsed = uiProfileSchema.safeParse(await stateGet<unknown>(env, workspaceId, 'ui-profile') ?? defaultProfile())
+      return parsed.success ? ok(JSON.stringify(parsed.data, null, 2)) : fail('INVALID_PROFILE', 'Preferências persistidas inválidas.')
     }
-    case 'full.prompt.lint': { const content = String(input.content ?? ''); const issues: JsonRecord[] = []; if (content.length < 30) issues.push({ severity: 'WARNING', code: 'SHORT_PROMPT', message: 'Prompt muito curto; detalhe objetivo, contexto e critérios.' }); if (!/objetiv|goal|missão/i.test(content)) issues.push({ severity: 'INFO', code: 'NO_EXPLICIT_OBJECTIVE', message: 'Considere declarar um objetivo explícito.' }); return ok(issues) }
-    case 'full.prompt.export': { const items = await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? []; const template = items.find((item) => item.id === input.templateId); return template === undefined ? fail('PROMPT_NOT_FOUND', 'Template não encontrado.', 404) : ok(JSON.stringify(template, null, 2)) }
-    case 'full.settings.get': { let profile = await stateGet<JsonRecord>(env, workspaceId, 'ui-profile'); if (profile === null) { profile = defaultProfile(); await statePut(env, workspaceId, 'ui-profile', profile) } return ok(profile) }
-    case 'full.settings.save': { if (input.profile === null || typeof input.profile !== 'object') return fail('INVALID_PROFILE', 'Perfil inválido.'); const profile = { ...(input.profile as JsonRecord), updatedAt: now }; await statePut(env, workspaceId, 'ui-profile', profile); return ok(profile) }
-    case 'full.settings.export': return ok(JSON.stringify(await stateGet<JsonRecord>(env, workspaceId, 'ui-profile') ?? defaultProfile(), null, 2))
-    case 'full.settings.import': { try { const profile = JSON.parse(String(input.serialized ?? '')) as JsonRecord; profile.updatedAt = now; await statePut(env, workspaceId, 'ui-profile', profile); return ok(profile) } catch { return fail('INVALID_PROFILE', 'Perfil importado não é JSON válido.') } }
-    case 'full.visual.list': return ok(await stateGet<JsonRecord[]>(env, workspaceId, 'visual-assets') ?? [])
-    case 'full.visual.add': { const items = await stateGet<JsonRecord[]>(env, workspaceId, 'visual-assets') ?? []; const asset = { ...input, id: crypto.randomUUID(), createdAt: now }; await statePut(env, workspaceId, 'visual-assets', [...items, asset]); return ok(asset) }
-    case 'full.visual.use': { const items = await stateGet<JsonRecord[]>(env, workspaceId, 'visual-assets') ?? []; const asset = items.find((item) => item.id === input.assetId); return asset === undefined ? fail('VISUAL_ASSET_NOT_FOUND', 'Asset visual não encontrado.', 404) : ok(asset) }
+    case 'full.visual.list':
+    case 'full.visual.statuses':
+    case 'full.visual.add':
+    case 'full.visual.use':
+      return stateStub(env, workspaceId).fetch('https://state.local/visual', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId, action: action.slice('full.visual.'.length), input }) })
     case 'full.control.skills': return ok([{ id: 'tupiniquim-toolbox', name: 'Tupiniquim Toolbox', status: 'APPROVED_INTERNAL', enabled: (await stateGet<boolean>(env, workspaceId, `skill:${String(input.projectId ?? 'default')}`)) ?? true, runtimeExecutionAuthorized: false }])
     case 'full.control.skill-set': { await statePut(env, workspaceId, `skill:${String(input.projectId ?? 'default')}`, input.enabled === true); return ok({ id: 'tupiniquim-toolbox', name: 'Tupiniquim Toolbox', status: 'APPROVED_INTERNAL', enabled: input.enabled === true, runtimeExecutionAuthorized: false }) }
     case 'full.control.loadouts': return ok(await stateGet<JsonRecord[]>(env, workspaceId, `loadouts:${String(input.projectId ?? 'default')}`) ?? [])
     case 'full.control.loadout-put': { const key = `loadouts:${String(input.projectId ?? 'default')}`; const items = await stateGet<JsonRecord[]>(env, workspaceId, key) ?? []; const view = { projectId: input.projectId, agentId: input.agentId, provider: input.provider, model: input.model ?? null, skillIds: Array.isArray(input.skillIds) ? input.skillIds : [], permissionProfile: input.permissionProfile, runtimeExecutionAuthorized: false }; await statePut(env, workspaceId, key, [...items.filter((item) => item.agentId !== view.agentId), view]); return ok(view) }
+    case 'full.control.history':
+      return stateStub(env, workspaceId).fetch('https://state.local/gate-evidence', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'list' }) })
     case 'full.control.gate': {
       const gateId = String(input.gateId ?? '')
       const allowed = new Set(['quality-gates', 'dependency-audit', 'secret-scan', 'security-review', 'privacy-lgpd', 'accessibility-wcag', 'architecture-review', 'supply-chain', 'release-checklist'])
       if (!allowed.has(gateId)) return fail('UNKNOWN_GATE', 'Gate desconhecido.')
       const runtime = await remoteRuntimeStatus(env)
-      // Fail-closed preservado: gates só executam com Runtime READY.
-      // A mensagem reflete o estado real (DISABLED/MISCONFIGURED/OFFLINE)
-      // para a UI não parecer um erro genérico idêntico em todos os botões;
-      // o código REMOTE_RUNTIME_OFFLINE é mantido por compatibilidade.
       const lockReason = gateLockReason(runtime)
-      if (lockReason !== null) return fail('REMOTE_RUNTIME_OFFLINE', lockReason, 503, true)
-      const sandbox = await ensureWorkspace(env, workspaceId)
-      const result = await sandbox.runGate(gateId)
-      return ok({ gateId, state: result.state, evidence: result.evidence })
+      let result: { state: 'PASS' | 'FAIL' | 'NOT_AVAILABLE'; evidence: string }
+      if (lockReason !== null) result = { state: 'NOT_AVAILABLE', evidence: lockReason }
+      else {
+        try { result = await (await ensureWorkspace(env, workspaceId)).runGate(gateId) }
+        catch { result = { state: 'NOT_AVAILABLE', evidence: 'O executor não confirmou um resultado. Não é possível certificar a execução.' } }
+      }
+      const persisted = await stateStub(env, workspaceId).fetch('https://state.local/gate-evidence', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'append', record: { id: crypto.randomUUID(), gateId, ...result, startedAt: now, finishedAt: new Date().toISOString(), source: 'RUNTIME_GATEWAY', hostPlatform: runtime.platform ?? 'unknown', executionConfirmed: result.state !== 'NOT_AVAILABLE' } }) })
+      if (!persisted.ok) return fail('GATE_EVIDENCE_ERROR', 'Resultado recebido, mas a persistência da evidência não foi confirmada.', 503, true)
+      return ok({ gateId, ...result })
     }
     case 'google-tasks.status': return ok(await googleStatus(env, workspaceId))
     case 'google-tasks.connect': {

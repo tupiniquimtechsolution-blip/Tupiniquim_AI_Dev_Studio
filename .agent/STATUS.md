@@ -1,5 +1,79 @@
 # Status
 
+## Execução completa sem instalação local — 2026-10-22
+
+Execução contínua: `docs/RELEASE/NONLOCAL_EXECUTION_2026-10-22.md`.
+Hosted Web UI adicionado para testes reais em runner temporário GitHub:
+Worker/DO/gateway locais ao runner, sem bindings AI pagos ou produção.
+Workers AI ausente agora informa ERROR/WORKERS_AI_NOT_CONFIGURED.
+Novos gates aguardam CI; não equivalem a smoke de produção ou Windows físico.
+
+## Retomada — 2026-10-22
+
+- Reconsulta GitHub: PR #89 OPEN/DRAFT @ `6fda702`, PR #88 OPEN, base
+  integration `70c0c97`; Cloud Quality `39403415363` SUCCESS no head anterior.
+- Files Web: leitura/gravação serializadas antes do await; editor/ações
+  incompatíveis bloqueados durante IO; falha mantém buffer e baseline.
+- Progresso/erro visíveis no painel, inclusive mobile; rejeições da bridge
+  tratadas sem afirmar sucesso em salvamento não confirmado.
+- Aviso ao recarregar/fechar página com edições; botões internos de navegação
+  pedem confirmação e aguardam IO. Back/forward SPA ainda requer QA específico.
+- Novo delta depende de CI remoto e aceite no deployment exato. Sem testes
+  locais, build local, merge ou deploy; RELEASE_GREEN não comprovado.
+
+## Continuação — 2026-10-20
+
+- PR #89 continua OPEN/DRAFT, base integration `70c0c97`; PR #88 continua aberto.
+- HEAD anterior `7842e5a7124ea05533bee6f66df80c53328afeb5` certificado pelo
+  Cloud Quality `38924278785` SUCCESS. Esse verde não valida o novo delta.
+- Files Web: comparação somente leitura entre baseline carregado e buffer
+  editado via Monaco DiffEditor; volta ao editor sem perder conteúdo.
+- Fechar arquivo com alterações agora pede confirmação; salvar mantém
+  expectedHash/bridge/Policy existentes. Sem nova autoridade de escrita.
+- Novo delta aguarda CI remoto e smoke/revisão visual no deployment exato.
+  Criação de arquivos, Runtime/Access/OAuth e certificação Windows pendentes.
+- Nenhum teste local, build local, app startup, merge ou deploy nesta etapa.
+  RELEASE_GREEN segue não comprovado.
+
+## Continuação executada — 2026-10-16
+
+- Delta `1180f408b2ea02f127500c3c6b8c8071a46245de` passou Cloud Quality
+  `38923387966`. Hardening adicional da busca no Remote Gateway acrescentado
+  depois desse resultado; exige novo CI. Gateway agora omite entradas ocultas,
+  links e arquivos especiais, confina realpaths e limita previews a 240 chars.
+  Import `.ts` explícito preserva execução nativa Node 24 do gateway.
+- Tarefa #19 passou A Fazer → Em Andamento em Notion/Miro (busca implementada;
+  criação/diff/aceite pendentes). Totais atuais: 16 A Fazer / 7 Bloqueada /
+  7 Em Andamento / 4 Concluída histórica. Contagens abaixo são snapshots.
+
+- PR #89 / `c9393086c8023ebeeda893db41476290e0cbb458`: Cloud Quality
+  `38919537449` SUCCESS. Esse resultado não é smoke/visual do novo HUD.
+- Continuação na mesma branch: Control Center com dialog modal/teclado/foco;
+  busca de conteúdo no drawer Files pela bridge existente, sem escrita direta.
+- WorkspaceAdapter.search ignora symlinks e tipos especiais e confina caminhos;
+  regressão de link externo adicionada para CI Linux (Windows diferido).
+- Kanban Miro existente do Studio materializado e verificado: 34 linhas, 34
+  sequências únicas, títulos/estados iguais ao Notion. Tarefa #17 Em Andamento
+  (Studio sincronizado; pendências de outros projetos/Obsidian fora do escopo).
+- Nenhum teste local, merge ou deploy. Novo delta aguardando CI no checkpoint.
+  RELEASE_GREEN permanece PENDING; busca/criação V1 não declarada concluída.
+
+## Auditoria vigente — 2026-10-16 — HEAD 70c0c97
+
+Este registro prevalece sobre o checkpoint anterior para a cabeça atual.
+Cloud Quality `38885419671` SUCCESS no SHA `70c0c977e6f1920dd7b2ab6c587afc1f5785f3f5`;
+Web Product Smoke `38885409266` FAILURE (4 passed / 1 skipped / 1 failed).
+O PASS anterior em `e3bec44` é histórico. PR #88 corrige a espera do modelo
+(`702bd73`, Cloud Quality `38885973816` SUCCESS), mas ainda não comprova smoke
+implantado desse SHA. **CURRENT WEB SMOKE FAILING / RELEASE_GREEN PENDING.**
+
+Branch isolada `fix/hud-accessibility-release-audit-20261016`: correções de
+modalidade/foco/IME e legibilidade/touch do HUD; smoke de teclado ampliado.
+CI desta mudança e validação visual pós-deploy ainda pendentes neste checkpoint.
+Nenhum teste local, build local, merge ou deploy executado nesta sessão.
+As 34 tarefas Agenor foram consultadas sem promoção de status.
+Detalhes: `docs/RELEASE/EXECUTION_AUDIT_2026-10-16.md`.
+
 ## Checkpoint atual — 2026-10-16
 
 > **Seções datadas de 2026-09-30 abaixo são snapshots históricos; este checkpoint prevalece para o estado operacional atual.**
@@ -156,3 +230,45 @@ Capacidades a certificar quando conectado:
 - CONTAINERS PAID: REMOVIDO
 - REMOTE RUNTIME: IMPLEMENTED / NOT CONFIGURED
 - NOVA MENSALIDADE OBRIGATÓRIA: ZERO dentro das franquias Free
+
+## Preferências Web — 2026-10-22
+Atalhos opt-in de navegação persistidos no perfil; sem execução de comandos. Contrato compartilhado rejeita duplicatas e combinações fora do allowlist. Worker valida save/import/get/export e contraste WCAG. Novo teste hosted cobre persistência, acionamento, suspensão ao digitar e rejeições do servidor. CI remoto pendente; sem testes locais.
+
+## Fronteira dos gates — 2026-10-22
+Cloud Quality 39774664469 SUCCESS @89d51aa (preferências); hosted pendente. Gateway agora distingue NOT_AVAILABLE de aceite manual e não devolve conteúdo de scanner. Novo delta aguarda gates remotos. Notion/Miro #27 e #29 atualizados como Em Andamento, preservando aceite físico/produção pendente.
+
+## Continuação das evidências — 2026-10-22
+Histórico/export de resultados da sessão adicionado; pendente CI remoto. SOURCE_REAUDIT_2026-10-22 documenta commits/licenças e limites dos hashes. Hosted @89d51aa cancelado por nova revisão; não alegar sucesso desse head. Nenhum teste local ou deploy.
+
+## Criação manual revisada — 2026-10-22
+Head anterior 21e75fe: Cloud Quality 39775354329 e Hosted Web UI 39775354325 SUCCESS. Novo delta implementa CREATE manual Web com manifesto/approval ONCE do core, revisão persistida com validade de 10min, hash do conteúdo e trilha de eventos. Gateway publica arquivo completo por link exclusivo e nunca substitui destino; pai deve existir. Links/traversal/ADS/dispositivos rejeitados. Caminho legado sem manifesto bloqueado. Novo delta aguarda CI remoto; sem testes locais ou publicação.
+
+## Resultado remoto e correção — 2026-10-22
+@d193ff7 Cloud Quality 39776027692 SUCCESS; Hosted Web UI 39776027695 FAILURE: 5 passam (incluindo CREATE real e Evidence), 1 falha por atalho após reload antes de carregar preferências. Aguardar aria-busy=false sem sleeps fixos. Novos estilos/guarda de histórico aguardam gates no próximo head. Sem teste/instalação/build local.
+
+## Hardening de gravação/aprovação — 2026-10-22
+Novo delta serializa comparação+gravação no gateway: expectedHash obrigatório para substituir, hash ausente = CREATE exclusivo, baseline removido não é recriado. Propostas Web exigem schema/origem, aprovação persistida e effectsHash canônico vigente, execução iniciada e conteúdo hash correspondente. Plano não permite remover aprovação/risco/estrutura nem editar durante execução. @de1a406 Cloud Quality 39776766236 SUCCESS; Hosted 39776766113 em execução; novo delta ainda não validado. Sem testes locais.
+
+## Terminal multissessão — 2026-10-22
+@3e181c5: Cloud Quality 39777254105 e Hosted Web UI 39777254020 SUCCESS; inclui criação/concorrência, perfis, evidências, temas e cancelamento de Voltar com buffer preservado. Próximo delta: 4 painéis de terminal independentes; confirmação antes de shell real; fechamento encerra sessões; gateway limita 4/workspace, 32 total, 15min idle/60min duração. Unit timeout com relógio controlado e hosted de 2 PTYs reais isolados adicionados. Nenhum comando/teste local; ConPTY físico não certificado.
+
+## Auditoria documental e ambiente de subprocessos — 2026-10-22
+Bible/Backlog/Matriz reconciliados com checkpoint cloud e inventário RC1 histórico; implementações ainda pendentes listadas explicitamente. Notion/Miro #13 e #20 passaram para Em Andamento; #19/#24/#27/#29 receberam evidência @3e181c5, sem conclusão física. Subprocessos gateway passam a usar allowlist de ambiente existente no adapter, excluindo token do gateway e credenciais ambientais; hosted testa apenas presença/ausência sem imprimir valores. Capturas estabilizadas ao terminar animações; drawer preserva opacidade integral. Novo delta aguarda CI.
+
+## Checkpoint certificado e biblioteca visual — 2026-10-22
+@fb74616: Cloud Quality 39778914433 e Hosted Web UI 39778914380 SUCCESS. Terminal real Linux, isolamento de duas sessões, encerramento e ausência do token no ambiente filho comprovados. Novo delta: catálogo visual Web com arquivo existente/regular sob assets, origem HTTP(S), origem USER_PROVIDED para não inventar fornecedor, direitos declarados e trava compartilhada de licença. DO serializa registros; transformações/serviços pagos continuam indisponíveis. Novo delta aguarda CI. Sem execução local.
+
+## Evidências duráveis do Runtime — 2026-10-22
+Visual @318df62 Hosted Web UI 39823528495 SUCCESS; Cloud Quality 39823528496 parou em lint do teste (Promise.all recebia um ramo não-Promise), corrigido. Novo delta persiste até 100 receipts por workspace em DO, horários do servidor, origem Runtime Gateway, estado e execução confirmada; UI consulta/exporta após reload. Nenhum cliente pode inserir receipts pela API pública de histórico. Sessão local de evidências preservada separadamente. Novos testes de concorrência/restart/limite e hosted aguardam gates.
+
+## Git real e correção de efeito React — 2026-10-22
+Novo delta: gateway não apresenta repo vazio quando Git falha. Desktop/gateway compartilham parser porcelain v2 NUL: nomes com espaços, renomeações, conflitos, upstream/ahead/behind. Diff desliga helpers externos/textconv/cores. UI exibe status real e diff não staged com erros explícitos. Commit/checkpoint/restore não implementados nesta onda. Corrigido lint do Control Center: estado remoto derivado por workspace sem setState síncrono no efeito; respostas antigas não misturam snapshots. Gate remoto de b361daa ainda não foi recertificado.
+
+## Correção do gate Git — 2026-10-22
+@216a631 Cloud Quality 39825112842 parou em lint React set-state-in-effect. Corrigido com consulta pura e atualização assíncrona. Consultas desabilitam fsmonitor, helpers externos e textconv. Regressão de hook controlado adicionada. Aguardar novo CI; sem teste local ou merge/deploy.
+
+## Isolamento de descoberta Git — 2026-10-22
+@84f876d Cloud Quality 39825438740 SUCCESS; Hosted 39825438717 FAILURE (9 passam, 1 falha). O workspace sem .git descobriu o repo pai do checkout CI: falha real de escopo. Gateway/subprocessos e GitAdapter agora fixam GIT_CEILING_DIRECTORIES no pai do workspace autorizado. Regressão de repo pai/filho e cenário hosted existente devem confirmar indisponibilidade correta. Não declarar novo Cloud Green antes do rerun; sem testes locais.
+
+## Checkpoint remoto comprovado — 2026-10-22
+92d05f49f610fa983ad68facdee59af46a918899: Cloud Quality 39826094603 SUCCESS; Hosted Web UI 39826094506 SUCCESS, 10 cenários reais. Confirma correção de descoberta Git pai e fluxos Visual/receipts/PTYs/arquivos/prompts/perfis/teclado/temas. Working tree de código limpa; consolidação documental posterior não muda código. Código pendente e gates externos discriminados no ledger/Bible. PR #89 permanece DRAFT, nenhum merge/deploy, release não comprovada. Testes/instalação/build/startup locais excluídos e não executados.

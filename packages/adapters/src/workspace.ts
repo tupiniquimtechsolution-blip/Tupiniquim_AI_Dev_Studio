@@ -179,7 +179,9 @@ export class WorkspaceAdapter {
       for (const entry of entries) {
         if (matches.length >= limit) return
         if (entry.name.startsWith('.') || ignoredDirectories.has(entry.name)) continue
-        const absolute = path.join(directory, entry.name)
+        // Search must not follow file symlinks or junctions outside the workspace.
+        if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) continue
+        const absolute = await this.safePath(path.relative(root, path.join(directory, entry.name)))
         if (entry.isDirectory()) { await visit(absolute); continue }
         const info = await stat(absolute)
         if (info.size > 1_000_000) continue

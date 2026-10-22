@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
-import type { AgentCatalogView, AgentLoadoutView, AgentPermissionProfile, AIProviderKind, AIStatus, LocalModel, SkillControlView, ToolboxGateId, ToolboxGateView } from '@tupiniquim/contracts'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { AgentCatalogView, AgentLoadoutView, AgentPermissionProfile, AIProviderKind, AIStatus, LocalModel, SkillControlView, ToolboxGateId, ToolboxGateView, ToolboxGateRecord } from '@tupiniquim/contracts'
 import './control-center.css'
+import { containDialogFocus } from './dialogFocus'
 
 const toolboxGates: Array<{ id: ToolboxGateId; label: string }> = [
   { id: 'quality-gates', label: 'Qualidade completa' },
@@ -43,6 +44,7 @@ export interface ExecutionRuntimeInfo {
 interface ControlCenterProps {
   open: boolean
   onClose: () => void
+  returnFocusTo?: () => HTMLElement | null
   workspaceRoot: string | null
   aiStatus: AIStatus | null
   localModels: LocalModel[]
@@ -56,6 +58,8 @@ interface ControlCenterProps {
 }
 
 export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | null => {
+  const { open, returnFocusTo } = props
+  const dialogRef = useRef<HTMLDialogElement | null>(null)
   const [section, setSection] = useState('models-providers')
   const [skills, setSkills] = useState<SkillControlView[]>([])
   const [agents, setAgents] = useState<AgentCatalogView[]>([])
@@ -68,9 +72,14 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
   const [portableRoot, setPortableRoot] = useState('')
   const [portableResult, setPortableResult] = useState('Informe a raiz do AI Lab/USB para detectar runtimes sem alterar arquivos.')
   const [gateResult, setGateResult] = useState<ToolboxGateView | null>(null)
+  const [gateHistory, setGateHistory] = useState<Array<ToolboxGateView & { id: string; startedAt: string; finishedAt: string }>>([])
+  const gatePending = useRef(false)
+  const [runtimeHistory, setRuntimeHistory] = useState<{ projectId: string; records: ToolboxGateRecord[]; status: string }>({ projectId: '', records: [], status: 'Carregando histórico do Runtime…' })
   const [actionResult, setActionResult] = useState('')
   const [busy, setBusy] = useState(false)
   const projectId = useMemo(() => props.workspaceRoot ?? '', [props.workspaceRoot])
+  const runtimeEvidence = runtimeHistory.projectId === projectId ? runtimeHistory.records : []
+  const runtimeEvidenceStatus = runtimeHistory.projectId === projectId ? runtimeHistory.status : 'Carregando histórico do Runtime…'
   // Web: gates bloqueados enquanto o Runtime Local não estiver READY —
   // reflete o estado ANTES do clique em vez de falhar genericamente depois.
   // Desktop (prop ausente): sem bloqueio, execução local como sempre.
@@ -86,8 +95,28 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
     : (providerOptions[0] ?? 'codex-app-server')
 
   useEffect(() => {
+    if (!open) return
+    const dialog = dialogRef.current
+    if (dialog === null) return
+    const active = document.activeElement
+    const opener = active instanceof HTMLElement ? active : null
+    const disclosure = opener?.closest('details')
+    const returnTarget = returnFocusTo?.() ?? (disclosure !== null && disclosure !== undefined && !disclosure.open
+      ? disclosure.querySelector('summary') : opener)
+    dialog.showModal()
+    return () => { dialog.close(); returnTarget?.focus() }
+  }, [open, returnFocusTo])
+
+  useEffect(() => {
     if (!props.open) return
     let active = true
+    if (window.controlCenter.listToolboxEvidence !== undefined) {
+      void window.controlCenter.listToolboxEvidence().then((result) => {
+        if (!active) return
+        if (result.ok) setRuntimeHistory((current) => ({ projectId, records: current.projectId === projectId ? [...new Map([...current.records, ...result.value].map((item) => [item.id, item])).values()].slice(0, 100) : result.value, status: 'Até 100 registros persistidos deste workspace; horários do servidor.' }))
+        else setRuntimeHistory({ projectId, records: [], status: result.error.message })
+      }).catch(() => { if (active) setRuntimeHistory({ projectId, records: [], status: 'Histórico remoto indisponível.' }) })
+    }
     void window.controlCenter.listAgents().then((result) => {
       if (!active || !result.ok) return
       setAgents(result.value)
@@ -107,11 +136,42 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
   if (!props.open) return null
 
   const runGate = async (gateId: ToolboxGateId): Promise<void> => {
+    if (gatePending.current) return
+    gatePending.current = true
     setBusy(true)
+    const startedAt = new Date().toISOString()
+    let view: ToolboxGateView
     try {
       const result = await window.controlCenter.runToolboxGate({ gateId })
-      setGateResult(result.ok ? result.value : { gateId, state: 'FAIL', evidence: result.error.message })
-    } finally { setBusy(false) }
+      view = result.ok ? result.value : { gateId, state: 'NOT_AVAILABLE', evidence: result.error.message }
+    } catch {
+      view = { gateId, state: 'NOT_AVAILABLE', evidence: 'Não foi possível obter um resultado do executor. Execução não certificada.' }
+    } finally { gatePending.current = false; setBusy(false) }
+    setGateResult(view)
+    setGateHistory((history) => [{ ...view, id: crypto.randomUUID(), startedAt, finishedAt: new Date().toISOString() }, ...history].slice(0, 50))
+    if (window.controlCenter.listToolboxEvidence !== undefined) {
+      try {
+        const history = await window.controlCenter.listToolboxEvidence()
+        if (history.ok) setRuntimeHistory({ projectId, records: history.value, status: 'Até 100 registros persistidos deste workspace; horários do servidor.' })
+        else setRuntimeHistory({ projectId, records: [], status: history.error.message })
+      } catch { setRuntimeHistory({ projectId, records: [], status: 'Não foi possível confirmar o histórico remoto.' }) }
+    }
+  }
+
+  const exportEvidence = (): void => {
+    const file = new Blob([JSON.stringify({ scope: 'session-only; no production or physical certification', records: gateHistory }, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(file)
+    const link = document.createElement('a')
+    link.href = url; link.download = 'tupiniquim-session-evidence.json'; link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  const exportRuntimeEvidence = (): void => {
+    const file = new Blob([JSON.stringify({ scope: 'workspace Runtime Gateway receipts; not release or physical certification', records: runtimeEvidence }, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(file)
+    const link = document.createElement('a')
+    link.href = url; link.download = 'tupiniquim-runtime-evidence.json'; link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
   const inspectPortable = async (): Promise<void> => {
@@ -153,20 +213,24 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
     } finally { setBusy(false) }
   }
 
-  return <div className="control-center-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose() }}>
-    <section className="control-center" role="dialog" aria-modal="true" aria-label="Tupiniquim Control Center">
-      <header><div><strong>Tupiniquim Control Center</strong><small>AI Lab + Toolbox + Dev AI</small></div><button onClick={() => props.onClose()}>×</button></header>
+  return <dialog ref={dialogRef} onKeyDown={containDialogFocus} className="control-center" aria-label="Tupiniquim Control Center" onCancel={(event) => { event.preventDefault(); props.onClose() }} onClick={(event) => {
+    if (event.target !== event.currentTarget) return
+    const bounds = event.currentTarget.getBoundingClientRect()
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) props.onClose()
+  }}>
+      <header><div><strong>Tupiniquim Control Center</strong><small>AI Lab + Toolbox + Dev AI</small></div><button autoFocus aria-label="Fechar Control Center" onClick={() => props.onClose()}>×</button></header>
       <div className="control-center-body">
         <nav>{controlCenterSections.map(({ id, label }) => <button key={id} className={section === id ? 'active' : ''} onClick={() => setSection(id)}>{label}</button>)}</nav>
         <main>
           {section === 'models-providers' && <div className="cc-stack"><h2>Modelos & Providers</h2><p>Seleção explícita e filtrada pelo runtime. Nenhum fallback automático.</p><label>Provider<select value={props.aiStatus?.provider ?? providerOptions[0] ?? 'codex-app-server'} disabled={busy || props.aiStatus?.state === 'BUSY'} onChange={(event) => void props.onSelectProvider(event.target.value as AIProviderKind)}>{providerOptions.map((provider) => <option key={provider} value={provider}>{providerName(provider)}</option>)}</select></label>{props.aiStatus !== null && providerUsesModel(props.aiStatus.provider) && <><label>Modelo<select value={props.selectedLocalModel} onChange={(event) => void props.onSelectModel(event.target.value)}><option value="">Selecionar modelo</option>{props.localModels.map((model) => <option key={model.model} value={model.model}>{model.displayName ?? model.name}</option>)}</select></label><button onClick={() => void props.onRefreshModels()}>Atualizar modelos</button></>}</div>}
           {section === 'skills' && <div className="cc-stack"><h2>Skills</h2><p>Descoberta não equivale a aprovação. Somente skills auditadas podem ser habilitadas.</p>{projectId === '' ? <div className="cc-note">Abra um workspace para gerenciar skills por projeto.</div> : skills.map((skill) => <div className="cc-card" key={skill.id}><div><strong>{skill.name}</strong><small>{skill.status} · execução automática: NÃO</small></div><button onClick={() => void toggleToolbox(!skill.enabled)}>{skill.enabled ? 'Desabilitar' : 'Habilitar'}</button></div>)}{actionResult !== '' && <div className="cc-note">{actionResult}</div>}</div>}
-          {section === 'toolbox' && <div className="cc-stack"><h2>Toolbox</h2><p>Gates allowlisted; nenhum comando arbitrário vem da interface.</p>{props.executionRuntime !== undefined && <div className={`cc-card cc-runtime tone-${props.executionRuntime.view.tone}`} role="status"><div><strong>{props.executionRuntime.view.label}</strong><small>{props.executionRuntime.view.detail}</small>{props.executionRuntime.view.state === 'READY' && props.executionRuntime.status !== null && <small>Transporte: {props.executionRuntime.status.transport === 'https-tunnel' ? 'HTTPS Tunnel' : props.executionRuntime.status.transport ?? '—'}{props.executionRuntime.status.platform !== undefined ? ` · Plataforma: ${props.executionRuntime.status.platform}` : ''}{(props.executionRuntime.status.capabilities?.length ?? 0) > 0 ? ` · Capacidades: ${props.executionRuntime.status.capabilities?.join(', ') ?? ''}` : ''}</small>}</div>{props.onRefreshRuntime !== undefined && <button disabled={busy} onClick={() => void props.onRefreshRuntime?.()}>Verificar novamente</button>}</div>}{gatesLocked ? <div className="cc-note">Os gates executam no seu hardware via Runtime Local (fail-closed). Eles ficam liberados quando o estado acima for READY — o chat Cloud e o Workers AI não dependem disso.</div> : <div className="cc-grid">{toolboxGates.map((gate) => <button key={gate.id} disabled={busy || projectId === ''} onClick={() => void runGate(gate.id)}>{gate.label}</button>)}</div>}{gateResult !== null && !gatesLocked && <pre className={`cc-evidence state-${gateResult.state.toLowerCase()}`}>{gateResult.gateId}: {gateResult.state}\n{gateResult.evidence}</pre>}</div>}
+          {section === 'toolbox' && <div className="cc-stack"><h2>Toolbox</h2><p>Gates allowlisted; nenhum comando arbitrário vem da interface.</p>{props.executionRuntime !== undefined && <div className={`cc-card cc-runtime tone-${props.executionRuntime.view.tone}`} role="status"><div><strong>{props.executionRuntime.view.label}</strong><small>{props.executionRuntime.view.detail}</small>{props.executionRuntime.view.state === 'READY' && props.executionRuntime.status !== null && <small>Transporte: {props.executionRuntime.status.transport === 'https-tunnel' ? 'HTTPS Tunnel' : props.executionRuntime.status.transport ?? '—'}{props.executionRuntime.status.platform !== undefined ? ` · Plataforma: ${props.executionRuntime.status.platform}` : ''}{(props.executionRuntime.status.capabilities?.length ?? 0) > 0 ? ` · Capacidades: ${props.executionRuntime.status.capabilities?.join(', ') ?? ''}` : ''}</small>}</div>{props.onRefreshRuntime !== undefined && <button disabled={busy} onClick={() => void props.onRefreshRuntime?.()}>Verificar novamente</button>}</div>}{gatesLocked ? <div className="cc-note">Os gates executam no seu hardware via Runtime Local (fail-closed). Eles ficam liberados quando o estado acima for READY — o chat Cloud e o Workers AI não dependem disso.</div> : <div className="cc-grid">{toolboxGates.map((gate) => <button key={gate.id} disabled={busy || projectId === ''} onClick={() => void runGate(gate.id)}>{gate.label}</button>)}</div>}{gateResult !== null && <pre className={`cc-evidence state-${gateResult.state.toLowerCase()}`}>{gateResult.gateId}: {gateResult.state}\n{gateResult.evidence}</pre>}</div>}
+          {section === 'toolbox' && <section className="cc-stack" aria-label="Evidências da sessão"><h3>Histórico de evidências</h3><p>Até 50 resultados desta sessão. Horários do navegador; não substituem CI, aceite de produção ou certificação física.</p>{gateHistory.length === 0 ? <p>Nenhuma execução registrada nesta sessão.</p> : <><button onClick={exportEvidence}>Exportar evidências da sessão</button><ol>{gateHistory.map((record) => <li key={record.id}><details><summary>{record.gateId} · {record.state} · {new Date(record.finishedAt).toLocaleTimeString()}</summary><p>Início: {record.startedAt}<br />Fim: {record.finishedAt}</p><pre className="cc-evidence">{record.evidence}</pre></details></li>)}</ol></>}</section>}
+          {section === 'toolbox' && window.controlCenter.listToolboxEvidence !== undefined && <section className="cc-stack" aria-label="Histórico persistido do Runtime"><h3>Evidências do workspace</h3><p role="status">{runtimeEvidenceStatus}</p>{runtimeEvidence.length === 0 ? <p>Nenhum resultado persistido.</p> : <><button onClick={exportRuntimeEvidence}>Exportar histórico do Runtime</button><ol>{runtimeEvidence.map((record) => <li key={record.id}><details><summary>{record.gateId} · {record.state}</summary><p>{record.source} · {record.hostPlatform}<br />Execução confirmada: {record.executionConfirmed ? 'sim' : 'não'}<br />Início: {record.startedAt}<br />Fim: {record.finishedAt}</p><pre className="cc-evidence">{record.evidence}</pre></details></li>)}</ol></>}</section>}
           {section === 'ai-lab' && <div className="cc-stack"><h2>AI Lab</h2><p>Detecção read-only da estrutura portátil runtime/models/data/projects/cache.</p><label>Raiz portátil<input value={portableRoot} onChange={(event) => setPortableRoot(event.target.value)} placeholder="Ex.: D:\\AI-LAB ou F:\\AI-LAB" /></label><button disabled={busy || portableRoot.trim() === ''} onClick={() => void inspectPortable()}>Detectar runtimes</button><pre className="cc-evidence">{portableResult}</pre></div>}
           {section === 'agents' && <div className="cc-stack"><h2>Agentes & Loadouts</h2><p>Agent, provider, modelo e skills permanecem identidades separadas. Salvar um loadout não concede execução automática.</p>{projectId === '' ? <div className="cc-note">Abra um workspace para configurar loadouts por projeto.</div> : <><label>Agente<select value={selectedAgentId} onChange={(event) => setSelectedAgentId(event.target.value)}>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}</select></label><label>Provider<select value={effectiveLoadoutProvider} onChange={(event) => { const provider = event.target.value as AIProviderKind; setLoadoutProvider(provider); if (!providerUsesModel(provider)) setLoadoutModel('') }}>{providerOptions.map((provider) => <option key={provider} value={provider}>{providerName(provider)}</option>)}</select></label>{providerUsesModel(effectiveLoadoutProvider) && <label>Modelo<select value={loadoutModel || props.selectedLocalModel} onChange={(event) => setLoadoutModel(event.target.value)}><option value="">Selecionar modelo</option>{props.localModels.map((model) => <option key={model.model} value={model.model}>{model.displayName ?? model.name}</option>)}</select></label>}<label>Permissão<select value={loadoutPermission} onChange={(event) => setLoadoutPermission(event.target.value as AgentPermissionProfile)}><option value="READ_ONLY">READ_ONLY</option><option value="ASSISTED">ASSISTED</option><option value="FULL_ACCESS">FULL_ACCESS</option></select></label><label className="cc-inline"><input type="checkbox" checked={loadoutUseToolbox} disabled={!toolboxEnabled} onChange={(event) => setLoadoutUseToolbox(event.target.checked)} />Usar Tupiniquim Toolbox {toolboxEnabled ? '' : '(habilite a skill primeiro)'}</label><button disabled={busy || selectedAgentId === '' || (providerUsesModel(effectiveLoadoutProvider) && (loadoutModel || props.selectedLocalModel) === '')} onClick={() => void saveAgentLoadout()}>Salvar loadout com aprovação</button><div className="cc-grid">{loadouts.map((loadout) => <div className="cc-card" key={loadout.agentId}><div><strong>{agents.find((agent) => agent.id === loadout.agentId)?.name ?? loadout.agentId}</strong><small>{loadout.provider}{loadout.model === null ? '' : ` · ${loadout.model}`} · {loadout.permissionProfile}</small><small>Skills: {loadout.skillIds.length === 0 ? 'nenhuma' : loadout.skillIds.join(', ')} · execução automática: NÃO</small></div><span className="cc-badge">SALVO</span></div>)}</div>{actionResult !== '' && <div className="cc-note">{actionResult}</div>}</>}</div>}
           {section === 'security-quality' && <div className="cc-stack"><h2>Segurança & Qualidade</h2><p>Ausência de ambiente = NOT_AVAILABLE, nunca PASS. Use o Toolbox para executar os gates suportados e revisar evidências.</p><div className="cc-card"><div><strong>Política</strong><small>Default deny · approvals · AuditLog · sem fallback automático</small></div><span className="cc-badge">ATIVA</span></div></div>}
         </main>
       </div>
-    </section>
-  </div>
+  </dialog>
 }

@@ -1,5 +1,68 @@
 # Changelog do Agente
 
+## 2026-10-22 — Prompt Architect e achados do navegador remoto
+
+- Painel completo criar/versionar/validar/compilar/comparar/exportar, com
+  rascunhos protegidos e carga sob demanda. Sem gateway necessário para prompts.
+- WebState usa núcleo PromptArchitect, serialização e histórico imutável;
+  regressões concorrência/restart/compilação estrita e fluxo browser.
+- Hosted UI expôs Tab saindo do modal: contenção explícita nas bordas adicionada.
+- Trace mostrou teste de edição focando textarea IME readonly oculto; corrigido
+  para a superfície visível e teclas reais, sem enfraquecer o aceite de salvar.
+
+## 2026-10-22 — Validação de navegador hospedada
+
+- Novo Hosted Web UI: Worker, Durable Object, gateway e Chromium reais no runner,
+  com workspace efêmero e token sintético loopback. Sem deploy nem inferência paga.
+- Cobertura de HUD, teclado, responsividade e arquivos/search/diff/save reais.
+- Binding AI ausente não retorna READY nem anuncia inferência configurada.
+- Ledger de conclusão não local com aceites e dependências externas explícitas.
+
+## 2026-10-22 — Retomada e proteção de edições
+
+- Serialização de abrir/salvar e estado somente leitura durante IO previnem
+  concorrência e substituição tardia do buffer ativo.
+- Erros de comunicação preservam edições; progresso/resultado visíveis no painel.
+- Confirmação nos destinos internos e beforeunload para edições não salvas.
+- Sem mudanças em permissões/contratos ou execução de testes locais.
+
+## 2026-10-20 — Files: revisão antes de salvar
+
+- Comparação baseline/buffer somente leitura no Monaco existente, com tema e
+  fallback inline para telas estreitas; edição preservada ao alternar.
+- Proteção contra descarte acidental ao fechar arquivo sujo.
+- Sem alteração em preload, contratos, policies, dependências ou produção.
+- Testes locais excluídos pelo usuário; validação via Cloud Quality do novo head.
+
+## 2026-10-16 — Continuação das pendências executáveis
+
+- CI remoto `38924014282` detectou warning de dependência do hook de foco;
+  props desestruturadas antes do effect para corrigir sem suprimir a regra.
+
+- Remote Gateway recebe o mesmo confinamento da busca, omite entradas ocultas
+  e limita previews; integração cobre links externos, dados ocultos e limite.
+  Import explícito `.ts` compatível com o launcher nativo Node 24.
+
+- Busca de conteúdo real no drawer Files via IPC/RPC existente, com erro,
+  resultado vazio, limite e descarte de respostas antigas; sem simulação.
+- Busca no adaptador não segue symlinks/tipos especiais nem caminhos externos;
+  caso de segurança adicionado à integração remota, sem execução local.
+- Control Center usa modalidade nativa, Escape, foco inicial/restauração,
+  targets de toque e superfícies consistentes com tokens existentes.
+- Kanban Miro Dev Studio sincronizado/confirmado com 34 IDs e links Notion;
+  tarefa #17 desbloqueada para Em Andamento (residual cross-project preservado).
+
+## 2026-10-16 — HUD acessível e reconciliação de evidências
+
+- Drawer Web usa dialog modal nativo, Escape e restauração de foco; disclosures
+  fecham ao perder foco e seleção de modo volta ao composer.
+- Enter durante composição IME não envia; labels, textarea e touch targets
+  melhorados sem alterar guardas/provider/runtime/dependências.
+- Smoke remoto ampliado para teclado; NÃO executado localmente.
+- Auditoria de 17 PRs, 17 issues, CI por SHA, ruleset/main, release gates e
+  34 tarefas Agenor. Corrigida a leitura de verde histórico como estado atual.
+- Release permanece pendente de smoke atual, Runtime, Access e Windows físico.
+
 ## 2026-09-30 — Estabilização Release Green (Web hotfix + auditoria canônica)
 
 - fix(web-ai): `ai-text.ts` compartilhado normaliza respostas OpenAI-compatible
@@ -375,3 +438,51 @@ Continuidade corretiva sobre o PR #12 (Ref #11). Nenhuma mudança arquitetural; 
 ## 2026-09-22 — RC1 consolidation
 
 Merge Wave17 + Google Tasks; entrypoint de packaging corrigido, Monaco offline, provider/model preferences duráveis, descoberta dinâmica Ollama, rail/diff ligados, aprovação manual nativa limitada e auditada, terminal não oculta erro nem deixa PTY ao desmontar. Bootstrap Windows e manifesto local, build/run/verify, regressões e auditoria honesta RF em docs/RC1. Não é aceite integral V1. Sem rebase/force push/main merge.
+
+## 2026-10-22 — Hosted browser evidence and CI repair
+Hosted Web UI 39770100780 SUCCESS at 69fae38. Cloud Quality 39770100616 stopped at lint: three test storage methods declared async without await. Return explicit resolved promises; no local tests executed. Remaining gates await rerun.
+
+## 2026-10-22 — Preferências e fronteira de validação
+Painel de atalhos Web, binding explícito por ação, desativado por padrão; preserva perfis legados. Save/import Web agora validam schema e contraste compartilhado com desktop; perfil inválido não é persistido. Regressões unitárias e hosted adicionadas para execução exclusiva no GitHub.
+
+## 2026-10-22 — Evidências fiéis no gateway
+Gates manuais não retornam PASS por grep/build parcial. Supply-chain indisponível sem aprovação de instalação. Quality inclui lint/typecheck/unit/integration/security/build; falha interrompe sequência. Secret scan usa modo quiet e não retorna linhas/caminhos sensíveis; resultados de comandos expõem apenas execução e exit code. Regressões remotas adicionadas. Sem execução local.
+
+## 2026-10-22 — Evidências da sessão e reauditoria de fontes
+Control Center mantém até 50 resultados reais nesta sessão e exporta JSON. Erro de transporte = NOT_AVAILABLE, sem PASS/FAIL inventado. Hosted regression não executa comandos: gate manual retorna indisponibilidade real. Fontes pinadas do Knowledge Pack e MIT confirmados via GitHub; hashes dos catálogos registrados, arquivos originais ausentes explicitamente não revalidados.
+
+## 2026-10-22 — CREATE aprovado, sem sobrescrita
+UI Web Novo arquivo prepara revisão imutável, exibe caminho/conteúdo/hash/risco/origem usuário, exige aprovação explícita. DO usa PlanApprovalService, scope ONCE, claim/complete effect, registro TOOL e replay guard. Gateway usa temporário irmão + link exclusivo. Regressões para concorrência, persistência após restart, expiração/injeção e UI real. Resolvedor gateway rejeita links e caminhos Windows ambíguos. Não concede proveniência de agente a rascunho humano. Nenhum teste local.
+
+## 2026-10-22 — Revisão visual e navegação
+Inspeção dos screenshots remotos @21e75fe em 390/1440; formulários novos usam tokens do Prompt Architect. Corrigido contraste do Control Center em tema claro. Regressão remota amplia screenshots claro/escuro 390/768/1024/1440 e painéis mobile. Navegação centralizada registra guarda do Studio para edições/IO e restaura posição do histórico quando Voltar é cancelado. Startup sinaliza aria-busy até preferências carregarem, evitando teste antecipado de atalhos após reload.
+
+## 2026-10-22 — CAS e aprovação persistida
+Gateway grava temporário e publica atomicamente sob fila por caminho, revalida hash dentro da fila e recusa sobrescrita sem baseline. Worker encaminha expectedHash. Planos/propostas Web validam schemas, guardam decisões e comparam hash canônico do manifesto antes de start/apply; baseline removido ou alterado bloqueia. Regressões de escritores concorrentes e negativa de enfraquecimento/start sem aprovação no hosted. Execução positiva com modelo real continua sem aceite externo.
+
+## 2026-10-22 — Terminal multissessão e limites
+Manager de até 4 sessões Web/Desktop com histórico visual independente e limpeza no unmount; confirmação do shell real no início. Tratadas rejeições no create/kill e encerramento quando create resolve após unmount. Gateway limita recursos e prazo sem output renovar lease. Hosted comprova isolamento por arquivos reais em dois PTYs Linux; regressão temporal roda só no CI. Não certifica Windows/ConPTY.
+
+## 2026-10-22 — Correção de contrato opcional
+Cloud Quality 39777878179 encontrou exactOptionalPropertyTypes no encaminhamento de platform do manager de terminais. Normalizar ausência para null ao chamar TerminalPane. Sem teste local; rerun remoto requerido.
+
+## 2026-10-22 — Checkpoint documental e higiene de ambiente
+Reconciliados README/Backlog/Matriz da Bible, preservando inventário físico e pendências reais. Gateway reutiliza createRestrictedEnvironment para comandos/PTYs em vez de herdar process.env integral. Teste hosted verifica somente ausência do nome do token no shell. Drawer entra sem fade de texto; screenshots terminam animações finitas para revisão visual fiel. Sem execução local.
+
+## 2026-10-22 — Catálogo visual e licença fail-closed
+Web agora usa VisualIntelligenceService em DO, valida schemas, arquivo regular no Runtime, diretório assets e fonte HTTP(S), serializa mutações e recusa licença UNKNOWN/RESTRICTED/vazia. UI Biblioteca visual registra/lista metadados e consulta elegibilidade declarada; não copia/renderiza/transforma nem verifica licença por autoridade externa. USER_PROVIDED evita atribuição automática a fornecedor. Hosted regressions cobrem concorrência/persistência, gates de licença, arquivo ausente/diretório/URL inadequada e preservação de bytes. Sem testes locais.
+
+## 2026-10-22 — Receipts persistidos e correção do teste visual
+DO serializa histórico de até 100 resultados reais por workspace; Worker constrói receipts de execução/inatividade/erro com horários server-side e confirma persistência antes de devolver o gate. API pública de histórico só lê. Control Center exibe/exporta histórico remoto e mantém observações da sessão distintas. Hosted verifica reload/NOT_AVAILABLE sem execução confirmada; unit verifica concorrência/restart/cap. Corrigido ramo não-Promise no teste visual. Formulário visual espera carga inicial antes de registrar, evitando sobrescrever lista com resposta antiga. Sem execução local.
+
+## 2026-10-22 — Consulta Git sem simulação
+Parser compartilhado de git status porcelain v2 -z preserva nomes brutos e consome origem das renomeações; inclui conflitos e contadores de upstream. Gateway falha explicitamente sem repo, sem branch/árvore vazia fabricadas. GitReview mostra estado+diff reais e trata rejeições; reabre ao trocar workspace. Regressões unit, repo temporário real e browser via PTY Linux adicionadas. Referência primária: https://git-scm.com/docs/git-status (formato porcelain v2). Corrigido set-state-in-effect do histórico com snapshots por workspace. Sem testes locais.
+
+## 2026-10-22 — Leitura Git sem hooks e ciclo assíncrono
+GitAdapter e gateway forçam core.fsmonitor=false nas consultas para não executar hook configurado pelo repo. Regressão Linux com hook controlado verifica ausência de execução. Cloud Quality 39825112842 encontrou chamada de estado a partir da inicialização do GitReview; consulta pura agora retorna Promise, e respostas/rejeições atualizam estado em callbacks assíncronos. Regra preservada, nenhum teste local.
+
+## 2026-10-22 — Descoberta Git confinada
+Teste hosted revelou descoberta automática de repo acima da raiz autorizada. Ambiente Git passa a fixar ceiling no pai do workspace, preservando repo/worktree próprios e bloqueando consulta de repo vizinho. Integração real cria repo pai e workspace filho sem .git, esperando erro. Fonte Git: https://git-scm.com/docs/git (GIT_CEILING_DIRECTORIES). Sem leitura de arquivos de segredos ou execução local.
+
+## 2026-10-22 — Evidência final do checkpoint de código
+Head de código 92d05f4 passou Cloud Quality 39826094603 e Hosted Web UI 39826094506 (10 passed). Consolidada rastreabilidade documental, preservando falhas e pendências reais. Apenas documentação alterada nesta etapa; nenhum teste local ou produção. RELEASE-GREEN não comprovado.

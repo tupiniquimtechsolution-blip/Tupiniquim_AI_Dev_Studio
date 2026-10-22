@@ -1,3 +1,4 @@
+import { parseGitStatus } from '../../../packages/adapters/src/git-status.ts'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -5,6 +6,13 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import * as pty from 'node-pty'
+import { searchWorkspaceFiles } from './workspace-search.ts'
+import { executeGatewayGate } from './gate-runner.ts'
+import { resolveConfinedWorkspacePath } from './workspace-path.ts'
+import { createWorkspaceFile } from './workspace-create.ts'
+import { writeWorkspaceFile } from './workspace-write.ts'
+import { terminalLifetime } from './terminal-lifetime.ts'
+import { createRestrictedEnvironment } from '../../../packages/adapters/src/secret-environment.ts'
 
 type JsonRecord = Record<string, unknown>
 
@@ -14,6 +22,7 @@ const TOKEN = process.env.TUPINIQUIM_GATEWAY_TOKEN?.trim() ?? ''
 const ROOT = path.resolve(process.env.TUPINIQUIM_GATEWAY_ROOT?.trim() || '.tupiniquim/runtime-gateway')
 const MAX_BODY = 12 * 1024 * 1024
 const SAFE_ID = /^[a-zA-Z0-9_-]{8,96}$/
+const activeTerminals = new Map<string, number>()
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
@@ -40,13 +49,7 @@ const workspaceRoot = async (workspaceId: string): Promise<string> => {
 }
 
 const resolveWorkspacePath = async (workspaceId: string, requested: string): Promise<string> => {
-  const root = await workspaceRoot(workspaceId)
-  const relative = requested.replace(/\\/g, '/').replace(/^\/workspace\/?/, '').replace(/^\/+/, '')
-  if (relative.includes('\0') || relative.split('/').some((part) => part === '..')) throw new Error('Caminho inválido.')
-  const target = path.resolve(root, relative)
-  const rootPrefix = root.endsWith(path.sep) ? root : `${root}${path.sep}`
-  if (target !== root && !target.startsWith(rootPrefix)) throw new Error('Caminho fora do workspace.')
-  return target
+  return resolveConfinedWorkspacePath(await workspaceRoot(workspaceId), requested)
 }
 
 const readBody = async (request: IncomingMessage): Promise<JsonRecord> => {
@@ -69,7 +72,7 @@ const runProcess = async (
   cwd: string,
   timeoutMs = 180_000
 ): Promise<{ code: number; stdout: string; stderr: string }> => new Promise((resolve, reject) => {
-  const child = spawn(executable, args, { cwd, windowsHide: true, env: process.env })
+  const child = spawn(executable, args, { cwd, windowsHide: true, env: createRestrictedEnvironment({ GIT_CEILING_DIRECTORIES: path.dirname(cwd) }) })
   let stdout = ''
   let stderr = ''
   const timer = setTimeout(() => {
@@ -112,57 +115,7 @@ const listTree = async (workspaceId: string, depth: number): Promise<JsonRecord[
 
 const searchWorkspace = async (workspaceId: string, query: string, limit: number): Promise<JsonRecord[]> => {
   const root = await workspaceRoot(workspaceId)
-  const max = Math.max(1, Math.min(500, Math.floor(limit)))
-  const results: JsonRecord[] = []
-  const walk = async (directory: string): Promise<void> => {
-    if (results.length >= max) return
-    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-      if (results.length >= max) return
-      if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === 'release' || entry.name === 'out') continue
-      const absolute = path.join(directory, entry.name)
-      if (entry.isDirectory()) { await walk(absolute); continue }
-      const stat = await fs.stat(absolute)
-      if (stat.size > 2 * 1024 * 1024) continue
-      let content: string
-      try { content = await fs.readFile(absolute, 'utf8') } catch { continue }
-      const lines = content.split(/\r?\n/)
-      for (let index = 0; index < lines.length && results.length < max; index += 1) {
-        if (lines[index]?.includes(query)) {
-          results.push({ relativePath: path.relative(root, absolute).split(path.sep).join('/'), line: index + 1, preview: lines[index] ?? '' })
-        }
-      }
-    }
-  }
-  await walk(root)
-  return results
-}
-
-const gate = async (workspaceId: string, gateId: string): Promise<{ state: 'PASS' | 'FAIL'; evidence: string }> => {
-  const cwd = await workspaceRoot(workspaceId)
-  const steps: Record<string, Array<[string, string[]]>> = {
-    'quality-gates': [[executable('pnpm'), ['lint']], [executable('pnpm'), ['typecheck']], [executable('pnpm'), ['test:unit']]],
-    'dependency-audit': [[executable('pnpm'), ['audit', '--audit-level', 'high']]],
-    'security-review': [[executable('pnpm'), ['test:security']]],
-    'architecture-review': [[executable('pnpm'), ['typecheck']]],
-    'supply-chain': [[executable('pnpm'), ['install', '--frozen-lockfile']]],
-    'release-checklist': [[executable('pnpm'), ['build']]],
-    'privacy-lgpd': [['git', ['grep', '-niE', '(lgpd|privacy|privacidade)', '--', 'AGENTS.md', 'docs', '.agent']]],
-    'accessibility-wcag': [['git', ['grep', '-niE', '(aria-|accessib|wcag)', '--', 'apps', 'packages']]]
-  }
-  if (gateId === 'secret-scan') {
-    const result = await runProcess('git', ['grep', '-nE', '(sk-(proj-)?[A-Za-z0-9_-]{20,}|BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY)', '--', '.', ':!pnpm-lock.yaml'], cwd)
-    if (result.code === 1) return { state: 'PASS', evidence: 'Nenhum padrão de secret encontrado.' }
-    return { state: 'FAIL', evidence: (result.stdout + '\n' + result.stderr).trim().slice(-12_000) || `git grep terminou com código ${result.code}` }
-  }
-  const commands = steps[gateId]
-  if (!commands) throw new Error('Gate desconhecido.')
-  let evidence = ''
-  for (const [bin, args] of commands) {
-    const result = await runProcess(bin, args, cwd)
-    evidence += `$ ${bin} ${args.join(' ')}\n${result.stdout}\n${result.stderr}\n`
-    if (result.code !== 0) return { state: 'FAIL', evidence: evidence.trim().slice(-12_000) }
-  }
-  return { state: 'PASS', evidence: evidence.trim().slice(-12_000) || 'Gate concluído.' }
+  return searchWorkspaceFiles(root, query, limit)
 }
 
 const stringArg = (record: JsonRecord, key: string, fallback = ''): string => {
@@ -190,28 +143,31 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
     return null
   }
   if (method === 'fs.read-file') return { content: await fs.readFile(await resolveWorkspacePath(workspaceId, stringArg(args, 'path')), 'utf8') }
+  if (method === 'fs.file-info') {
+    const stat = await fs.stat(await resolveWorkspacePath(workspaceId, stringArg(args, 'path')))
+    return { isFile: stat.isFile(), size: stat.size }
+  }
+  if (method === 'fs.create-file') {
+    await createWorkspaceFile(await workspaceRoot(workspaceId), stringArg(args, 'path'), stringArg(args, 'content'))
+    return null
+  }
   if (method === 'fs.write-file') {
-    const target = await resolveWorkspacePath(workspaceId, stringArg(args, 'path'))
-    await fs.mkdir(path.dirname(target), { recursive: true })
-    await fs.writeFile(target, stringArg(args, 'content'), 'utf8')
+    await writeWorkspaceFile(await workspaceRoot(workspaceId), stringArg(args, 'path'), stringArg(args, 'content'), typeof args.expectedHash === 'string' ? args.expectedHash : undefined)
     return null
   }
   if (method === 'workspace.tree') return listTree(workspaceId, numberArg(args, 'depth', 4))
   if (method === 'workspace.search') return searchWorkspace(workspaceId, stringArg(args, 'query'), numberArg(args, 'limit', 100))
   if (method === 'git.status') {
     const cwd = await workspaceRoot(workspaceId)
-    const result = await runProcess('git', ['status', '--porcelain=v1', '-b'], cwd, 15_000)
-    if (result.code !== 0) return { branch: 'remote-workspace', ahead: 0, behind: 0, entries: [] }
-    const lines = result.stdout.split(/\r?\n/).filter(Boolean)
-    const branchLine = lines.shift() ?? '## remote-workspace'
-    const branch = branchLine.replace(/^##\s*/, '').split('...')[0]?.trim() || 'remote-workspace'
-    return { branch, ahead: 0, behind: 0, entries: lines.map((line) => ({ path: line.slice(3).trim(), index: line[0] ?? ' ', worktree: line[1] ?? ' ' })) }
+    const result = await runProcess('git', ['-c', `safe.directory=${cwd}`, '-c', 'core.fsmonitor=false', 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'], cwd, 15_000)
+    if (result.code !== 0) throw new Error('Git indisponível: abra ou inicialize um repositório real neste workspace.')
+    return parseGitStatus(result.stdout)
   }
   if (method === 'git.diff') {
     const cwd = await workspaceRoot(workspaceId)
     const relativePath = typeof args.relativePath === 'string' && args.relativePath !== '' ? args.relativePath : null
     if (relativePath !== null) await resolveWorkspacePath(workspaceId, relativePath)
-    const result = await runProcess('git', relativePath === null ? ['diff', '--'] : ['diff', '--', relativePath], cwd, 15_000)
+    const result = await runProcess('git', relativePath === null ? ['-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', '--no-color', '--'] : ['-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', '--no-color', '--', relativePath], cwd, 15_000)
     if (result.code !== 0) throw new Error(result.stderr || 'Falha no git diff.')
     return result.stdout
   }
@@ -229,7 +185,7 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
     if (result.code !== 0) throw new Error(result.stderr || 'Falha ao clonar workspace.')
     return { cloned: true, detail: result.stdout || result.stderr || 'Clone concluído.' }
   }
-  if (method === 'control.gate') return gate(workspaceId, stringArg(args, 'gateId'))
+  if (method === 'control.gate') return executeGatewayGate(stringArg(args, 'gateId'), async (bin, argv) => runProcess(bin === 'pnpm' ? executable('pnpm') : bin, argv, await workspaceRoot(workspaceId)))
   if (method === 'workspace.backup-create') {
     const id = createHash('sha256').update(`${workspaceId}:${Date.now()}:${stringArg(args, 'name')}`).digest('hex').slice(0, 32)
     const source = await workspaceRoot(workspaceId)
@@ -276,11 +232,27 @@ const attachTerminal = async (request: IncomingMessage, socket: Duplex, head: Bu
   const workspaceId = request.headers['x-tupiniquim-workspace'] ?? url.searchParams.get('workspace') ?? ''
   if (typeof workspaceId !== 'string' || !SAFE_ID.test(workspaceId)) { socket.write('HTTP/1.1 400 Bad Request\r\n\r\n'); socket.destroy(); return }
   const cwd = await workspaceRoot(workspaceId)
+  const count = activeTerminals.get(workspaceId) ?? 0
+  const total = [...activeTerminals.values()].reduce((sum, value) => sum + value, 0)
+  if (count >= 4 || total >= 32) { socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n'); socket.destroy(); return }
   const cols = Math.max(20, Math.min(500, Number(url.searchParams.get('cols') ?? 100)))
   const rows = Math.max(5, Math.min(200, Number(url.searchParams.get('rows') ?? 30)))
   const shell = process.platform === 'win32' ? (process.env.TUPINIQUIM_GATEWAY_SHELL?.trim() || 'powershell.exe') : (process.env.SHELL?.trim() || '/bin/bash')
   const args = process.platform === 'win32' ? ['-NoLogo', '-NoProfile'] : ['--noprofile', '--norc']
-  const terminal = pty.spawn(shell, args, { cwd, cols, rows, name: 'xterm-256color', env: process.env })
+  const terminal = pty.spawn(shell, args, { cwd, cols, rows, name: 'xterm-256color', env: createRestrictedEnvironment({ GIT_CEILING_DIRECTORIES: path.dirname(cwd) }) })
+  activeTerminals.set(workspaceId, count + 1)
+  const lifetime = terminalLifetime(() => {
+    if (!socket.destroyed) socket.write(frame(0x1, Buffer.from(JSON.stringify({ type: 'error', message: 'Sessão encerrada por limite de inatividade (15min) ou duração (60min).' }), 'utf8')))
+    terminal.kill()
+  })
+  let released = false
+  const release = (): void => {
+    if (released) return
+    released = true; lifetime.dispose()
+    const remaining = (activeTerminals.get(workspaceId) ?? 1) - 1
+    if (remaining <= 0) activeTerminals.delete(workspaceId)
+    else activeTerminals.set(workspaceId, remaining)
+  }
 
   socket.write([
     'HTTP/1.1 101 Switching Protocols',
@@ -292,6 +264,7 @@ const attachTerminal = async (request: IncomingMessage, socket: Duplex, head: Bu
 
   terminal.onData((data) => socket.write(frame(0x2, Buffer.from(data, 'utf8'))))
   terminal.onExit(({ exitCode }) => {
+    release()
     if (!socket.destroyed) {
       socket.write(frame(0x1, Buffer.from(JSON.stringify({ type: 'exit', code: exitCode }), 'utf8')))
       socket.end()
@@ -320,20 +293,20 @@ const attachTerminal = async (request: IncomingMessage, socket: Duplex, head: Bu
       if (mask !== null) for (let index = 0; index < payload.length; index += 1) payload[index] = payload[index]! ^ mask[index % 4]!
       if (opcode === 0x8) { terminal.kill(); socket.end(); return }
       if (opcode === 0x9) { socket.write(frame(0xA, payload)); continue }
-      if (opcode === 0x2) { terminal.write(payload.toString('utf8')); continue }
+      if (opcode === 0x2) { lifetime.touch(); terminal.write(payload.toString('utf8')); continue }
       if (opcode === 0x1) {
         const text = payload.toString('utf8')
         try {
           const control = JSON.parse(text) as JsonRecord
           if (control.type === 'resize') terminal.resize(Math.max(20, Number(control.cols ?? cols)), Math.max(5, Number(control.rows ?? rows)))
-          else terminal.write(text)
-        } catch { terminal.write(text) }
+          else { lifetime.touch(); terminal.write(text) }
+        } catch { lifetime.touch(); terminal.write(text) }
       }
     }
   }
   socket.on('data', (chunk: Buffer) => { buffer = Buffer.concat([buffer, chunk]); consume() })
-  socket.on('close', () => terminal.kill())
-  socket.on('error', () => terminal.kill())
+  socket.on('close', () => { release(); terminal.kill() })
+  socket.on('error', () => { release(); terminal.kill() })
   consume()
 }
 

@@ -127,6 +127,10 @@ export const getRemoteSandbox = (env: RemoteRuntimeConfig, workspaceId: string) 
   const configured = (): boolean => readiness(env).state === 'CONFIGURED'
 
   return {
+    fileInfo: async (path: string): Promise<{ isFile: boolean; size: number }> => runtimeRpc(env, workspaceId, 'fs.file-info', { path }),
+    createFile: async (path: string, content: string): Promise<void> => {
+      await runtimeRpc<null>(env, workspaceId, 'fs.create-file', { path, content })
+    },
     exists: async (path: string): Promise<{ exists: boolean }> => {
       if (!configured()) return { exists: path === '/workspace' }
       try { return await runtimeRpc<{ exists: boolean }>(env, workspaceId, 'fs.exists', { path }) }
@@ -140,8 +144,8 @@ export const getRemoteSandbox = (env: RemoteRuntimeConfig, workspaceId: string) 
       void options
       return runtimeRpc(env, workspaceId, 'fs.read-file', { path })
     },
-    writeFile: async (path: string, content: string): Promise<void> => {
-      await runtimeRpc<null>(env, workspaceId, 'fs.write-file', { path, content })
+    writeFile: async (path: string, content: string, expectedHash?: string): Promise<void> => {
+      await runtimeRpc<null>(env, workspaceId, 'fs.write-file', { path, content, expectedHash })
     },
     listTree: async (depth: number): Promise<Array<JsonRecord>> =>
       runtimeRpc(env, workspaceId, 'workspace.tree', { depth }),
@@ -152,7 +156,7 @@ export const getRemoteSandbox = (env: RemoteRuntimeConfig, workspaceId: string) 
       runtimeRpc(env, workspaceId, 'git.diff', { relativePath }),
     bootstrapRepo: async (repository: string, ref: string): Promise<{ cloned: boolean; detail: string }> =>
       runtimeRpc(env, workspaceId, 'workspace.bootstrap-repo', { repository, ref }),
-    runGate: async (gateId: string): Promise<{ state: 'PASS' | 'FAIL'; evidence: string }> =>
+    runGate: async (gateId: string): Promise<{ state: 'PASS' | 'FAIL' | 'NOT_AVAILABLE'; evidence: string }> =>
       runtimeRpc(env, workspaceId, 'control.gate', { gateId }),
     createBackup: async (options: { dir: string; name: string; ttl: number; gitignore: boolean }): Promise<JsonRecord> =>
       runtimeRpc(env, workspaceId, 'workspace.backup-create', options),

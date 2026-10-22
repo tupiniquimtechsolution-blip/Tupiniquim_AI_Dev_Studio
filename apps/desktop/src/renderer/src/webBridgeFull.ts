@@ -12,8 +12,11 @@ import type {
   Result,
   UIProfile,
   VisualAsset,
+  VisualProviderStatus,
+  ToolboxGateRecord,
   WorkspaceWriteProposal
 } from '@tupiniquim/contracts'
+import type { WorkspaceCreateReview } from '../../../../../packages/contracts/src/workspace-create'
 
 const WORKSPACE_KEY = 'tupiniquim.web.workspace-id'
 const MODEL_KEY = 'tupiniquim.web.model'
@@ -61,6 +64,8 @@ const rpc = async <T>(action: string, input?: unknown): Promise<Result<T>> => {
 const sleep = async (milliseconds: number): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 
 export const installWebFullOverrides = (): void => {
+  window.studio.workspace.prepareCreate = (input) => rpc<WorkspaceCreateReview>('full.workspace.prepare-create', input)
+  window.studio.workspace.approveCreate = (input) => rpc('full.workspace.approve-create', input)
   const agentListeners = new Set<(event: AIEvent) => void>()
   const proposalListeners = new Set<(proposal: WorkspaceWriteProposal) => void>()
 
@@ -115,11 +120,13 @@ export const installWebFullOverrides = (): void => {
   window.studio.settings.export = () => rpc<string>('full.settings.export')
   window.studio.settings.import = (input) => rpc<UIProfile>('full.settings.import', input)
 
+  window.studio.visual.statuses = () => rpc<VisualProviderStatus[]>('full.visual.statuses')
   window.studio.visual.add = (input) => rpc<VisualAsset>('full.visual.add', input)
   window.studio.visual.list = () => rpc<VisualAsset[]>('full.visual.list')
   window.studio.visual.use = (input) => rpc<VisualAsset>('full.visual.use', input)
 
   window.controlCenter.runToolboxGate = (input) => rpc('full.control.gate', input)
+  window.controlCenter.listToolboxEvidence = () => rpc<ToolboxGateRecord[]>('full.control.history')
   window.controlCenter.listSkills = (input) => rpc('full.control.skills', input)
   window.controlCenter.setSkillEnabled = (input) => rpc('full.control.skill-set', input)
   window.controlCenter.listAgentLoadouts = (input) => rpc('full.control.loadouts', input)

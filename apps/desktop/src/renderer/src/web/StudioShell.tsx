@@ -1,10 +1,14 @@
-import { Activity, Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, Code2, FolderTree, GitBranch, LayoutPanelLeft, Save, Settings2, ShieldCheck, Sparkles, TerminalSquare, X } from 'lucide-react'
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { ShortcutPreferences } from '../components/ShortcutPreferences'
+import { WorkspaceCreatePane } from '../components/WorkspaceCreatePane'
+import { shortcutActions, shortcutsSchema, type Shortcuts } from '../../../../../../packages/contracts/src/shortcuts'
+import { Activity, Bot, Boxes, Braces, CheckCircle2, ChevronsUpDown, FolderTree, GitBranch, LayoutPanelLeft, Save, Settings2, ShieldCheck, Sparkles, TerminalSquare, X } from 'lucide-react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AIProviderKind, AIStatus, FileDocument, FileEntry, GitStatus, LocalModel, Mode, PlannedExecution, ProposalStatus, SystemInfo, WorkspaceWriteProposal } from '@tupiniquim/contracts'
 import { evaluateSend, handleAgentEvent, providerDisplayName, providerLabel, providerTurnBlockReason, providerUsesSelectableModel } from '../agentGating'
 import type { ConversationMessage } from '../agentGating'
 import { ControlCenter } from '../components/ControlCenter'
-import { FileTree } from '../components/FileTree'
+import { containDialogFocus } from '../components/dialogFocus'
+import { WorkspaceFileBrowser } from '../components/WorkspaceFileBrowser'
 import { GitReviewPane } from '../components/GitReviewPane'
 import { ProposalProvenance } from '../components/ProposalProvenance'
 import { ThemeToggle } from '../components/ThemeToggle'
@@ -20,9 +24,11 @@ import {
 } from './experience'
 
 const CodeEditor = lazy(async () => import('./CodeEditor'))
+const VisualPane = lazy(async () => ({ default: (await import('../components/VisualLibraryPane')).VisualLibraryPane }))
+const PromptPane = lazy(async () => ({ default: (await import('../components/PromptArchitectPane')).PromptArchitectPane }))
 const TerminalPaneLazy = lazy(async () => {
-  const [module] = await Promise.all([import('../components/TerminalPane'), import('@xterm/xterm/css/xterm.css')])
-  return { default: module.TerminalPane }
+  const [module] = await Promise.all([import('../components/TerminalSessions'), import('@xterm/xterm/css/xterm.css')])
+  return { default: module.TerminalSessions }
 })
 
 const modes: Array<{ mode: Mode; label: string }> = [
@@ -30,7 +36,7 @@ const modes: Array<{ mode: Mode; label: string }> = [
   { mode: 'REVIEW', label: 'Review' }, { mode: 'DEBUG', label: 'Debug' }, { mode: 'PROMPT', label: 'Prompt' }, { mode: 'VISUAL', label: 'Visual' }
 ]
 
-type StudioTool = 'files' | 'terminal' | 'git' | 'activity'
+type StudioTool = 'files' | 'terminal' | 'git' | 'activity' | 'prompts' | 'preferences' | 'visual'
 
 /** Espelho sanitizado do executionRuntime do /api/health (nunca contém token). */
 export interface ExecutionRuntimeStatusPayload {
@@ -49,6 +55,7 @@ interface HealthPayload {
 
 interface StudioShellProps {
   onNavigate: (route: WebRoute) => void
+  registerLeaveGuard: (guard: () => boolean) => () => void
 }
 
 const basename = (path: string): string => path.split('/').at(-1) ?? path
@@ -60,12 +67,13 @@ const basename = (path: string): string => path.split('/').at(-1) ?? path
  * (progressive disclosure). Toda a lógica de guarda fail-closed vem de
  * ../agentGating.ts (Issue #25) — nenhuma regra foi relaxada nesta superfície.
  */
-export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element => {
+export const StudioShell = ({ onNavigate, registerLeaveGuard }: StudioShellProps): React.JSX.Element => {
   const [system, setSystem] = useState<SystemInfo | null>(null)
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
   const [files, setFiles] = useState<FileEntry[]>([])
   const [document, setDocument] = useState<FileDocument | null>(null)
   const [content, setContent] = useState('')
+  const [reviewFileChanges, setReviewFileChanges] = useState(false)
   const [git, setGit] = useState<GitStatus | null>(null)
   const [mode, setMode] = useState<Mode>('CHAT')
   const [notice, setNotice] = useState('Preparando o Studio…')
@@ -83,12 +91,28 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const [runtime, setRuntime] = useState<ExecutionRuntimeView>(executionRuntimeView(null))
   const [runtimeStatus, setRuntimeStatus] = useState<ExecutionRuntimeStatusPayload | null>(null)
   const [tool, setTool] = useState<StudioTool | null>(null)
+  const [shortcuts, setShortcuts] = useState<Shortcuts>({})
+  const [shortcutsLoaded, setShortcutsLoaded] = useState(false)
+  useEffect(() => {
+    let active = true
+    void window.studio.settings.get().then((result) => {
+      if (active && result.ok) { const parsed = shortcutsSchema.safeParse(result.value.shortcuts ?? {}); if (parsed.success) setShortcuts(parsed.data) }
+    }).catch(() => undefined).finally(() => { if (active) setShortcutsLoaded(true) })
+    return () => { active = false }
+  }, [])
+  const [promptDirty, setPromptDirty] = useState(false)
+  const [promptBusy, setPromptBusy] = useState(false)
   const [showControlCenter, setShowControlCenter] = useState(false)
   const [bootState, setBootState] = useState<'loading' | 'ready' | 'error'>('loading')
   const providerRef = useRef<AIProviderKind | null>(null)
   const composerRef = useRef<HTMLTextAreaElement | null>(null)
   const hudToolsRef = useRef<HTMLDetailsElement | null>(null)
+  const drawerRef = useRef<HTMLDialogElement | null>(null)
+  const toolsFocusTarget = useCallback(() => hudToolsRef.current?.querySelector('summary') ?? null, [])
   const threadEndRef = useRef<HTMLDivElement | null>(null)
+  const fileInFlight = useRef(false)
+  const [fileOperation, setFileOperation] = useState<'read' | 'save' | null>(null)
+  const [fileFeedback, setFileFeedback] = useState('')
   const dirty = document !== null && content !== document.content
   const preferences = useMemo(() => parseOnboardingPreferences(localStorage.getItem(WEB_ONBOARDING_KEY)), [])
   const suggestions = useMemo(() => studioSuggestions(preferences), [preferences])
@@ -96,6 +120,19 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   useEffect(() => {
     providerRef.current = aiStatus?.provider ?? null
   }, [aiStatus?.provider])
+
+  useEffect(() => {
+    if (tool === null) return
+    const drawer = drawerRef.current
+    if (drawer === null) return
+    const toolsSummary = hudToolsRef.current?.querySelector('summary')
+    // Native modality makes the background inert and contains keyboard focus.
+    drawer.showModal()
+    return () => {
+      drawer.close()
+      toolsSummary?.focus()
+    }
+  }, [tool])
 
   const refreshRuntime = async (): Promise<void> => {
     try {
@@ -126,7 +163,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
       window.studio.git.status()
     ])
     if (tree.ok) setFiles(tree.value)
-    if (status.ok) setGit(status.value)
+    setGit(status.ok ? status.value : null)
   }
 
   useEffect(() => {
@@ -398,25 +435,60 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
     else setNotice(result.error.message)
   }
 
+  const reportFileStatus = (message: string): void => { setNotice(message); setFileFeedback(message) }
+
   const openFile = async (relativePath: string): Promise<void> => {
+    if (fileInFlight.current) return
     if (dirty && !window.confirm('Há alterações não salvas. Descartar e abrir outro arquivo?')) return
-    const result = await window.studio.workspace.read({ relativePath })
-    if (result.ok) { setDocument(result.value); setContent(result.value.content); setNotice(`Aberto: ${relativePath}`) }
-    else setNotice(result.error.message)
+    fileInFlight.current = true
+    setFileOperation('read')
+    try {
+      const result = await window.studio.workspace.read({ relativePath })
+      if (result.ok) { setDocument(result.value); setContent(result.value.content); setReviewFileChanges(false); reportFileStatus(`Aberto: ${relativePath}`) }
+      else reportFileStatus(result.error.message)
+    } catch { reportFileStatus('Não foi possível abrir o arquivo. Verifique o Runtime e tente novamente.') }
+    finally { fileInFlight.current = false; setFileOperation(null) }
   }
 
   const saveFile = async (): Promise<void> => {
-    if (document === null) return
-    const result = await window.studio.workspace.write({ relativePath: document.relativePath, content, expectedHash: document.hash })
-    if (result.ok) { setDocument(result.value); setContent(result.value.content); setNotice('Arquivo salvo atomicamente.') }
-    else setNotice(result.error.message)
+    if (document === null || !dirty || fileInFlight.current) return
+    fileInFlight.current = true
+    setFileOperation('save')
+    try {
+      const result = await window.studio.workspace.write({ relativePath: document.relativePath, content, expectedHash: document.hash })
+      if (result.ok) { setDocument(result.value); setContent(result.value.content); reportFileStatus('Arquivo salvo.') }
+      else reportFileStatus(result.error.message)
+    } catch { reportFileStatus('Salvamento não confirmado. Suas edições foram preservadas; verifique o arquivo antes de tentar novamente.') }
+    finally { fileInFlight.current = false; setFileOperation(null) }
   }
+
+  const navigateSafely = (route: WebRoute): void => {
+    onNavigate(route)
+  }
+
+  useEffect(() => registerLeaveGuard(() => {
+    if (fileInFlight.current || promptBusy) { setNotice('Aguarde a operação em andamento antes de sair do Studio.'); return false }
+    return !(dirty || promptDirty) || window.confirm('Há alterações não salvas. Descartar e sair do Studio?')
+  }), [dirty, promptDirty, promptBusy, registerLeaveGuard])
+
+  useEffect(() => {
+    if (!dirty && !promptDirty) return
+    const warnBeforeUnload = (event: BeforeUnloadEvent): void => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [dirty, promptDirty])
 
   const openTool = (next: StudioTool): void => {
     setTool((current) => current === next ? null : next)
     void refreshRuntime()
     if (next === 'files') void syncWorkspace()
     if (next === 'git') void syncWorkspace()
+  }
+
+  const closeTool = (): void => {
+    if (tool === 'prompts' && promptBusy) return
+    if (tool === 'prompts' && promptDirty && !window.confirm('Descartar o rascunho de prompt não salvo?')) return
+    setTool(null); setPromptDirty(false); setPromptBusy(false)
   }
 
   const applySuggestion = (prompt: string, suggestionMode: Mode): void => {
@@ -449,7 +521,18 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const conversationEmpty = conversation.length === 0 && planned === null && proposal === null
 
   return (
-    <div className="web-studio">
+    <div className="web-studio" aria-busy={bootState === 'loading' || !shortcutsLoaded} onKeyDown={(event) => {
+      if (event.defaultPrevented || event.repeat || event.nativeEvent.isComposing || event.getModifierState('AltGraph') || tool !== null || showControlCenter) return
+      const target = event.target as HTMLElement
+      if (target.closest('input, textarea, select, [contenteditable="true"], .monaco-editor')) return
+      const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
+      if (!mod || !event.altKey || event.shiftKey) return
+      const action = shortcutActions.find((key) => shortcuts[key] === `Mod+Alt+${event.code}`)
+      if (action === undefined) return
+      event.preventDefault()
+      if (action === 'composer') composerRef.current?.focus()
+      else openTool(action)
+    }}>
       <header className="ws-topbar">
         <div className="brand"><span className="ws-brand-mark" aria-hidden="true"><Braces size={16} /></span><strong>Tupiniquim</strong><span className="ws-brand-sub">DEV AI STUDIO</span></div>
         <button className="project-switcher" title="Workspace lógico da sessão Web" onClick={() => { void syncWorkspace() }}><Boxes size={14} aria-hidden="true" /><span>{workspaceName}</span><ChevronsUpDown size={12} aria-hidden="true" /></button>
@@ -472,6 +555,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
           <details
             className="ws-tools-menu"
             ref={hudToolsRef}
+            onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false }}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 event.preventDefault()
@@ -492,12 +576,15 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                 <button className={tool === 'terminal' ? 'active' : ''} aria-pressed={tool === 'terminal'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('terminal') }}><TerminalSquare size={16} aria-hidden="true" /><span>Terminal</span></button>
                 <button className={tool === 'git' ? 'active' : ''} aria-pressed={tool === 'git'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('git') }}><GitBranch size={16} aria-hidden="true" /><span>Git</span></button>
                 <button className={tool === 'activity' ? 'active' : ''} aria-pressed={tool === 'activity'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('activity') }}><Activity size={16} aria-hidden="true" /><span>Atividade</span></button>
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('visual') }}><Boxes size={16} aria-hidden="true" /><span>Biblioteca visual</span></button>
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('preferences') }}><Settings2 size={16} aria-hidden="true" /><span>Preferências</span></button>
+                <button className={tool === 'prompts' ? 'active' : ''} aria-pressed={tool === 'prompts'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('prompts') }}><Braces size={16} aria-hidden="true" /><span>Prompt Architect</span></button>
               </nav>
               <span className="ws-tools-group-title ws-tools-group-separator">Configurações e áreas</span>
               <div className="ws-tool-destinations">
                 <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); setShowControlCenter(true) }}><ShieldCheck size={16} aria-hidden="true" /><span>Control Center</span></button>
-                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); onNavigate('workbench') }}><LayoutPanelLeft size={16} aria-hidden="true" /><span>Workbench completo</span></button>
-                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); onNavigate('onboarding') }}><Settings2 size={16} aria-hidden="true" /><span>Preferências iniciais</span></button>
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); navigateSafely('workbench') }}><LayoutPanelLeft size={16} aria-hidden="true" /><span>Workbench completo</span></button>
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); navigateSafely('onboarding') }}><Settings2 size={16} aria-hidden="true" /><span>Preferências iniciais</span></button>
               </div>
             </div>
           </details>
@@ -563,7 +650,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
         <section className="ws-composer-zone" aria-label="Composer">
           <div className="ws-mode-switch" role="group" aria-label="Modo do agente">
             {modes.slice(0, 4).map((item) => <button key={item.mode} className={mode === item.mode ? 'active' : ''} aria-pressed={mode === item.mode} onClick={() => setMode(item.mode)}>{item.label}</button>)}
-            <details className="ws-more-modes" onKeyDown={(event) => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}>
+            <details className="ws-more-modes" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false }} onKeyDown={(event) => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus() } }}>
               <summary aria-label="Mais modos do agente">
                 {modes.slice(4).some((item) => item.mode === mode)
                   ? `Modo: ${modes.find((item) => item.mode === mode)?.label ?? mode}`
@@ -576,7 +663,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                     key={item.mode}
                     className={mode === item.mode ? 'active' : ''}
                     aria-pressed={mode === item.mode}
-                    onClick={(event) => { setMode(item.mode); event.currentTarget.closest('details')?.removeAttribute('open') }}
+                    onClick={(event) => { setMode(item.mode); event.currentTarget.closest('details')?.removeAttribute('open'); composerRef.current?.focus() }}
                   >{item.label}</button>
                 ))}
               </div>
@@ -591,6 +678,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
               rows={3}
               onChange={(event) => setAgentInput(event.target.value)}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return
                 if ((event.key === 'Enter' && !event.shiftKey) || (event.ctrlKey && event.key === 'Enter')) {
                   event.preventDefault()
                   void sendToAgent()
@@ -609,21 +697,26 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
       </main>
 
       {tool !== null && (
-        <div className="ws-drawer-backdrop" onClick={() => setTool(null)}>
-          <aside
+          <dialog
+            ref={drawerRef}
+            onKeyDown={containDialogFocus}
             className={`ws-drawer${tool === 'terminal' ? ' wide' : ''}`}
             role="dialog"
             aria-modal="true"
-            aria-label={tool === 'files' ? 'Arquivos do workspace' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : 'Atividade da sessão'}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => { if (event.key === 'Escape') setTool(null) }}
+            aria-label={tool === 'files' ? 'Arquivos do workspace' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : tool === 'preferences' ? 'Preferências' : tool === 'visual' ? 'Biblioteca visual' : 'Atividade da sessão'}
+            onCancel={(event) => { event.preventDefault(); closeTool() }}
+            onClick={(event) => {
+              if (event.target !== event.currentTarget) return
+              const bounds = event.currentTarget.getBoundingClientRect()
+              if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeTool()
+            }}
           >
             <header className="ws-drawer-head">
-              <strong>{tool === 'files' ? 'Arquivos' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : 'Atividade'}</strong>
+              <strong>{tool === 'files' ? 'Arquivos' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : tool === 'preferences' ? 'Preferências' : tool === 'visual' ? 'Biblioteca visual' : 'Atividade'}</strong>
               <span className={`ws-runtime-chip tone-${runtime.tone}`}>{runtime.label}</span>
-              <button className="ws-icon-btn" autoFocus title="Fechar painel" onClick={() => setTool(null)}><X size={16} aria-hidden="true" /></button>
+              <button className="ws-icon-btn" autoFocus title="Fechar painel" disabled={tool === 'prompts' && promptBusy} onClick={closeTool}><X size={16} aria-hidden="true" /></button>
             </header>
-            {!runtime.osCapabilities && tool !== 'activity'
+            {!runtime.osCapabilities && tool !== 'activity' && tool !== 'prompts' && tool !== 'preferences' && tool !== 'visual'
               ? (
                   <div className="ws-runtime-lock" role="status">
                     <TerminalSquare size={22} aria-hidden="true" />
@@ -638,20 +731,24 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                 )
               : (
                   <div className="ws-drawer-body">
+                    {tool === 'visual' && <Suspense fallback={<p role="status">Carregando biblioteca visual…</p>}><VisualPane /></Suspense>}
+                    {tool === 'preferences' && <ShortcutPreferences onSaved={setShortcuts} />}
+                    {tool === 'prompts' && <Suspense fallback={<p role="status">Carregando Prompt Architect…</p>}><PromptPane onDirtyChange={setPromptDirty} onBusyChange={setPromptBusy} /></Suspense>}
                     {tool === 'files' && (
                       <div className="ws-files">
                         <div className="ws-files-tree">
-                          {files.length > 0
-                            ? <FileTree entries={files} selected={document?.relativePath} onSelect={(path) => void openFile(path)} />
-                            : <div className="ws-files-empty"><Code2 size={18} aria-hidden="true" /><p>Nenhum arquivo mapeado ainda.</p><button className="ld-btn ghost" onClick={() => void syncWorkspace()}>Atualizar</button></div>}
+                          <WorkspaceCreatePane onCreated={() => { void syncWorkspace() }} />
+                          <WorkspaceFileBrowser entries={files} selected={document?.relativePath} onSelect={(path) => void openFile(path)} onRefresh={() => void syncWorkspace()} />
                         </div>
                         <div className="ws-files-editor">
+                          {(fileOperation !== null || fileFeedback !== '') && <p className="ws-file-review-caption" role="status">{fileOperation === 'read' ? 'Abrindo arquivo…' : fileOperation === 'save' ? 'Salvando arquivo…' : fileFeedback}</p>}
                           {document !== null
                             ? (
                                 <>
-                                  <div className="ws-files-editor-head"><span>{dirty ? '● ' : ''}{basename(document.relativePath)}</span><button className="ws-icon-btn" disabled={!dirty} title="Salvar" onClick={() => void saveFile()}><Save size={15} aria-hidden="true" /></button><button className="ws-icon-btn" title="Fechar arquivo" onClick={() => { setDocument(null); setContent('') }}><X size={15} aria-hidden="true" /></button></div>
+                                  <div className="ws-files-editor-head"><span title={document.relativePath}>{dirty ? '● ' : ''}{basename(document.relativePath)}</span><button className="ws-file-review" disabled={fileOperation !== null} aria-pressed={reviewFileChanges} onClick={() => setReviewFileChanges((current) => !current)}>{reviewFileChanges ? 'Voltar ao editor' : 'Comparar alterações'}</button><button className="ws-icon-btn" disabled={!dirty || fileOperation !== null} title="Salvar" onClick={() => void saveFile()}><Save size={15} aria-hidden="true" /></button><button className="ws-icon-btn" disabled={fileOperation !== null} title="Fechar arquivo" onClick={() => { if (fileInFlight.current) return; if (dirty && !window.confirm('Há alterações não salvas. Descartar e fechar o arquivo?')) return; setDocument(null); setContent(''); setReviewFileChanges(false) }}><X size={15} aria-hidden="true" /></button></div>
+                                  {reviewFileChanges && <p className="ws-file-review-caption">Versão carregada → alterações não salvas. Comparação somente leitura; salvar continua verificando o hash do arquivo.</p>}
                                   <Suspense fallback={<div className="ws-panel-loading" role="status"><span className="wx-spinner" aria-hidden="true" /><p>Carregando editor…</p></div>}>
-                                    <CodeEditor path={document.relativePath} value={content} onChange={setContent} />
+                                    <CodeEditor path={document.relativePath} value={content} readOnly={fileOperation !== null} onChange={(next) => { if (!fileInFlight.current) setContent(next) }} {...(reviewFileChanges ? { original: document.content } : {})} />
                                   </Suspense>
                                 </>
                               )
@@ -664,15 +761,14 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                         <TerminalPaneLazy workspaceReady={workspaceRoot !== null} platform={system?.platform ?? null} />
                       </Suspense>
                     )}
-                    {tool === 'git' && <GitReviewPane workspaceReady={workspaceRoot !== null} />}
+                    {tool === 'git' && <GitReviewPane key={workspaceRoot ?? 'no-workspace'} workspaceReady={workspaceRoot !== null} />}
                     {tool === 'activity' && <SessionActivity sessionId={sessionId} threadId={aiStatus?.activeThreadId ?? null} workspaceReady={workspaceRoot !== null} runtime={runtime} />}
                   </div>
                 )}
-          </aside>
-        </div>
+          </dialog>
       )}
 
-      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectProviderModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} executionRuntime={{ view: runtime, status: runtimeStatus }} onRefreshRuntime={refreshRuntime} />
+      <ControlCenter open={showControlCenter} onClose={() => setShowControlCenter(false)} returnFocusTo={toolsFocusTarget} workspaceRoot={workspaceRoot} aiStatus={aiStatus} localModels={localModels} selectedLocalModel={selectedLocalModel} onSelectProvider={selectAgentProvider} onSelectModel={selectProviderModel} onRefreshModels={async () => { const result = await window.studio.agent.listLocalModels(); if (result.ok) setLocalModels(result.value) }} executionRuntime={{ view: runtime, status: runtimeStatus }} onRefreshRuntime={refreshRuntime} />
       <GoogleTasksDock />
 
       <footer className="statusbar">

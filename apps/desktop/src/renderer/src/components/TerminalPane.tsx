@@ -9,8 +9,11 @@ export const TerminalPane = ({ workspaceReady, platform }: { workspaceReady: boo
   const fitRef = useRef<FitAddon | null>(null)
   const idRef = useRef<string | null>(null)
   const [state, setState] = useState<'stopped' | 'running' | 'error'>('stopped')
+  const starting = useRef(false)
+  const mounted = useRef(false)
 
   useEffect(() => {
+    mounted.current = true
     const terminal = new Terminal({
       convertEol: true,
       cursorBlink: true,
@@ -43,6 +46,7 @@ export const TerminalPane = ({ workspaceReady, platform }: { workspaceReady: boo
     terminalRef.current = terminal
     fitRef.current = fit
     return () => {
+      mounted.current = false
       if (idRef.current !== null) void window.studio.terminal.kill({ terminalId: idRef.current })
       idRef.current = null
       observer.disconnect(); unsubscribe(); terminal.dispose()
@@ -51,16 +55,27 @@ export const TerminalPane = ({ workspaceReady, platform }: { workspaceReady: boo
 
   const start = async (): Promise<void> => {
     const terminal = terminalRef.current
-    if (!workspaceReady || terminal === null) return
-    fitRef.current?.fit()
-    const result = await window.studio.terminal.create({ cwd: '', cols: terminal.cols, rows: terminal.rows })
-    if (result.ok) { idRef.current = result.value.terminalId; setState('running'); terminal.clear() }
-    else { setState('error'); terminal.writeln(`\r\n\x1b[31m${result.error.message}\x1b[0m`) }
+    if (!workspaceReady || terminal === null || starting.current || idRef.current !== null) return
+    if (!window.confirm('Iniciar um shell real no workspace? Os comandos digitados serão executados com as permissões do Runtime.')) return
+    starting.current = true
+    try {
+      fitRef.current?.fit()
+      const result = await window.studio.terminal.create({ cwd: '', cols: terminal.cols, rows: terminal.rows })
+      if (!mounted.current) { if (result.ok) await window.studio.terminal.kill({ terminalId: result.value.terminalId }); return }
+      if (result.ok) { idRef.current = result.value.terminalId; setState('running'); terminal.clear() }
+      else { setState('error'); terminal.writeln(`\r\n\x1b[31m${result.error.message}\x1b[0m`) }
+    } catch { setState('error'); terminal.writeln('\r\nNão foi possível iniciar o terminal.') }
+    finally { starting.current = false }
   }
 
   const stop = async (): Promise<void> => {
     const terminalId = idRef.current
-    if (terminalId !== null) await window.studio.terminal.kill({ terminalId })
+    if (terminalId !== null) {
+      try {
+        const result = await window.studio.terminal.kill({ terminalId })
+        if (!result.ok) { terminalRef.current?.writeln(`\r\n${result.error.message}`); return }
+      } catch { terminalRef.current?.writeln('\r\nEncerramento não confirmado.'); return }
+    }
     idRef.current = null
     setState('stopped')
   }

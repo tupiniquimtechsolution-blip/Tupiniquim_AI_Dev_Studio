@@ -1,6 +1,23 @@
 # Matriz de Rastreabilidade V1
 
-Atualizado em: 2026-09-22
+Atualizado em: 2026-10-22
+
+## Evidência Web separada do aceite RC1 físico
+
+Checkpoint `3e181c5`: [Cloud Quality 39777254105](https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio/actions/runs/39777254105)
+e [Hosted Web UI 39777254020](https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio/actions/runs/39777254020) SUCCESS.
+
+| RF | Escopo comprovado no runner Linux | Limite do aceite |
+| --- | --- | --- |
+| RF-02 | CREATE manual aprovado, busca, edição, diff, save/CAS e negativas | Sem Windows/deployment exato |
+| RF-07/15 | Evidências reais da sessão e export JSON; gates sem executor indisponíveis | Sem histórico central/durable runner completo |
+| RF-11 | UI criar/versionar/validar/compilar/comparar/exportar + DO/restart | Sem homologação desktop física |
+| RF-13 | Atalhos Web persistidos, conflitos/contraste/import rejeitados | Sem aceite completo tema/layout/perfis desktop |
+| RNF UI | Tab/Escape/foco, 4 larguras claro/escuro e Voltar cancelado preserva buffer | Sem leitor de tela humano ou toda rota/deployment |
+
+Terminal multissessão e timeouts são delta posterior aguardando gates próprios.
+A tabela RC1 abaixo mantém o aceite físico histórico; não é substituída pelo
+checkpoint Web. O ledger de execução discrimina cada SHA, falha e rerun.
 
 Objetivo: impedir que requisito, implementação, teste e evidência se desconectem. `PASS` abaixo só deve ser preenchido após evidência do HEAD final; o estado inicial reflete a RC1 auditada.
 

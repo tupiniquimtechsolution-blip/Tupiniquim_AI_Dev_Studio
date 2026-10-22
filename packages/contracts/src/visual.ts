@@ -18,12 +18,12 @@ export const visualAssetSchema = z.object({
   id: z.string().uuid(),
   name: z.string().min(1).max(200),
   localPath: z.string().min(3).max(4096),
-  sourceUrl: z.url(),
-  provider: visualProviderIdSchema,
+  sourceUrl: z.url().refine((value) => /^https?:\/\//i.test(value), 'Origem deve ser uma URL HTTP(S).'),
+  provider: z.union([visualProviderIdSchema, z.literal('USER_PROVIDED')]),
   license: z.enum(['KNOWN', 'UNKNOWN', 'RESTRICTED']),
-  licenseName: z.string().nullable(),
-  attribution: z.string().nullable(),
-  rightsNote: z.string().min(1).max(2000),
+  licenseName: z.string().trim().max(200).nullable(),
+  attribution: z.string().max(500).nullable(),
+  rightsNote: z.string().trim().min(1).max(2000),
   createdAt: z.string().datetime()
 })
 export type VisualAsset = z.infer<typeof visualAssetSchema>

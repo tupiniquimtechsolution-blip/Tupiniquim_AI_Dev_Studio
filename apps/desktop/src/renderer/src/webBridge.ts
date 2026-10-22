@@ -272,10 +272,7 @@ export const installWebBridge = (): void => {
         return success(current.execution)
       },
       events: async (input) => success(executionEvents.get(input.executionId) ?? []),
-      applyWorkspaceWrite: async (input) => {
-        const write = await rpc<FileDocument>('workspace.write', { relativePath: input.relativePath, content: input.content, expectedHash: input.expectedHash })
-        return write.ok ? success({ effectId: input.effectId, relativePath: write.value.relativePath, hash: write.value.hash, modifiedAt: write.value.modifiedAt }) : write
-      },
+      applyWorkspaceWrite: async () => appError('APPROVED_MANIFEST_REQUIRED', 'Materialização manual Web indisponível: requer executor com manifesto e aprovação persistida. Nenhum arquivo foi alterado.'),
       applyProposedWorkspaceWrite: async () => appError('PROPOSAL_REQUIRED', 'A proposta precisa existir no runtime Web antes da materialização.')
     },
     research: {
