@@ -15,11 +15,11 @@ dialog.control-center:not([open]) { display:none; }
 .control-center :focus-visible { outline:2px solid var(--accent,#27c483); outline-offset:2px; }
 .control-center>header button { min-width:44px; min-height:44px; }
 .control-center-body>main { min-width:0; }
-.control-center .cc-card { min-width:0; flex-wrap:wrap; background:var(--surface-raised,#182127); }
+.control-center .cc-card { min-width:0; flex-wrap:wrap; background:var(--raised,#182127); }
 .control-center .cc-card>div { min-width:0; overflow-wrap:anywhere; }
 .control-center .cc-stack input,.control-center .cc-stack select { min-width:0; max-width:100%; font:inherit; }
-.control-center>header small,.control-center .cc-card small,.control-center .cc-stack p,.control-center .cc-stack label { color:var(--text-muted,#93a4af); }
-.control-center-body>nav { background:var(--surface-raised,#182127); }
+.control-center>header small,.control-center .cc-card small,.control-center .cc-stack p,.control-center .cc-stack label { color:var(--muted,#93a4af); }
+.control-center-body>nav { background:var(--raised,#182127); }
 .control-center-body>nav button.active { border-color:var(--accent,#27c483); background:var(--surface,#11171c); }
 @media(max-width:760px) {
   .control-center-body>main { padding:16px; }
@@ -27,3 +27,8 @@ dialog.control-center:not([open]) { display:none; }
   .control-center-body>nav button { flex-shrink:0; }
 }
 @media(pointer:coarse) { .control-center button { min-height:44px; } }
+
+.control-center .cc-evidence { background:var(--deck,var(--surface)); color:var(--text); overflow-wrap:anywhere; }
+.control-center .cc-note { background:var(--surface); color:var(--text); border-color:var(--warning); }
+.control-center .cc-badge { color:var(--text); background:var(--selected,var(--raised)); }
+.control-center details summary { min-height:44px; padding-block:10px; cursor:pointer; overflow-wrap:anywhere; }

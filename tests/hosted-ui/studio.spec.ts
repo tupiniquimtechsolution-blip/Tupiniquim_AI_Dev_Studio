@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const enter = async (page: Page): Promise<void> => {
-  await page.goto('/')
+  await page.goto('/landing')
   await page.getByRole('button', { name: 'Abrir Studio', exact: true }).first().click()
   await expect(page.locator('.web-studio .brand')).toContainText('Tupiniquim')
   await expect(page.getByRole('heading', { name: 'Em que vamos trabalhar?' })).toBeVisible()
@@ -61,6 +61,7 @@ test('preferences persist shortcuts and reject invalid profiles on the server', 
   await expect(page.getByRole('status').filter({ hasText: 'Atalhos salvos.' })).toBeVisible()
   await page.reload()
   await expect(page.locator('.web-studio')).toBeVisible()
+  await expect(page.locator('.web-studio')).toHaveAttribute('aria-busy', 'false')
   await page.locator('.ws-tools-menu summary').focus()
   await page.keyboard.press('Control+Alt+j')
   await expect(page.getByRole('dialog', { name: 'Atividade da sessão' })).toBeVisible()
@@ -102,6 +103,23 @@ test('HUD has keyboard modals and four responsive layouts', async ({ page }, inf
     expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
     await page.screenshot({ path: info.outputPath(`hud-${width}.png`) })
   }
+  await page.getByRole('button', { name: 'Tema escuro', exact: true }).click()
+  for (const width of [390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await page.screenshot({ path: info.outputPath(`hud-dark-${width}.png`) })
+  }
+  await page.setViewportSize({ width: 390, height: 900 })
+  await tools.click()
+  await page.getByRole('button', { name: 'Preferências', exact: true }).click()
+  await expect(page.getByLabel('Atalho: Arquivos')).toBeVisible()
+  await page.screenshot({ path: info.outputPath('preferences-dark-mobile.png') })
+  await page.keyboard.press('Escape')
+  await tools.click()
+  await page.getByRole('button', { name: 'Control Center', exact: true }).click()
+  await page.getByRole('button', { name: 'Toolbox', exact: true }).click()
+  await page.screenshot({ path: info.outputPath('control-center-dark-mobile.png') })
 })
 
 test('real temporary filesystem supports search, edit, diff and save', async ({ page }) => {
@@ -127,6 +145,19 @@ test('real temporary filesystem supports search, edit, diff and save', async ({ 
   await expect(page.getByRole('status').filter({ hasText: 'Arquivo salvo.' })).toBeVisible()
   const read = await page.evaluate(() => window.studio.workspace.read({ relativePath: 'hosted-fixture.txt' }))
   expect(read.ok && read.value.content).toContain('edited in hosted browser')
+  await page.locator('.monaco-editor .view-lines').click()
+  await page.keyboard.press('Control+End')
+  await page.keyboard.type('unsaved history guard')
+  await page.getByRole('button', { name: 'Fechar painel', exact: true }).click()
+  const dialog = page.waitForEvent('dialog')
+  await page.evaluate(() => history.back())
+  await (await dialog).dismiss()
+  await expect(page).toHaveURL(/\/studio$/)
+  await expect(page.locator('.web-studio')).toBeVisible()
+  await expect(page.locator('.web-studio')).toHaveAttribute('aria-busy', 'false')
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Arquivos', exact: true }).click()
+  await expect(page.locator('.monaco-editor')).toContainText('unsaved history guard')
 })
 
 test('Prompt Architect saves versions, validates, compiles, compares and exports', async ({ page }) => {

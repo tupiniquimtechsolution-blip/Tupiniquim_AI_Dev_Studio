@@ -52,3 +52,9 @@ covers the end-to-end panel. No earlier lost versions can be reconstructed.
 Head 21e75fe: Cloud Quality 39775354329 SUCCESS; Hosted Web UI 39775354325 SUCCESS. Includes preferences persistence and server rejection paths, evidence export and truthful unavailable gates. Reviewed CREATE is a later delta requiring its own checks. No production or physical certification implied.
 
 CREATE requires an existing parent directory. Failed/expired reviews require preparing a new review; no automatic overwrite/retry. Gateway path checks assume the host is trusted against concurrent filesystem tampering by another privileged process. Original agent proposal materialization remains a separate path and still needs its own hardening/acceptance; manual CREATE evidence must not certify it.
+
+## Reviewed CREATE and visual follow-up
+
+Cloud Quality 39776027692 SUCCESS @d193ff7. Hosted 39776027695: 5 passed, 1 failed (shortcut invoked after reload before preference hydration). Manual CREATE, refusal to overwrite, and legacy bypass rejection passed in that run. Full hosted certification for this head FAILED; no partial-green relabeling. Startup now exposes aria-busy and the test awaits hydration. Pending next remote run.
+
+Screenshots @21e75fe inspected at 390/1440. Added clear/dark evidence at four widths plus mobile panels. Corrected new form styles and Control Center light-theme evidence contrast. Browser history cancellation now uses a shared leave guard, preserves the Studio and restores known SPA history positions; hosted regression added. Unknown external history entries use conservative current-route restoration; external document unload remains browser-controlled.

@@ -25,7 +25,7 @@ export const WorkspaceCreatePane = ({ onCreated }: { onCreated: () => void }): R
     } catch { setStatus('Criação não confirmada. O rascunho foi preservado.') }
     finally { pending.current = false; setBusy(false) }
   }
-  return <details className="ws-prompt-pane"><summary>Novo arquivo</summary>
+  return <details className="prompt-architect-pane"><summary>Novo arquivo</summary>
     <p>Criação manual com aprovação única. Nunca substitui arquivos. O diretório pai deve existir. Fechar o painel descarta este rascunho.</p>
     <fieldset disabled={busy}><legend>{review === null ? 'Rascunho' : 'Revisão de criação'}</legend>
       <label>Caminho do novo arquivo<input aria-label="Caminho do novo arquivo" value={review?.relativePath ?? path} readOnly={review !== null} maxLength={500} onChange={(event) => setPath(event.target.value)} /></label>

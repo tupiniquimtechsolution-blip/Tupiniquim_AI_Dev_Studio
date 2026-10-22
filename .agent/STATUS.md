@@ -242,3 +242,6 @@ Histórico/export de resultados da sessão adicionado; pendente CI remoto. SOURC
 
 ## Criação manual revisada — 2026-10-22
 Head anterior 21e75fe: Cloud Quality 39775354329 e Hosted Web UI 39775354325 SUCCESS. Novo delta implementa CREATE manual Web com manifesto/approval ONCE do core, revisão persistida com validade de 10min, hash do conteúdo e trilha de eventos. Gateway publica arquivo completo por link exclusivo e nunca substitui destino; pai deve existir. Links/traversal/ADS/dispositivos rejeitados. Caminho legado sem manifesto bloqueado. Novo delta aguarda CI remoto; sem testes locais ou publicação.
+
+## Resultado remoto e correção — 2026-10-22
+@d193ff7 Cloud Quality 39776027692 SUCCESS; Hosted Web UI 39776027695 FAILURE: 5 passam (incluindo CREATE real e Evidence), 1 falha por atalho após reload antes de carregar preferências. Aguardar aria-busy=false sem sleeps fixos. Novos estilos/guarda de histórico aguardam gates no próximo head. Sem teste/instalação/build local.

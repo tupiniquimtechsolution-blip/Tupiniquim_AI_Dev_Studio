@@ -31,7 +31,7 @@ export const ShortcutPreferences = ({ onSaved }: { onSaved: (bindings: Shortcuts
     } catch { setStatus('Não foi possível salvar. Suas escolhas continuam neste painel.') }
     finally { inFlight.current = false; setBusy(false) }
   }
-  return <section className="ws-prompt-pane" aria-label="Atalhos de navegação">
+  return <section className="prompt-architect-pane" aria-label="Atalhos de navegação">
     <p>Ative apenas os atalhos que deseja usar. Mod significa Ctrl no Windows/Linux e Command no Mac. O sistema operacional pode reservar algumas combinações.</p>
     <p>Atalhos ficam suspensos enquanto você digita ou usa um painel. Fechar sem salvar descarta estas escolhas.</p>
     <fieldset disabled={busy || profile === null}><legend>Atalhos</legend>

@@ -54,6 +54,7 @@ interface HealthPayload {
 
 interface StudioShellProps {
   onNavigate: (route: WebRoute) => void
+  registerLeaveGuard: (guard: () => boolean) => () => void
 }
 
 const basename = (path: string): string => path.split('/').at(-1) ?? path
@@ -65,7 +66,7 @@ const basename = (path: string): string => path.split('/').at(-1) ?? path
  * (progressive disclosure). Toda a lógica de guarda fail-closed vem de
  * ../agentGating.ts (Issue #25) — nenhuma regra foi relaxada nesta superfície.
  */
-export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element => {
+export const StudioShell = ({ onNavigate, registerLeaveGuard }: StudioShellProps): React.JSX.Element => {
   const [system, setSystem] = useState<SystemInfo | null>(null)
   const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(null)
   const [files, setFiles] = useState<FileEntry[]>([])
@@ -90,11 +91,12 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const [runtimeStatus, setRuntimeStatus] = useState<ExecutionRuntimeStatusPayload | null>(null)
   const [tool, setTool] = useState<StudioTool | null>(null)
   const [shortcuts, setShortcuts] = useState<Shortcuts>({})
+  const [shortcutsLoaded, setShortcutsLoaded] = useState(false)
   useEffect(() => {
     let active = true
     void window.studio.settings.get().then((result) => {
       if (active && result.ok) { const parsed = shortcutsSchema.safeParse(result.value.shortcuts ?? {}); if (parsed.success) setShortcuts(parsed.data) }
-    }).catch(() => undefined)
+    }).catch(() => undefined).finally(() => { if (active) setShortcutsLoaded(true) })
     return () => { active = false }
   }, [])
   const [promptDirty, setPromptDirty] = useState(false)
@@ -460,17 +462,20 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   }
 
   const navigateSafely = (route: WebRoute): void => {
-    if (fileInFlight.current) { setNotice('Aguarde a operação do arquivo antes de sair do Studio.'); return }
-    if (dirty && !window.confirm('Há alterações não salvas. Descartar e sair do Studio?')) return
     onNavigate(route)
   }
 
+  useEffect(() => registerLeaveGuard(() => {
+    if (fileInFlight.current || promptBusy) { setNotice('Aguarde a operação em andamento antes de sair do Studio.'); return false }
+    return !(dirty || promptDirty) || window.confirm('Há alterações não salvas. Descartar e sair do Studio?')
+  }), [dirty, promptDirty, promptBusy, registerLeaveGuard])
+
   useEffect(() => {
-    if (!dirty) return
+    if (!dirty && !promptDirty) return
     const warnBeforeUnload = (event: BeforeUnloadEvent): void => { event.preventDefault(); event.returnValue = '' }
     window.addEventListener('beforeunload', warnBeforeUnload)
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
-  }, [dirty])
+  }, [dirty, promptDirty])
 
   const openTool = (next: StudioTool): void => {
     setTool((current) => current === next ? null : next)
@@ -515,7 +520,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const conversationEmpty = conversation.length === 0 && planned === null && proposal === null
 
   return (
-    <div className="web-studio" onKeyDown={(event) => {
+    <div className="web-studio" aria-busy={bootState === 'loading' || !shortcutsLoaded} onKeyDown={(event) => {
       if (event.defaultPrevented || event.repeat || event.nativeEvent.isComposing || event.getModifierState('AltGraph') || tool !== null || showControlCenter) return
       const target = event.target as HTMLElement
       if (target.closest('input, textarea, select, [contenteditable="true"], .monaco-editor')) return

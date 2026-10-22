@@ -518,3 +518,6 @@
   .web-studio .wx-theme-toggle button, .web-studio .project-switcher { min-height: 44px; }
   .web-studio .ws-icon-btn, .web-studio .wx-theme-toggle button { min-width: 44px; }
 }
+
+.prompt-architect-pane > summary { min-height:44px; cursor:pointer; padding-block:10px; font-size:14px; }
+@media(pointer:coarse) { .prompt-architect-pane button,.prompt-architect-pane select { min-height:44px; } }

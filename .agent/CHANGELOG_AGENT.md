@@ -453,3 +453,6 @@ Control Center mantém até 50 resultados reais nesta sessão e exporta JSON. Er
 
 ## 2026-10-22 — CREATE aprovado, sem sobrescrita
 UI Web Novo arquivo prepara revisão imutável, exibe caminho/conteúdo/hash/risco/origem usuário, exige aprovação explícita. DO usa PlanApprovalService, scope ONCE, claim/complete effect, registro TOOL e replay guard. Gateway usa temporário irmão + link exclusivo. Regressões para concorrência, persistência após restart, expiração/injeção e UI real. Resolvedor gateway rejeita links e caminhos Windows ambíguos. Não concede proveniência de agente a rascunho humano. Nenhum teste local.
+
+## 2026-10-22 — Revisão visual e navegação
+Inspeção dos screenshots remotos @21e75fe em 390/1440; formulários novos usam tokens do Prompt Architect. Corrigido contraste do Control Center em tema claro. Regressão remota amplia screenshots claro/escuro 390/768/1024/1440 e painéis mobile. Navegação centralizada registra guarda do Studio para edições/IO e restaura posição do histórico quando Voltar é cancelado. Startup sinaliza aria-busy até preferências carregarem, evitando teste antecipado de atalhos após reload.

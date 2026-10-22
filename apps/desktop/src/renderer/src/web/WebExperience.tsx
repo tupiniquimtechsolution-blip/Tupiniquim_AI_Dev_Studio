@@ -39,6 +39,13 @@ export const WebExperience = (): React.JSX.Element => {
   const routeRef = useRef(route)
   const pendingRef = useRef<WebRoute | null>(null)
   const timerRef = useRef<number | null>(null)
+  const leaveGuard = useRef<(() => boolean) | null>(null)
+  const historyIndex = useRef(0)
+  const restoringHistory = useRef(false)
+  const registerLeaveGuard = useCallback((guard: () => boolean): (() => void) => {
+    leaveGuard.current = guard
+    return () => { if (leaveGuard.current === guard) leaveGuard.current = null }
+  }, [])
 
   useEffect(() => {
     routeRef.current = route
@@ -69,14 +76,35 @@ export const WebExperience = (): React.JSX.Element => {
   }, [])
 
   const navigate = useCallback((next: WebRoute): void => {
+    if (next !== routeRef.current && leaveGuard.current?.() === false) return
     if (next === 'studio' || next === 'workbench') localStorage.setItem(WEB_ENTERED_KEY, 'true')
     const path = routePath(next)
-    if (window.location.pathname !== path) window.history.pushState({}, '', path)
+    if (window.location.pathname !== path) {
+      historyIndex.current += 1
+      window.history.pushState({ studioHistoryIndex: historyIndex.current }, '', path)
+    }
     transitionTo(next)
   }, [transitionTo])
 
   useEffect(() => {
-    const onPopState = (): void => transitionTo(resolveWebRoute(window.location.pathname, hasEntered()))
+    const existing = window.history.state as { studioHistoryIndex?: unknown } | null
+    historyIndex.current = typeof existing?.studioHistoryIndex === 'number' ? existing.studioHistoryIndex : 0
+    window.history.replaceState({ ...existing, studioHistoryIndex: historyIndex.current }, '', window.location.href)
+    const onPopState = (event: PopStateEvent): void => {
+      if (restoringHistory.current) { restoringHistory.current = false; return }
+      const state = event.state as { studioHistoryIndex?: unknown } | null
+      const incoming = typeof state?.studioHistoryIndex === 'number' ? state.studioHistoryIndex : null
+      const next = resolveWebRoute(window.location.pathname, hasEntered())
+      if (next !== routeRef.current && leaveGuard.current?.() === false) {
+        if (incoming !== null && incoming !== historyIndex.current) {
+          restoringHistory.current = true
+          window.history.go(historyIndex.current - incoming)
+        } else window.history.replaceState({ studioHistoryIndex: historyIndex.current }, '', routePath(routeRef.current))
+        return
+      }
+      historyIndex.current = incoming ?? historyIndex.current
+      transitionTo(next)
+    }
     window.addEventListener('popstate', onPopState)
     return () => {
       window.removeEventListener('popstate', onPopState)
@@ -89,7 +117,7 @@ export const WebExperience = (): React.JSX.Element => {
       <div key={route} className={exiting ? 'wx-route exiting' : 'wx-route'}>
         {route === 'landing' && <Landing onNavigate={navigate} />}
         {route === 'onboarding' && <Onboarding onNavigate={navigate} />}
-        {route === 'studio' && <StudioShell onNavigate={navigate} />}
+        {route === 'studio' && <StudioShell onNavigate={navigate} registerLeaveGuard={registerLeaveGuard} />}
         {route === 'workbench' && <Workbench onNavigate={navigate} />}
       </div>
     </Suspense>
