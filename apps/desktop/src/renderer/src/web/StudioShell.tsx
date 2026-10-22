@@ -92,6 +92,9 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const drawerRef = useRef<HTMLDialogElement | null>(null)
   const toolsFocusTarget = useCallback(() => hudToolsRef.current?.querySelector('summary') ?? null, [])
   const threadEndRef = useRef<HTMLDivElement | null>(null)
+  const fileInFlight = useRef(false)
+  const [fileOperation, setFileOperation] = useState<'read' | 'save' | null>(null)
+  const [fileFeedback, setFileFeedback] = useState('')
   const dirty = document !== null && content !== document.content
   const preferences = useMemo(() => parseOnboardingPreferences(localStorage.getItem(WEB_ONBOARDING_KEY)), [])
   const suggestions = useMemo(() => studioSuggestions(preferences), [preferences])
@@ -414,19 +417,45 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
     else setNotice(result.error.message)
   }
 
+  const reportFileStatus = (message: string): void => { setNotice(message); setFileFeedback(message) }
+
   const openFile = async (relativePath: string): Promise<void> => {
+    if (fileInFlight.current) return
     if (dirty && !window.confirm('Há alterações não salvas. Descartar e abrir outro arquivo?')) return
-    const result = await window.studio.workspace.read({ relativePath })
-    if (result.ok) { setDocument(result.value); setContent(result.value.content); setReviewFileChanges(false); setNotice(`Aberto: ${relativePath}`) }
-    else setNotice(result.error.message)
+    fileInFlight.current = true
+    setFileOperation('read')
+    try {
+      const result = await window.studio.workspace.read({ relativePath })
+      if (result.ok) { setDocument(result.value); setContent(result.value.content); setReviewFileChanges(false); reportFileStatus(`Aberto: ${relativePath}`) }
+      else reportFileStatus(result.error.message)
+    } catch { reportFileStatus('Não foi possível abrir o arquivo. Verifique o Runtime e tente novamente.') }
+    finally { fileInFlight.current = false; setFileOperation(null) }
   }
 
   const saveFile = async (): Promise<void> => {
-    if (document === null) return
-    const result = await window.studio.workspace.write({ relativePath: document.relativePath, content, expectedHash: document.hash })
-    if (result.ok) { setDocument(result.value); setContent(result.value.content); setNotice('Arquivo salvo atomicamente.') }
-    else setNotice(result.error.message)
+    if (document === null || !dirty || fileInFlight.current) return
+    fileInFlight.current = true
+    setFileOperation('save')
+    try {
+      const result = await window.studio.workspace.write({ relativePath: document.relativePath, content, expectedHash: document.hash })
+      if (result.ok) { setDocument(result.value); setContent(result.value.content); reportFileStatus('Arquivo salvo.') }
+      else reportFileStatus(result.error.message)
+    } catch { reportFileStatus('Salvamento não confirmado. Suas edições foram preservadas; verifique o arquivo antes de tentar novamente.') }
+    finally { fileInFlight.current = false; setFileOperation(null) }
   }
+
+  const navigateSafely = (route: WebRoute): void => {
+    if (fileInFlight.current) { setNotice('Aguarde a operação do arquivo antes de sair do Studio.'); return }
+    if (dirty && !window.confirm('Há alterações não salvas. Descartar e sair do Studio?')) return
+    onNavigate(route)
+  }
+
+  useEffect(() => {
+    if (!dirty) return
+    const warnBeforeUnload = (event: BeforeUnloadEvent): void => { event.preventDefault(); event.returnValue = '' }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [dirty])
 
   const openTool = (next: StudioTool): void => {
     setTool((current) => current === next ? null : next)
@@ -513,8 +542,8 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
               <span className="ws-tools-group-title ws-tools-group-separator">Configurações e áreas</span>
               <div className="ws-tool-destinations">
                 <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); setShowControlCenter(true) }}><ShieldCheck size={16} aria-hidden="true" /><span>Control Center</span></button>
-                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); onNavigate('workbench') }}><LayoutPanelLeft size={16} aria-hidden="true" /><span>Workbench completo</span></button>
-                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); onNavigate('onboarding') }}><Settings2 size={16} aria-hidden="true" /><span>Preferências iniciais</span></button>
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); navigateSafely('workbench') }}><LayoutPanelLeft size={16} aria-hidden="true" /><span>Workbench completo</span></button>
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); navigateSafely('onboarding') }}><Settings2 size={16} aria-hidden="true" /><span>Preferências iniciais</span></button>
               </div>
             </div>
           </details>
@@ -666,13 +695,14 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                           <WorkspaceFileBrowser entries={files} selected={document?.relativePath} onSelect={(path) => void openFile(path)} onRefresh={() => void syncWorkspace()} />
                         </div>
                         <div className="ws-files-editor">
+                          {(fileOperation !== null || fileFeedback !== '') && <p className="ws-file-review-caption" role="status">{fileOperation === 'read' ? 'Abrindo arquivo…' : fileOperation === 'save' ? 'Salvando arquivo…' : fileFeedback}</p>}
                           {document !== null
                             ? (
                                 <>
-                                  <div className="ws-files-editor-head"><span title={document.relativePath}>{dirty ? '● ' : ''}{basename(document.relativePath)}</span><button className="ws-file-review" aria-pressed={reviewFileChanges} onClick={() => setReviewFileChanges((current) => !current)}>{reviewFileChanges ? 'Voltar ao editor' : 'Comparar alterações'}</button><button className="ws-icon-btn" disabled={!dirty} title="Salvar" onClick={() => void saveFile()}><Save size={15} aria-hidden="true" /></button><button className="ws-icon-btn" title="Fechar arquivo" onClick={() => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e fechar o arquivo?')) return; setDocument(null); setContent(''); setReviewFileChanges(false) }}><X size={15} aria-hidden="true" /></button></div>
+                                  <div className="ws-files-editor-head"><span title={document.relativePath}>{dirty ? '● ' : ''}{basename(document.relativePath)}</span><button className="ws-file-review" disabled={fileOperation !== null} aria-pressed={reviewFileChanges} onClick={() => setReviewFileChanges((current) => !current)}>{reviewFileChanges ? 'Voltar ao editor' : 'Comparar alterações'}</button><button className="ws-icon-btn" disabled={!dirty || fileOperation !== null} title="Salvar" onClick={() => void saveFile()}><Save size={15} aria-hidden="true" /></button><button className="ws-icon-btn" disabled={fileOperation !== null} title="Fechar arquivo" onClick={() => { if (fileInFlight.current) return; if (dirty && !window.confirm('Há alterações não salvas. Descartar e fechar o arquivo?')) return; setDocument(null); setContent(''); setReviewFileChanges(false) }}><X size={15} aria-hidden="true" /></button></div>
                                   {reviewFileChanges && <p className="ws-file-review-caption">Versão carregada → alterações não salvas. Comparação somente leitura; salvar continua verificando o hash do arquivo.</p>}
                                   <Suspense fallback={<div className="ws-panel-loading" role="status"><span className="wx-spinner" aria-hidden="true" /><p>Carregando editor…</p></div>}>
-                                    <CodeEditor path={document.relativePath} value={content} onChange={setContent} {...(reviewFileChanges ? { original: document.content } : {})} />
+                                    <CodeEditor path={document.relativePath} value={content} readOnly={fileOperation !== null} onChange={(next) => { if (!fileInFlight.current) setContent(next) }} {...(reviewFileChanges ? { original: document.content } : {})} />
                                   </Suspense>
                                 </>
                               )

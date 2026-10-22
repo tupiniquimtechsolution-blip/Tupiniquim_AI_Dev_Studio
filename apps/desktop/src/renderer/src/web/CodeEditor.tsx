@@ -12,6 +12,7 @@ interface CodeEditorProps {
   value: string
   onChange: (value: string) => void
   original?: string
+  readOnly?: boolean
 }
 
 /**
@@ -19,7 +20,7 @@ interface CodeEditorProps {
  * chat não pagam o custo do editor — ele só entra quando o usuário abre um
  * arquivo do workspace. O bundle continua local (ver ../monaco.ts, sem CDN).
  */
-const CodeEditor = ({ path, value, onChange, original }: CodeEditorProps): React.JSX.Element => {
+const CodeEditor = ({ path, value, onChange, original, readOnly = false }: CodeEditorProps): React.JSX.Element => {
   const resolvedTheme = useResolvedTheme()
   if (original !== undefined) return (
     <DiffEditor
@@ -39,7 +40,7 @@ const CodeEditor = ({ path, value, onChange, original }: CodeEditorProps): React
       value={value}
       onChange={(next) => onChange(next ?? '')}
       theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'}
-      options={{ minimap: { enabled: false }, fontFamily: 'JetBrains Mono, Cascadia Code, Consolas, monospace', fontSize: 13, padding: { top: 12 }, smoothScrolling: true, automaticLayout: true }}
+      options={{ readOnly, minimap: { enabled: false }, fontFamily: 'JetBrains Mono, Cascadia Code, Consolas, monospace', fontSize: 13, padding: { top: 12 }, smoothScrolling: true, automaticLayout: true }}
     />
   )
 }

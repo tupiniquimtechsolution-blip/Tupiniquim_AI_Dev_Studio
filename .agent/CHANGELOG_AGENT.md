@@ -1,5 +1,13 @@
 # Changelog do Agente
 
+## 2026-10-22 — Retomada e proteção de edições
+
+- Serialização de abrir/salvar e estado somente leitura durante IO previnem
+  concorrência e substituição tardia do buffer ativo.
+- Erros de comunicação preservam edições; progresso/resultado visíveis no painel.
+- Confirmação nos destinos internos e beforeunload para edições não salvas.
+- Sem mudanças em permissões/contratos ou execução de testes locais.
+
 ## 2026-10-20 — Files: revisão antes de salvar
 
 - Comparação baseline/buffer somente leitura no Monaco existente, com tema e

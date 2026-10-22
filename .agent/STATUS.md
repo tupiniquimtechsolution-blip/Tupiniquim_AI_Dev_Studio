@@ -1,5 +1,18 @@
 # Status
 
+## Retomada — 2026-10-22
+
+- Reconsulta GitHub: PR #89 OPEN/DRAFT @ `6fda702`, PR #88 OPEN, base
+  integration `70c0c97`; Cloud Quality `39403415363` SUCCESS no head anterior.
+- Files Web: leitura/gravação serializadas antes do await; editor/ações
+  incompatíveis bloqueados durante IO; falha mantém buffer e baseline.
+- Progresso/erro visíveis no painel, inclusive mobile; rejeições da bridge
+  tratadas sem afirmar sucesso em salvamento não confirmado.
+- Aviso ao recarregar/fechar página com edições; botões internos de navegação
+  pedem confirmação e aguardam IO. Back/forward SPA ainda requer QA específico.
+- Novo delta depende de CI remoto e aceite no deployment exato. Sem testes
+  locais, build local, merge ou deploy; RELEASE_GREEN não comprovado.
+
 ## Continuação — 2026-10-20
 
 - PR #89 continua OPEN/DRAFT, base integration `70c0c97`; PR #88 continua aberto.

@@ -1,5 +1,18 @@
 # Dev Studio — execution audit, 2026-10-16
 
+## Resume — 2026-10-22
+
+Remote state rechecked: #89 OPEN/DRAFT @ 6fda702, #88 OPEN; Cloud Quality
+39403415363 SUCCESS on 6fda702. No later deployment/smoke evidence observed.
+New delta serializes file reads/saves synchronously before awaiting the bridge;
+editor and incompatible actions are disabled during IO. Rejections retain edits
+and are reported in the drawer (including mobile), without claiming an uncertain
+save succeeded. Dirty files prompt on internal navigation buttons and page unload.
+Browser back/forward SPA behavior remains a separate QA requirement.
+No local tests/build/app startup, merge or production deployment. This delta
+needs exact-head remote CI and real deployment acceptance. File creation and
+Runtime/Access/OAuth/physical Windows gates remain incomplete; not RELEASE_GREEN.
+
 ## Follow-up — 2026-10-20
 
 PR #89 remains OPEN/DRAFT and PR #88 remains open. Previous head `7842e5a`
