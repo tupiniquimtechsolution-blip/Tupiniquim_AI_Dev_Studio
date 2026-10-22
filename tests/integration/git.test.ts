@@ -8,6 +8,15 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 
 describe('GitAdapter', () => {
+  it('does not discover a repository above the authorized workspace', async () => {
+    const parent = await fs.mkdtemp(path.join(os.tmpdir(), 'git-parent-fixture-'))
+    try {
+      await execFileAsync('git', ['init', '--initial-branch', 'parent-fixture'], { cwd: parent })
+      const child = path.join(parent, 'authorized-workspace')
+      await fs.mkdir(child)
+      await expect(new GitAdapter(() => child).status()).rejects.toThrow()
+    } finally { await fs.rm(parent, { recursive: true, force: true }) }
+  })
   it.skipIf(process.platform === 'win32')('does not execute repository fsmonitor hooks during a read-only status query', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'git-monitor-fixture-'))
     try {

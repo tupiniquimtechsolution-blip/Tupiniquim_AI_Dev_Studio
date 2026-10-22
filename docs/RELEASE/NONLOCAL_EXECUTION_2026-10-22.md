@@ -96,3 +96,7 @@ New Runtime history persists up to 100 immutable server-constructed receipts per
 New delta replaces gateway's fabricated empty Git status on failures with explicit unavailable errors. Desktop/gateway share the documented porcelain v2 NUL parser, preserving spaces/newlines, consuming rename origins and handling conflicts/upstream counters. Diff disables external helpers/textconv/color. Read-only UI shows actual staged/worktree entries and unstaged tracked diff; commit/checkpoint/restore remain separate unfinished work. Real temporary Git repo and hosted PTY initialization regressions added. Reference: https://git-scm.com/docs/git-status.
 
 Cloud Quality 39824161515 stopped at React set-state-in-effect for the initial history reset. Replaced with project-keyed snapshots updated after asynchronous responses; no synchronous effect reset and no old-workspace display. New delta requires remote gates; no local tests.
+
+## Parent-repository discovery finding
+
+@84f876d Cloud Quality 39825438740 SUCCESS; Hosted 39825438717 FAILURE: nine scenarios pass, the new unavailable-repository assertion fails. Actual root cause: Git walked upward from the isolated workspace and discovered the CI checkout's parent repository. This is a scope defect, not a flaky assertion. Set GIT_CEILING_DIRECTORIES for gateway child processes/PTYs and the desktop Git adapter; add a real parent/child repository regression. Do not treat the earlier status as a clean isolated repository. New head requires both gates; no local test or production action.

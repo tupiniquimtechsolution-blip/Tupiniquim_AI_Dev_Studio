@@ -11,8 +11,8 @@ export class GitAdapter {
   public constructor(private readonly workspaceRoot: () => string) {}
 
   private async run(args: string[], timeout = 20_000): Promise<string> {
-    const root = this.workspaceRoot()
-    const { stdout } = await execFileAsync('git', ['-c', 'safe.directory=' + root, '-c', 'core.fsmonitor=false', ...args], { cwd: root, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 5_000_000, env: createRestrictedEnvironment({ GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' }) })
+    const root = path.resolve(this.workspaceRoot())
+    const { stdout } = await execFileAsync('git', ['-c', 'safe.directory=' + root, '-c', 'core.fsmonitor=false', ...args], { cwd: root, encoding: 'utf8', timeout, windowsHide: true, maxBuffer: 5_000_000, env: createRestrictedEnvironment({ GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never', GIT_CEILING_DIRECTORIES: path.dirname(root) }) })
     return stdout
   }
 

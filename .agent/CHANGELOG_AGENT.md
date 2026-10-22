@@ -480,3 +480,6 @@ Parser compartilhado de git status porcelain v2 -z preserva nomes brutos e conso
 
 ## 2026-10-22 — Leitura Git sem hooks e ciclo assíncrono
 GitAdapter e gateway forçam core.fsmonitor=false nas consultas para não executar hook configurado pelo repo. Regressão Linux com hook controlado verifica ausência de execução. Cloud Quality 39825112842 encontrou chamada de estado a partir da inicialização do GitReview; consulta pura agora retorna Promise, e respostas/rejeições atualizam estado em callbacks assíncronos. Regra preservada, nenhum teste local.
+
+## 2026-10-22 — Descoberta Git confinada
+Teste hosted revelou descoberta automática de repo acima da raiz autorizada. Ambiente Git passa a fixar ceiling no pai do workspace, preservando repo/worktree próprios e bloqueando consulta de repo vizinho. Integração real cria repo pai e workspace filho sem .git, esperando erro. Fonte Git: https://git-scm.com/docs/git (GIT_CEILING_DIRECTORIES). Sem leitura de arquivos de segredos ou execução local.

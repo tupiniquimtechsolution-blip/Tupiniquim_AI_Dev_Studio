@@ -72,7 +72,7 @@ const runProcess = async (
   cwd: string,
   timeoutMs = 180_000
 ): Promise<{ code: number; stdout: string; stderr: string }> => new Promise((resolve, reject) => {
-  const child = spawn(executable, args, { cwd, windowsHide: true, env: createRestrictedEnvironment() })
+  const child = spawn(executable, args, { cwd, windowsHide: true, env: createRestrictedEnvironment({ GIT_CEILING_DIRECTORIES: path.dirname(cwd) }) })
   let stdout = ''
   let stderr = ''
   const timer = setTimeout(() => {
@@ -239,7 +239,7 @@ const attachTerminal = async (request: IncomingMessage, socket: Duplex, head: Bu
   const rows = Math.max(5, Math.min(200, Number(url.searchParams.get('rows') ?? 30)))
   const shell = process.platform === 'win32' ? (process.env.TUPINIQUIM_GATEWAY_SHELL?.trim() || 'powershell.exe') : (process.env.SHELL?.trim() || '/bin/bash')
   const args = process.platform === 'win32' ? ['-NoLogo', '-NoProfile'] : ['--noprofile', '--norc']
-  const terminal = pty.spawn(shell, args, { cwd, cols, rows, name: 'xterm-256color', env: createRestrictedEnvironment() })
+  const terminal = pty.spawn(shell, args, { cwd, cols, rows, name: 'xterm-256color', env: createRestrictedEnvironment({ GIT_CEILING_DIRECTORIES: path.dirname(cwd) }) })
   activeTerminals.set(workspaceId, count + 1)
   const lifetime = terminalLifetime(() => {
     if (!socket.destroyed) socket.write(frame(0x1, Buffer.from(JSON.stringify({ type: 'error', message: 'Sessão encerrada por limite de inatividade (15min) ou duração (60min).' }), 'utf8')))

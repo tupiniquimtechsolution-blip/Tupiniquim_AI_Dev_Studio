@@ -266,3 +266,6 @@ Novo delta: gateway não apresenta repo vazio quando Git falha. Desktop/gateway 
 
 ## Correção do gate Git — 2026-10-22
 @216a631 Cloud Quality 39825112842 parou em lint React set-state-in-effect. Corrigido com consulta pura e atualização assíncrona. Consultas desabilitam fsmonitor, helpers externos e textconv. Regressão de hook controlado adicionada. Aguardar novo CI; sem teste local ou merge/deploy.
+
+## Isolamento de descoberta Git — 2026-10-22
+@84f876d Cloud Quality 39825438740 SUCCESS; Hosted 39825438717 FAILURE (9 passam, 1 falha). O workspace sem .git descobriu o repo pai do checkout CI: falha real de escopo. Gateway/subprocessos e GitAdapter agora fixam GIT_CEILING_DIRECTORIES no pai do workspace autorizado. Regressão de repo pai/filho e cenário hosted existente devem confirmar indisponibilidade correta. Não declarar novo Cloud Green antes do rerun; sem testes locais.
