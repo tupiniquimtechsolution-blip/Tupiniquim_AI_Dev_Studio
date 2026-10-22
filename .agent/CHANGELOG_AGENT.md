@@ -483,3 +483,6 @@ GitAdapter e gateway forçam core.fsmonitor=false nas consultas para não execut
 
 ## 2026-10-22 — Descoberta Git confinada
 Teste hosted revelou descoberta automática de repo acima da raiz autorizada. Ambiente Git passa a fixar ceiling no pai do workspace, preservando repo/worktree próprios e bloqueando consulta de repo vizinho. Integração real cria repo pai e workspace filho sem .git, esperando erro. Fonte Git: https://git-scm.com/docs/git (GIT_CEILING_DIRECTORIES). Sem leitura de arquivos de segredos ou execução local.
+
+## 2026-10-22 — Evidência final do checkpoint de código
+Head de código 92d05f4 passou Cloud Quality 39826094603 e Hosted Web UI 39826094506 (10 passed). Consolidada rastreabilidade documental, preservando falhas e pendências reais. Apenas documentação alterada nesta etapa; nenhum teste local ou produção. RELEASE-GREEN não comprovado.

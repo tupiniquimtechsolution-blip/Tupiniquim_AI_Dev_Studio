@@ -2,7 +2,20 @@
 
 Atualizado em: 2026-10-22
 
-## Checkpoint operacional cloud
+## Checkpoint de evidência — 2026-10-22
+
+`92d05f4`: Cloud Quality `39826094603` SUCCESS + Hosted Web UI
+`39826094506` SUCCESS (**10 cenários**). Inclui os fluxos Web abaixo, terminais
+Linux reais, biblioteca visual com arquivo real/licença declarada, histórico
+persistido de até 100 receipts por workspace e consulta Git confinada (sem
+repo pai, hooks ou nomes truncados). Nenhuma instalação/teste/build local.
+
+A biblioteca visual não transforma arquivos nem comprova direitos externamente.
+Git continua somente leitura nesta UI; commit/checkpoint/restore pendentes.
+Demais pendências de implementação e homologação permanecem no ledger.
+Esse checkpoint não fecha V1, RC1 física ou RELEASE-GREEN.
+
+## Checkpoint operacional cloud anterior
 
 PR #89 DRAFT, branch `fix/hud-accessibility-release-audit-20261016`, base
 `integration/ai-lab-toolbox-unified` @ `70c0c97`. Sem merge ou deploy.

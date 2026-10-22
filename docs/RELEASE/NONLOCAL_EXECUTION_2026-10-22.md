@@ -7,15 +7,17 @@ must not be used to claim 100% of V1 or RELEASE_GREEN while any required gate la
 
 | Work package | Execution / acceptance | State |
 | --- | --- | --- |
-| Hosted UI proof | Real ephemeral Worker, Durable Object and Runtime Gateway in CI; keyboard/modal/responsive/files/search/diff/save; first run exposed Tab edge and incorrect IME test target, corrected for rerun | SUCCESS @3e181c5; 39777254020 |
-| Workers AI missing binding | Explicit ERROR/not-configured; no simulated inference | VALIDATED @3e181c5; scope below |
-| Files creation | Manual review + persisted core manifest/ONCE approval, exclusive atomic publication, replay/expiry/path confinement and negative hosted/unit regressions | VALIDATED @3e181c5; scope below |
-| Prompt Architect | Immutable versions serialized in durable object, strict shared core, full panel + hosted browser test | VALIDATED @3e181c5; scope below |
-| Preferences | Configurable/persisted opt-in navigation shortcuts; shared schema/conflict checks; server contrast/import validation and hosted persistence regression | VALIDATED @3e181c5; scope below |
-| Evidence UI | Session history/export of actual runner results; truthful unavailable/manual gates and quiet secret scan; new hosted regression | VALIDATED @3e181c5; scope below |
+| Hosted UI proof | Real ephemeral Worker, Durable Object and Runtime Gateway in CI; keyboard/modal/responsive/files/search/diff/save; first run exposed Tab edge and incorrect IME test target, corrected for rerun | SUCCESS @92d05f4; 39826094506 |
+| Workers AI missing binding | Explicit ERROR/not-configured; no simulated inference | VALIDATED @92d05f4; scope below |
+| Files creation | Manual review + persisted core manifest/ONCE approval, exclusive atomic publication, replay/expiry/path confinement and negative hosted/unit regressions | VALIDATED @92d05f4; scope below |
+| Prompt Architect | Immutable versions serialized in durable object, strict shared core, full panel + hosted browser test | VALIDATED @92d05f4; scope below |
+| Preferences | Configurable/persisted opt-in navigation shortcuts; shared schema/conflict checks; server contrast/import validation and hosted persistence regression | VALIDATED @92d05f4; scope below |
+| Evidence UI | Session observations + up to 100 durable server receipts per workspace, reload/export; truthful unavailable gates and quiet scanner | VALIDATED @92d05f4; scope below |
 | Toolbox audit | Pinned commits + MIT licences remotely rechecked; current catalog SHA-256 recorded in SOURCE_REAUDIT_2026-10-22.md; original artifacts absent | REFERENCE AUDIT COMPLETE; original archives UNVERIFIED |
-| Terminal sessions | Four panels, explicit manual shell confirmation, gateway resource/time caps, real Linux PTY regression | VALIDATED @fb74616; Linux scope |
-| Visual library | Existing regular files, durable metadata/provenance, declared-license gate, no external transform | IMPLEMENTED, CI PENDING |
+| Terminal sessions | Four panels, explicit manual shell confirmation, gateway resource/time caps, real Linux PTY regression | VALIDATED @92d05f4; Linux scope |
+| Visual library | Existing regular files, durable metadata/provenance, declared-license gate, no external transform | VALIDATED @92d05f4; metadata only |
+| Git queries | Real NUL status/diff, filenames/rename/conflict/upstream, no hooks/parent discovery | READ VALIDATED @92d05f4; commit/checkpoint/restore PENDING |
+| Remaining implementation | Autonomy runtime, browser-second, Preview IPC/UI/package, Composer/continuous ingestion, complete Visual transforms | PENDING; not counted complete |
 | Documentation/Agenor | Reconcile per-task scope and exact-SHA evidence; no unearned completion | IN PROGRESS |
 
 External dependencies (not completed): physical Windows/ConPTY/package/provider
@@ -100,3 +102,12 @@ Cloud Quality 39824161515 stopped at React set-state-in-effect for the initial h
 ## Parent-repository discovery finding
 
 @84f876d Cloud Quality 39825438740 SUCCESS; Hosted 39825438717 FAILURE: nine scenarios pass, the new unavailable-repository assertion fails. Actual root cause: Git walked upward from the isolated workspace and discovered the CI checkout's parent repository. This is a scope defect, not a flaky assertion. Set GIT_CEILING_DIRECTORIES for gateway child processes/PTYs and the desktop Git adapter; add a real parent/child repository regression. Do not treat the earlier status as a clean isolated repository. New head requires both gates; no local test or production action.
+
+## Verified checkpoint — 92d05f49f610fa983ad68facdee59af46a918899
+
+[Cloud Quality 39826094603](https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio/actions/runs/39826094603) SUCCESS: lint, typecheck, unit, integration, security, controlled dogfood, build and all Cloudflare dry-run environments.
+[Hosted Web UI 39826094506](https://github.com/tupiniquimtechsolution-blip/Tupiniquim_AI_Dev_Studio/actions/runs/39826094506) SUCCESS: **10 passed** against real ephemeral Worker/DO/gateway/filesystem/PTYs. Includes visual references/license negatives, durable evidence reload/export, Git unavailable/real repository checks, sessions, approvals/CAS, prompt lifecycle, preferences, keyboard/responsive themes and unsaved history guard.
+
+This checkpoint corrects the parent Git discovery defect and preceding lint failures; those failed runs remain in the record. Last integration production-smoke run 38885409266 @70c0c97 remains FAILURE, PR #88 separate, no releases published. PR #89 stays draft; no merge/deploy or production credentials changed.
+
+No local dependency installation, tests, build or app startup. Original ZIP/video bytes absent and not hash-recertified. Windows/ConPTY/package, providers/inference, human OAuth, Runtime/Tunnel/Access and exact-deployment smoke remain unproven. Remaining implementation above is real pending work: this is not 100% of V1 or all install-independent tasks, and not RELEASE-GREEN.

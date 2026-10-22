@@ -269,3 +269,6 @@ Novo delta: gateway não apresenta repo vazio quando Git falha. Desktop/gateway 
 
 ## Isolamento de descoberta Git — 2026-10-22
 @84f876d Cloud Quality 39825438740 SUCCESS; Hosted 39825438717 FAILURE (9 passam, 1 falha). O workspace sem .git descobriu o repo pai do checkout CI: falha real de escopo. Gateway/subprocessos e GitAdapter agora fixam GIT_CEILING_DIRECTORIES no pai do workspace autorizado. Regressão de repo pai/filho e cenário hosted existente devem confirmar indisponibilidade correta. Não declarar novo Cloud Green antes do rerun; sem testes locais.
+
+## Checkpoint remoto comprovado — 2026-10-22
+92d05f49f610fa983ad68facdee59af46a918899: Cloud Quality 39826094603 SUCCESS; Hosted Web UI 39826094506 SUCCESS, 10 cenários reais. Confirma correção de descoberta Git pai e fluxos Visual/receipts/PTYs/arquivos/prompts/perfis/teclado/temas. Working tree de código limpa; consolidação documental posterior não muda código. Código pendente e gates externos discriminados no ledger/Bible. PR #89 permanece DRAFT, nenhum merge/deploy, release não comprovada. Testes/instalação/build/startup locais excluídos e não executados.
