@@ -1,5 +1,15 @@
 # Changelog do Agente
 
+## 2026-10-22 — Prompt Architect e achados do navegador remoto
+
+- Painel completo criar/versionar/validar/compilar/comparar/exportar, com
+  rascunhos protegidos e carga sob demanda. Sem gateway necessário para prompts.
+- WebState usa núcleo PromptArchitect, serialização e histórico imutável;
+  regressões concorrência/restart/compilação estrita e fluxo browser.
+- Hosted UI expôs Tab saindo do modal: contenção explícita nas bordas adicionada.
+- Trace mostrou teste de edição focando textarea IME readonly oculto; corrigido
+  para a superfície visível e teclas reais, sem enfraquecer o aceite de salvar.
+
 ## 2026-10-22 — Validação de navegador hospedada
 
 - Novo Hosted Web UI: Worker, Durable Object, gateway e Chromium reais no runner,

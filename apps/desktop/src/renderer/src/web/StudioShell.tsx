@@ -4,6 +4,7 @@ import type { AIProviderKind, AIStatus, FileDocument, FileEntry, GitStatus, Loca
 import { evaluateSend, handleAgentEvent, providerDisplayName, providerLabel, providerTurnBlockReason, providerUsesSelectableModel } from '../agentGating'
 import type { ConversationMessage } from '../agentGating'
 import { ControlCenter } from '../components/ControlCenter'
+import { containDialogFocus } from '../components/dialogFocus'
 import { WorkspaceFileBrowser } from '../components/WorkspaceFileBrowser'
 import { GitReviewPane } from '../components/GitReviewPane'
 import { ProposalProvenance } from '../components/ProposalProvenance'
@@ -20,6 +21,7 @@ import {
 } from './experience'
 
 const CodeEditor = lazy(async () => import('./CodeEditor'))
+const PromptPane = lazy(async () => ({ default: (await import('../components/PromptArchitectPane')).PromptArchitectPane }))
 const TerminalPaneLazy = lazy(async () => {
   const [module] = await Promise.all([import('../components/TerminalPane'), import('@xterm/xterm/css/xterm.css')])
   return { default: module.TerminalPane }
@@ -30,7 +32,7 @@ const modes: Array<{ mode: Mode; label: string }> = [
   { mode: 'REVIEW', label: 'Review' }, { mode: 'DEBUG', label: 'Debug' }, { mode: 'PROMPT', label: 'Prompt' }, { mode: 'VISUAL', label: 'Visual' }
 ]
 
-type StudioTool = 'files' | 'terminal' | 'git' | 'activity'
+type StudioTool = 'files' | 'terminal' | 'git' | 'activity' | 'prompts'
 
 /** Espelho sanitizado do executionRuntime do /api/health (nunca contém token). */
 export interface ExecutionRuntimeStatusPayload {
@@ -84,6 +86,8 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
   const [runtime, setRuntime] = useState<ExecutionRuntimeView>(executionRuntimeView(null))
   const [runtimeStatus, setRuntimeStatus] = useState<ExecutionRuntimeStatusPayload | null>(null)
   const [tool, setTool] = useState<StudioTool | null>(null)
+  const [promptDirty, setPromptDirty] = useState(false)
+  const [promptBusy, setPromptBusy] = useState(false)
   const [showControlCenter, setShowControlCenter] = useState(false)
   const [bootState, setBootState] = useState<'loading' | 'ready' | 'error'>('loading')
   const providerRef = useRef<AIProviderKind | null>(null)
@@ -464,6 +468,12 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
     if (next === 'git') void syncWorkspace()
   }
 
+  const closeTool = (): void => {
+    if (tool === 'prompts' && promptBusy) return
+    if (tool === 'prompts' && promptDirty && !window.confirm('Descartar o rascunho de prompt não salvo?')) return
+    setTool(null); setPromptDirty(false); setPromptBusy(false)
+  }
+
   const applySuggestion = (prompt: string, suggestionMode: Mode): void => {
     setMode(suggestionMode)
     setAgentInput(prompt)
@@ -538,6 +548,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                 <button className={tool === 'terminal' ? 'active' : ''} aria-pressed={tool === 'terminal'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('terminal') }}><TerminalSquare size={16} aria-hidden="true" /><span>Terminal</span></button>
                 <button className={tool === 'git' ? 'active' : ''} aria-pressed={tool === 'git'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('git') }}><GitBranch size={16} aria-hidden="true" /><span>Git</span></button>
                 <button className={tool === 'activity' ? 'active' : ''} aria-pressed={tool === 'activity'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('activity') }}><Activity size={16} aria-hidden="true" /><span>Atividade</span></button>
+                <button className={tool === 'prompts' ? 'active' : ''} aria-pressed={tool === 'prompts'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('prompts') }}><Braces size={16} aria-hidden="true" /><span>Prompt Architect</span></button>
               </nav>
               <span className="ws-tools-group-title ws-tools-group-separator">Configurações e áreas</span>
               <div className="ws-tool-destinations">
@@ -658,23 +669,24 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
       {tool !== null && (
           <dialog
             ref={drawerRef}
+            onKeyDown={containDialogFocus}
             className={`ws-drawer${tool === 'terminal' ? ' wide' : ''}`}
             role="dialog"
             aria-modal="true"
-            aria-label={tool === 'files' ? 'Arquivos do workspace' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : 'Atividade da sessão'}
-            onCancel={(event) => { event.preventDefault(); setTool(null) }}
+            aria-label={tool === 'files' ? 'Arquivos do workspace' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : 'Atividade da sessão'}
+            onCancel={(event) => { event.preventDefault(); closeTool() }}
             onClick={(event) => {
               if (event.target !== event.currentTarget) return
               const bounds = event.currentTarget.getBoundingClientRect()
-              if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) setTool(null)
+              if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) closeTool()
             }}
           >
             <header className="ws-drawer-head">
-              <strong>{tool === 'files' ? 'Arquivos' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : 'Atividade'}</strong>
+              <strong>{tool === 'files' ? 'Arquivos' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : 'Atividade'}</strong>
               <span className={`ws-runtime-chip tone-${runtime.tone}`}>{runtime.label}</span>
-              <button className="ws-icon-btn" autoFocus title="Fechar painel" onClick={() => setTool(null)}><X size={16} aria-hidden="true" /></button>
+              <button className="ws-icon-btn" autoFocus title="Fechar painel" disabled={tool === 'prompts' && promptBusy} onClick={closeTool}><X size={16} aria-hidden="true" /></button>
             </header>
-            {!runtime.osCapabilities && tool !== 'activity'
+            {!runtime.osCapabilities && tool !== 'activity' && tool !== 'prompts'
               ? (
                   <div className="ws-runtime-lock" role="status">
                     <TerminalSquare size={22} aria-hidden="true" />
@@ -689,6 +701,7 @@ export const StudioShell = ({ onNavigate }: StudioShellProps): React.JSX.Element
                 )
               : (
                   <div className="ws-drawer-body">
+                    {tool === 'prompts' && <Suspense fallback={<p role="status">Carregando Prompt Architect…</p>}><PromptPane onDirtyChange={setPromptDirty} onBusyChange={setPromptBusy} /></Suspense>}
                     {tool === 'files' && (
                       <div className="ws-files">
                         <div className="ws-files-tree">

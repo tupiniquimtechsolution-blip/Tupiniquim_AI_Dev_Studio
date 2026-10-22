@@ -476,6 +476,16 @@
 }
 
 /* Readable controls and touch targets without increasing chat density. */
+.prompt-architect-pane { overflow:auto; padding:16px; color:var(--wx-text); }
+.prompt-architect-pane fieldset { display:grid; gap:12px; min-width:0; border:1px solid var(--wx-line); padding:12px; border-radius:10px; }
+.prompt-architect-pane label { display:grid; gap:5px; font-size:13px; }
+.prompt-architect-pane input,.prompt-architect-pane textarea,.prompt-architect-pane select { width:100%; min-width:0; padding:9px; border:1px solid var(--wx-line-strong); border-radius:8px; font:inherit; font-size:16px; background:var(--wx-surface); color:var(--wx-text); }
+.prompt-architect-pane textarea { resize:vertical; }
+.prompt-architect-pane button { min-height:40px; padding:8px 12px; border:1px solid var(--wx-line-strong); border-radius:8px; background:var(--wx-raised); color:var(--wx-text); font:inherit; cursor:pointer; }
+.prompt-architect-pane button:disabled { opacity:.5; cursor:default; }
+.prompt-architect-pane p { overflow-wrap:anywhere; font-size:13px; line-height:1.5; color:var(--wx-muted); }
+.prompt-architect-pane pre { white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; }
+.prompt-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .ws-files-editor-head { flex-wrap:wrap; }
 .ws-files-editor-head > span { min-width:0; overflow-wrap:anywhere; }
 .ws-file-review { margin-left:auto; min-height:36px; padding:6px 10px; border:1px solid var(--wx-line-strong); border-radius:8px; background:var(--wx-raised); color:var(--wx-text); font:inherit; font-size:12px; cursor:pointer; }

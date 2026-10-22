@@ -7,10 +7,10 @@ must not be used to claim 100% of V1 or RELEASE_GREEN while any required gate la
 
 | Work package | Execution / acceptance | State |
 | --- | --- | --- |
-| Hosted UI proof | Real ephemeral Worker, Durable Object and Runtime Gateway in CI; keyboard/modal/responsive/files/search/diff/save; artifacts | IMPLEMENTED, CI PENDING |
+| Hosted UI proof | Real ephemeral Worker, Durable Object and Runtime Gateway in CI; keyboard/modal/responsive/files/search/diff/save; first run exposed Tab edge and incorrect IME test target, corrected for rerun | FIXED, RERUN PENDING |
 | Workers AI missing binding | Explicit ERROR/not-configured; no simulated inference | IMPLEMENTED, CI PENDING |
 | Files creation | Approved plan/effect, create-only atomic operation, no overwrite; negative tests | PENDING |
-| Prompt Architect | Immutable versions, strict compile/lint/export/compare, actual UI and persistence | PENDING |
+| Prompt Architect | Immutable versions serialized in durable object, strict shared core, full panel + hosted browser test | IMPLEMENTED, CI PENDING |
 | Preferences | Configurable/persisted shortcuts, validation and conflict handling | PENDING |
 | Evidence UI | Display actual runner records; unavailable capabilities remain unavailable | PENDING |
 | Toolbox audit | Source/licence/hashes of versioned packs; reconcile historical branches without bulk merges | PENDING |
@@ -30,3 +30,19 @@ Missing AI is reported explicitly; these tests do not certify model responses.
 No tests, dependency installation, build or app startup executed on the owner's
 machine. All evidence must be linked to the new PR head, not inherited from a
 previous green SHA.
+
+## First hosted run diagnosis
+
+Cloud Quality `39769250029` SUCCESS at `2f5d46c`; Hosted Web UI `39769250081`
+failed. Gateway and Worker started successfully and actual file creation/search/
+opening completed. Activity modal Tab reached browser chrome; explicit edge
+containment added without changing native modality. The editor test targeted
+Monaco's readonly, aria-hidden IME textarea (confirmed in downloaded trace);
+the test now clicks the visible text surface and sends normal keystrokes.
+Screenshots/traces were inspected locally as artifacts; no tests ran locally.
+
+Web Prompt Architect now uses the shared core in WebState, queues mutations,
+retains immutable IDs/versions, rejects missing/unknown variables and provides
+validation/compilation/comparison/export through the new panel. Unit regression
+includes concurrent versions and object restart; hosted browser regression
+covers the end-to-end panel. No earlier lost versions can be reconstructed.

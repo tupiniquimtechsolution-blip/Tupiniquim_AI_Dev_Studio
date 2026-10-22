@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentCatalogView, AgentLoadoutView, AgentPermissionProfile, AIProviderKind, AIStatus, LocalModel, SkillControlView, ToolboxGateId, ToolboxGateView } from '@tupiniquim/contracts'
 import './control-center.css'
+import { containDialogFocus } from './dialogFocus'
 
 const toolboxGates: Array<{ id: ToolboxGateId; label: string }> = [
   { id: 'quality-gates', label: 'Qualidade completa' },
@@ -169,7 +170,7 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
     } finally { setBusy(false) }
   }
 
-  return <dialog ref={dialogRef} className="control-center" aria-label="Tupiniquim Control Center" onCancel={(event) => { event.preventDefault(); props.onClose() }} onClick={(event) => {
+  return <dialog ref={dialogRef} onKeyDown={containDialogFocus} className="control-center" aria-label="Tupiniquim Control Center" onCancel={(event) => { event.preventDefault(); props.onClose() }} onClick={(event) => {
     if (event.target !== event.currentTarget) return
     const bounds = event.currentTarget.getBoundingClientRect()
     if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) props.onClose()

@@ -357,18 +357,16 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
       await appendExecutionEvent(env, workspaceId, executionId, { id: crypto.randomUUID(), at: now, state: 'COMPLETED', category: 'TOOL', title: 'workspace.write materializado.', detail: relativePath, severity: 'SUCCESS' })
       return ok({ effectId: String(effect.id), relativePath, hash: await sha256(content), modifiedAt: now, persistence })
     }
-    case 'full.prompt.list': return ok(await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? [])
-    case 'full.prompt.save': {
-      const items = await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? []; const name = String(input.name ?? '').trim(); const prior = items.find((item) => item.name === name); const template = { id: prior?.id ?? crypto.randomUUID(), name, version: Number(prior?.version ?? 0) + 1, content: String(input.content ?? ''), variables: Array.isArray(input.variables) ? input.variables : [], createdAt: prior?.createdAt ?? now, updatedAt: now }; await statePut(env, workspaceId, 'prompts', [...items.filter((item) => item.id !== template.id), template]); return ok(template)
-    }
-    case 'full.prompt.compile': {
-      const items = await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? []; const template = items.find((item) => item.id === input.templateId); if (template === undefined) return fail('PROMPT_NOT_FOUND', 'Template não encontrado.', 404); let content = String(template.content ?? ''); const values = input.values !== null && typeof input.values === 'object' ? input.values as JsonRecord : {}; const variables = Array.isArray(template.variables) ? template.variables as JsonRecord[] : []; for (const variable of variables) { const name = String(variable.name ?? ''); content = content.replaceAll(`{{${name}}}`, typeof values[name] === 'string' ? values[name] as string : String(variable.defaultValue ?? '')) } return ok({ templateId: template.id, version: template.version, content, hash: await sha256(content), compiledAt: now, lint: [] })
-    }
-    case 'full.prompt.compare': {
-      const items = await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? []; const left = items.find((item) => item.id === input.leftId); const right = items.find((item) => item.id === input.rightId); if (!left || !right) return fail('PROMPT_NOT_FOUND', 'Template não encontrado.', 404); const leftLines = new Set(String(left.content ?? '').split('\n')); const rightLines = new Set(String(right.content ?? '').split('\n')); return ok({ left, right, added: [...rightLines].filter((line) => !leftLines.has(line)), removed: [...leftLines].filter((line) => !rightLines.has(line)) })
-    }
-    case 'full.prompt.lint': { const content = String(input.content ?? ''); const issues: JsonRecord[] = []; if (content.length < 30) issues.push({ severity: 'WARNING', code: 'SHORT_PROMPT', message: 'Prompt muito curto; detalhe objetivo, contexto e critérios.' }); if (!/objetiv|goal|missão/i.test(content)) issues.push({ severity: 'INFO', code: 'NO_EXPLICIT_OBJECTIVE', message: 'Considere declarar um objetivo explícito.' }); return ok(issues) }
-    case 'full.prompt.export': { const items = await stateGet<JsonRecord[]>(env, workspaceId, 'prompts') ?? []; const template = items.find((item) => item.id === input.templateId); return template === undefined ? fail('PROMPT_NOT_FOUND', 'Template não encontrado.', 404) : ok(JSON.stringify(template, null, 2)) }
+    case 'full.prompt.list':
+    case 'full.prompt.save':
+    case 'full.prompt.compile':
+    case 'full.prompt.compare':
+    case 'full.prompt.lint':
+    case 'full.prompt.export':
+      return stateStub(env, workspaceId).fetch('https://state.local/prompt', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: action.slice('full.prompt.'.length), input })
+      })
     case 'full.settings.get': { let profile = await stateGet<JsonRecord>(env, workspaceId, 'ui-profile'); if (profile === null) { profile = defaultProfile(); await statePut(env, workspaceId, 'ui-profile', profile) } return ok(profile) }
     case 'full.settings.save': { if (input.profile === null || typeof input.profile !== 'object') return fail('INVALID_PROFILE', 'Perfil inválido.'); const profile = { ...(input.profile as JsonRecord), updatedAt: now }; await statePut(env, workspaceId, 'ui-profile', profile); return ok(profile) }
     case 'full.settings.export': return ok(JSON.stringify(await stateGet<JsonRecord>(env, workspaceId, 'ui-profile') ?? defaultProfile(), null, 2))
