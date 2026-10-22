@@ -26,8 +26,8 @@ import {
 const CodeEditor = lazy(async () => import('./CodeEditor'))
 const PromptPane = lazy(async () => ({ default: (await import('../components/PromptArchitectPane')).PromptArchitectPane }))
 const TerminalPaneLazy = lazy(async () => {
-  const [module] = await Promise.all([import('../components/TerminalPane'), import('@xterm/xterm/css/xterm.css')])
-  return { default: module.TerminalPane }
+  const [module] = await Promise.all([import('../components/TerminalSessions'), import('@xterm/xterm/css/xterm.css')])
+  return { default: module.TerminalSessions }
 })
 
 const modes: Array<{ mode: Mode; label: string }> = [

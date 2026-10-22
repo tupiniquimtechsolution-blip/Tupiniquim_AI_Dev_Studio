@@ -459,3 +459,6 @@ Inspeção dos screenshots remotos @21e75fe em 390/1440; formulários novos usam
 
 ## 2026-10-22 — CAS e aprovação persistida
 Gateway grava temporário e publica atomicamente sob fila por caminho, revalida hash dentro da fila e recusa sobrescrita sem baseline. Worker encaminha expectedHash. Planos/propostas Web validam schemas, guardam decisões e comparam hash canônico do manifesto antes de start/apply; baseline removido ou alterado bloqueia. Regressões de escritores concorrentes e negativa de enfraquecimento/start sem aprovação no hosted. Execução positiva com modelo real continua sem aceite externo.
+
+## 2026-10-22 — Terminal multissessão e limites
+Manager de até 4 sessões Web/Desktop com histórico visual independente e limpeza no unmount; confirmação do shell real no início. Tratadas rejeições no create/kill e encerramento quando create resolve após unmount. Gateway limita recursos e prazo sem output renovar lease. Hosted comprova isolamento por arquivos reais em dois PTYs Linux; regressão temporal roda só no CI. Não certifica Windows/ConPTY.

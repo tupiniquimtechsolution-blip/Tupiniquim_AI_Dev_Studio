@@ -248,3 +248,6 @@ Head anterior 21e75fe: Cloud Quality 39775354329 e Hosted Web UI 39775354325 SUC
 
 ## Hardening de gravação/aprovação — 2026-10-22
 Novo delta serializa comparação+gravação no gateway: expectedHash obrigatório para substituir, hash ausente = CREATE exclusivo, baseline removido não é recriado. Propostas Web exigem schema/origem, aprovação persistida e effectsHash canônico vigente, execução iniciada e conteúdo hash correspondente. Plano não permite remover aprovação/risco/estrutura nem editar durante execução. @de1a406 Cloud Quality 39776766236 SUCCESS; Hosted 39776766113 em execução; novo delta ainda não validado. Sem testes locais.
+
+## Terminal multissessão — 2026-10-22
+@3e181c5: Cloud Quality 39777254105 e Hosted Web UI 39777254020 SUCCESS; inclui criação/concorrência, perfis, evidências, temas e cancelamento de Voltar com buffer preservado. Próximo delta: 4 painéis de terminal independentes; confirmação antes de shell real; fechamento encerra sessões; gateway limita 4/workspace, 32 total, 15min idle/60min duração. Unit timeout com relógio controlado e hosted de 2 PTYs reais isolados adicionados. Nenhum comando/teste local; ConPTY físico não certificado.

@@ -10,6 +10,7 @@ import { executeGatewayGate } from './gate-runner.ts'
 import { resolveConfinedWorkspacePath } from './workspace-path.ts'
 import { createWorkspaceFile } from './workspace-create.ts'
 import { writeWorkspaceFile } from './workspace-write.ts'
+import { terminalLifetime } from './terminal-lifetime.ts'
 
 type JsonRecord = Record<string, unknown>
 
@@ -19,6 +20,7 @@ const TOKEN = process.env.TUPINIQUIM_GATEWAY_TOKEN?.trim() ?? ''
 const ROOT = path.resolve(process.env.TUPINIQUIM_GATEWAY_ROOT?.trim() || '.tupiniquim/runtime-gateway')
 const MAX_BODY = 12 * 1024 * 1024
 const SAFE_ID = /^[a-zA-Z0-9_-]{8,96}$/
+const activeTerminals = new Map<string, number>()
 
 const json = (response: ServerResponse, status: number, body: unknown): void => {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
@@ -227,11 +229,27 @@ const attachTerminal = async (request: IncomingMessage, socket: Duplex, head: Bu
   const workspaceId = request.headers['x-tupiniquim-workspace'] ?? url.searchParams.get('workspace') ?? ''
   if (typeof workspaceId !== 'string' || !SAFE_ID.test(workspaceId)) { socket.write('HTTP/1.1 400 Bad Request\r\n\r\n'); socket.destroy(); return }
   const cwd = await workspaceRoot(workspaceId)
+  const count = activeTerminals.get(workspaceId) ?? 0
+  const total = [...activeTerminals.values()].reduce((sum, value) => sum + value, 0)
+  if (count >= 4 || total >= 32) { socket.write('HTTP/1.1 429 Too Many Requests\r\n\r\n'); socket.destroy(); return }
   const cols = Math.max(20, Math.min(500, Number(url.searchParams.get('cols') ?? 100)))
   const rows = Math.max(5, Math.min(200, Number(url.searchParams.get('rows') ?? 30)))
   const shell = process.platform === 'win32' ? (process.env.TUPINIQUIM_GATEWAY_SHELL?.trim() || 'powershell.exe') : (process.env.SHELL?.trim() || '/bin/bash')
   const args = process.platform === 'win32' ? ['-NoLogo', '-NoProfile'] : ['--noprofile', '--norc']
   const terminal = pty.spawn(shell, args, { cwd, cols, rows, name: 'xterm-256color', env: process.env })
+  activeTerminals.set(workspaceId, count + 1)
+  const lifetime = terminalLifetime(() => {
+    if (!socket.destroyed) socket.write(frame(0x1, Buffer.from(JSON.stringify({ type: 'error', message: 'Sessão encerrada por limite de inatividade (15min) ou duração (60min).' }), 'utf8')))
+    terminal.kill()
+  })
+  let released = false
+  const release = (): void => {
+    if (released) return
+    released = true; lifetime.dispose()
+    const remaining = (activeTerminals.get(workspaceId) ?? 1) - 1
+    if (remaining <= 0) activeTerminals.delete(workspaceId)
+    else activeTerminals.set(workspaceId, remaining)
+  }
 
   socket.write([
     'HTTP/1.1 101 Switching Protocols',
@@ -243,6 +261,7 @@ const attachTerminal = async (request: IncomingMessage, socket: Duplex, head: Bu
 
   terminal.onData((data) => socket.write(frame(0x2, Buffer.from(data, 'utf8'))))
   terminal.onExit(({ exitCode }) => {
+    release()
     if (!socket.destroyed) {
       socket.write(frame(0x1, Buffer.from(JSON.stringify({ type: 'exit', code: exitCode }), 'utf8')))
       socket.end()
@@ -271,20 +290,20 @@ const attachTerminal = async (request: IncomingMessage, socket: Duplex, head: Bu
       if (mask !== null) for (let index = 0; index < payload.length; index += 1) payload[index] = payload[index]! ^ mask[index % 4]!
       if (opcode === 0x8) { terminal.kill(); socket.end(); return }
       if (opcode === 0x9) { socket.write(frame(0xA, payload)); continue }
-      if (opcode === 0x2) { terminal.write(payload.toString('utf8')); continue }
+      if (opcode === 0x2) { lifetime.touch(); terminal.write(payload.toString('utf8')); continue }
       if (opcode === 0x1) {
         const text = payload.toString('utf8')
         try {
           const control = JSON.parse(text) as JsonRecord
           if (control.type === 'resize') terminal.resize(Math.max(20, Number(control.cols ?? cols)), Math.max(5, Number(control.rows ?? rows)))
-          else terminal.write(text)
-        } catch { terminal.write(text) }
+          else { lifetime.touch(); terminal.write(text) }
+        } catch { lifetime.touch(); terminal.write(text) }
       }
     }
   }
   socket.on('data', (chunk: Buffer) => { buffer = Buffer.concat([buffer, chunk]); consume() })
-  socket.on('close', () => terminal.kill())
-  socket.on('error', () => terminal.kill())
+  socket.on('close', () => { release(); terminal.kill() })
+  socket.on('error', () => { release(); terminal.kill() })
   consume()
 }
 

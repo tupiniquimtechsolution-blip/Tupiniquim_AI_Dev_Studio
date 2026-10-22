@@ -14,6 +14,7 @@ must not be used to claim 100% of V1 or RELEASE_GREEN while any required gate la
 | Preferences | Configurable/persisted opt-in navigation shortcuts; shared schema/conflict checks; server contrast/import validation and hosted persistence regression | IMPLEMENTED, CI PENDING |
 | Evidence UI | Session history/export of actual runner results; truthful unavailable/manual gates and quiet secret scan; new hosted regression | IMPLEMENTED, CI PENDING |
 | Toolbox audit | Pinned commits + MIT licences remotely rechecked; current catalog SHA-256 recorded in SOURCE_REAUDIT_2026-10-22.md; original artifacts absent | REFERENCE AUDIT COMPLETE; original archives UNVERIFIED |
+| Terminal sessions | Four panels, explicit manual shell confirmation, gateway resource/time caps, real Linux PTY regression | IMPLEMENTED, CI PENDING |
 | Documentation/Agenor | Reconcile per-task scope and exact-SHA evidence; no unearned completion | IN PROGRESS |
 
 External dependencies (not completed): physical Windows/ConPTY/package/provider
@@ -64,3 +65,9 @@ Screenshots @21e75fe inspected at 390/1440. Added clear/dark evidence at four wi
 Gateway compare-and-write is serialized per canonical path. Replacements require the reviewed baseline hash, including at the final gateway mutation; no-hash writes are exclusive CREATE. Deleted baselines fail instead of recreating. Temporary sibling + atomic publication avoid partial writes under gateway-owned concurrency. Concurrent privileged host processes remain outside this boundary.
 
 Web agent proposals now require persisted approval decisions bound to the current canonical effects hash, execution/step/source/content consistency and non-replayed effects. Plan edits cannot downgrade risk/approval/structure. Old approvals without persisted decision records fail closed and require fresh review. Positive real-model proposal acceptance remains unproven; synthetic negative/concurrency regressions are not AI certification.
+
+## Full checkpoint @3e181c5
+
+Cloud Quality 39777254105 SUCCESS and Hosted Web UI 39777254020 SUCCESS. Covers reviewed CREATE/no-overwrite, stale concurrent writes, rejection of approval downgrade/start without approval, prompt full flow, shortcut persistence/rejection, evidence export, light/dark responsive HUD and browser-back draft preservation. All hosted execution occurred in the GitHub Linux fixture. No local tests/build/install, paid inference, production deployment or physical certification.
+
+Terminal follow-up implements up to four independent panels and explicit shell confirmation. Gateway caps four active PTYs per workspace and 32 total, expires at 15min without input or 60min lifetime. New hosted test observes two real PTYs, uses synthetic shell variables/files to prove isolation and verifies close cleanup; timer regression uses fake time in remote unit tests. This new delta requires its own CI; Desktop/ConPTY remains deferred.

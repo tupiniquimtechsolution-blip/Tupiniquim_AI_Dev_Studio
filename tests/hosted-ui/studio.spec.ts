@@ -7,6 +7,47 @@ const enter = async (page: Page): Promise<void> => {
   await expect(page.getByRole('heading', { name: 'Em que vamos trabalhar?' })).toBeVisible()
 }
 
+test('terminal requires confirmation and keeps independent real PTY sessions', async ({ page }) => {
+  await enter(page)
+  await expect(page.locator('.web-studio')).toHaveAttribute('aria-busy', 'false')
+  await page.evaluate(() => {
+    const observed = window as Window & { terminalEvidence?: Array<{ terminalId: string; data: string; exited?: boolean }> }
+    observed.terminalEvidence = []
+    window.studio.terminal.onData((event) => observed.terminalEvidence?.push(event))
+  })
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Terminal', exact: true }).click()
+  page.once('dialog', (dialog) => { void dialog.dismiss() })
+  await page.getByRole('button', { name: 'Iniciar terminal', exact: true }).click()
+  await expect(page.getByText('Terminal parado', { exact: true })).toBeVisible()
+  page.once('dialog', (dialog) => { void dialog.accept() })
+  await page.getByRole('button', { name: 'Iniciar terminal', exact: true }).click()
+  const ids = () => page.evaluate(() => [...new Set((window as Window & { terminalEvidence?: Array<{ terminalId: string }> }).terminalEvidence?.map((event) => event.terminalId))])
+  await expect.poll(async () => (await ids()).length).toBe(1)
+  const first = (await ids())[0]
+  if (first === undefined) throw new Error('No PTY event')
+  await page.evaluate((terminalId) => window.studio.terminal.write({ terminalId, data: 'TUPINIQUIM_TEST_SESSION=first\r' }), first)
+  await page.getByRole('button', { name: 'Nova sessão', exact: true }).click()
+  page.once('dialog', (dialog) => { void dialog.accept() })
+  await page.getByRole('button', { name: 'Iniciar terminal', exact: true }).click()
+  await expect.poll(async () => (await ids()).length).toBe(2)
+  const second = (await ids()).find((id) => id !== first)
+  if (second === undefined) throw new Error('No second PTY')
+  await page.evaluate((terminalId) => window.studio.terminal.write({ terminalId, data: 'printf "%s" "${TUPINIQUIM_TEST_SESSION-unset}" > terminal-second.txt\r' }), second)
+  await expect.poll(async () => page.evaluate(async () => { const result = await window.studio.workspace.read({ relativePath: 'terminal-second.txt' }); return result.ok ? result.value.content : null })).toBe('unset')
+  await page.getByRole('button', { name: 'Sessão 1', exact: true }).click()
+  await page.evaluate((terminalId) => window.studio.terminal.write({ terminalId, data: 'printf "%s" "$TUPINIQUIM_TEST_SESSION" > terminal-first.txt\r' }), first)
+  await expect.poll(async () => page.evaluate(async () => { const result = await window.studio.workspace.read({ relativePath: 'terminal-first.txt' }); return result.ok ? result.value.content : null })).toBe('first')
+  await page.getByRole('button', { name: 'Nova sessão', exact: true }).click()
+  await page.getByRole('button', { name: 'Nova sessão', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Nova sessão', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Fechar painel', exact: true }).click()
+  await expect.poll(async () => page.evaluate(() => {
+    const events = (window as Window & { terminalEvidence?: Array<{ terminalId: string; exited?: boolean }> }).terminalEvidence ?? []
+    return new Set(events.filter((event) => event.exited).map((event) => event.terminalId)).size
+  })).toBe(2)
+})
+
 test('gateway rejects competing stale saves and plans without persisted approval', async ({ page }) => {
   await enter(page)
   const outcome = await page.evaluate(async () => {

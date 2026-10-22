@@ -8,7 +8,7 @@ import { evaluateSend, handleAgentEvent, providerDisplayName, providerLabel, pro
 import type { ConversationMessage } from './agentGating'
 import { ProposalProvenance } from './components/ProposalProvenance'
 import { FileTree } from './components/FileTree'
-import { TerminalPane } from './components/TerminalPane'
+import { TerminalSessions as TerminalPane } from './components/TerminalSessions'
 import { ThemeToggle } from './components/ThemeToggle'
 import { useResolvedTheme } from './theme'
 
