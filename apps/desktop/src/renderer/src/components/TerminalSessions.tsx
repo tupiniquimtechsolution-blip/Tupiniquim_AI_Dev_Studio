@@ -17,7 +17,7 @@ export const TerminalSessions = ({ workspaceReady, platform }: { workspaceReady:
       <button disabled={sessions.length === 0} onClick={close}>Fechar sessão</button>
     </div>
     <p className="terminal-session-caption">Até 4 sessões. Cada shell exige confirmação antes de iniciar. Fechar o painel encerra todas as sessões. {platform === 'cloudflare-edge' && 'No Runtime Web: 15min sem entrada ou 60min de duração encerram o shell.'}</p>
-    {sessions.map((id) => <div key={id} className="terminal-session-panel" hidden={active !== id} aria-label={`Terminal da sessão ${id}`}><TerminalPane workspaceReady={workspaceReady} platform={platform} /></div>)}
+    {sessions.map((id) => <div key={id} className="terminal-session-panel" hidden={active !== id} aria-label={`Terminal da sessão ${id}`}><TerminalPane workspaceReady={workspaceReady} platform={platform ?? null} /></div>)}
     {sessions.length === 0 && <p>Nenhuma sessão. Use Nova sessão para abrir outra.</p>}
   </section>
 }

@@ -462,3 +462,6 @@ Gateway grava temporário e publica atomicamente sob fila por caminho, revalida 
 
 ## 2026-10-22 — Terminal multissessão e limites
 Manager de até 4 sessões Web/Desktop com histórico visual independente e limpeza no unmount; confirmação do shell real no início. Tratadas rejeições no create/kill e encerramento quando create resolve após unmount. Gateway limita recursos e prazo sem output renovar lease. Hosted comprova isolamento por arquivos reais em dois PTYs Linux; regressão temporal roda só no CI. Não certifica Windows/ConPTY.
+
+## 2026-10-22 — Correção de contrato opcional
+Cloud Quality 39777878179 encontrou exactOptionalPropertyTypes no encaminhamento de platform do manager de terminais. Normalizar ausência para null ao chamar TerminalPane. Sem teste local; rerun remoto requerido.
