@@ -65,6 +65,15 @@ export interface ToolboxGateView {
   evidence: string
 }
 
+export const toolboxGateRecordSchema = z.object({
+  id: z.string().uuid(), gateId: toolboxGateIdSchema,
+  state: z.enum(['PASS', 'FAIL', 'NOT_AVAILABLE']), evidence: z.string().max(20_000),
+  startedAt: z.string().datetime(), finishedAt: z.string().datetime(),
+  source: z.literal('RUNTIME_GATEWAY'), hostPlatform: z.string().max(80),
+  executionConfirmed: z.boolean()
+})
+export type ToolboxGateRecord = z.infer<typeof toolboxGateRecordSchema>
+
 export interface SkillControlView {
   id: 'tupiniquim-toolbox'
   name: 'Tupiniquim Toolbox'
@@ -94,6 +103,7 @@ export interface ControlCenterDesktopApi {
   status(): Promise<Result<ControlCenterStatus>>
   inspectPortable(input: z.input<typeof portableInspectInputSchema>): Promise<Result<PortableRuntimeView>>
   runToolboxGate(input: z.input<typeof toolboxRunInputSchema>): Promise<Result<ToolboxGateView>>
+  listToolboxEvidence?(): Promise<Result<ToolboxGateRecord[]>>
   listSkills(input: z.input<typeof projectIdInputSchema>): Promise<Result<SkillControlView[]>>
   setSkillEnabled(input: z.input<typeof skillSetEnabledInputSchema>): Promise<Result<SkillControlView>>
   listAgents(): Promise<Result<AgentCatalogView[]>>

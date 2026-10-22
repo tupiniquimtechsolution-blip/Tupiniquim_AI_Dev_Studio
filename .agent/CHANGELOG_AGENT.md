@@ -471,3 +471,6 @@ Reconciliados README/Backlog/Matriz da Bible, preservando inventário físico e 
 
 ## 2026-10-22 — Catálogo visual e licença fail-closed
 Web agora usa VisualIntelligenceService em DO, valida schemas, arquivo regular no Runtime, diretório assets e fonte HTTP(S), serializa mutações e recusa licença UNKNOWN/RESTRICTED/vazia. UI Biblioteca visual registra/lista metadados e consulta elegibilidade declarada; não copia/renderiza/transforma nem verifica licença por autoridade externa. USER_PROVIDED evita atribuição automática a fornecedor. Hosted regressions cobrem concorrência/persistência, gates de licença, arquivo ausente/diretório/URL inadequada e preservação de bytes. Sem testes locais.
+
+## 2026-10-22 — Receipts persistidos e correção do teste visual
+DO serializa histórico de até 100 resultados reais por workspace; Worker constrói receipts de execução/inatividade/erro com horários server-side e confirma persistência antes de devolver o gate. API pública de histórico só lê. Control Center exibe/exporta histórico remoto e mantém observações da sessão distintas. Hosted verifica reload/NOT_AVAILABLE sem execução confirmada; unit verifica concorrência/restart/cap. Corrigido ramo não-Promise no teste visual. Formulário visual espera carga inicial antes de registrar, evitando sobrescrever lista com resposta antiga. Sem execução local.

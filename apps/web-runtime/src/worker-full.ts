@@ -456,20 +456,23 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
     case 'full.control.skill-set': { await statePut(env, workspaceId, `skill:${String(input.projectId ?? 'default')}`, input.enabled === true); return ok({ id: 'tupiniquim-toolbox', name: 'Tupiniquim Toolbox', status: 'APPROVED_INTERNAL', enabled: input.enabled === true, runtimeExecutionAuthorized: false }) }
     case 'full.control.loadouts': return ok(await stateGet<JsonRecord[]>(env, workspaceId, `loadouts:${String(input.projectId ?? 'default')}`) ?? [])
     case 'full.control.loadout-put': { const key = `loadouts:${String(input.projectId ?? 'default')}`; const items = await stateGet<JsonRecord[]>(env, workspaceId, key) ?? []; const view = { projectId: input.projectId, agentId: input.agentId, provider: input.provider, model: input.model ?? null, skillIds: Array.isArray(input.skillIds) ? input.skillIds : [], permissionProfile: input.permissionProfile, runtimeExecutionAuthorized: false }; await statePut(env, workspaceId, key, [...items.filter((item) => item.agentId !== view.agentId), view]); return ok(view) }
+    case 'full.control.history':
+      return stateStub(env, workspaceId).fetch('https://state.local/gate-evidence', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'list' }) })
     case 'full.control.gate': {
       const gateId = String(input.gateId ?? '')
       const allowed = new Set(['quality-gates', 'dependency-audit', 'secret-scan', 'security-review', 'privacy-lgpd', 'accessibility-wcag', 'architecture-review', 'supply-chain', 'release-checklist'])
       if (!allowed.has(gateId)) return fail('UNKNOWN_GATE', 'Gate desconhecido.')
       const runtime = await remoteRuntimeStatus(env)
-      // Fail-closed preservado: gates só executam com Runtime READY.
-      // A mensagem reflete o estado real (DISABLED/MISCONFIGURED/OFFLINE)
-      // para a UI não parecer um erro genérico idêntico em todos os botões;
-      // o código REMOTE_RUNTIME_OFFLINE é mantido por compatibilidade.
       const lockReason = gateLockReason(runtime)
-      if (lockReason !== null) return fail('REMOTE_RUNTIME_OFFLINE', lockReason, 503, true)
-      const sandbox = await ensureWorkspace(env, workspaceId)
-      const result = await sandbox.runGate(gateId)
-      return ok({ gateId, state: result.state, evidence: result.evidence })
+      let result: { state: 'PASS' | 'FAIL' | 'NOT_AVAILABLE'; evidence: string }
+      if (lockReason !== null) result = { state: 'NOT_AVAILABLE', evidence: lockReason }
+      else {
+        try { result = await (await ensureWorkspace(env, workspaceId)).runGate(gateId) }
+        catch { result = { state: 'NOT_AVAILABLE', evidence: 'O executor não confirmou um resultado. Não é possível certificar a execução.' } }
+      }
+      const persisted = await stateStub(env, workspaceId).fetch('https://state.local/gate-evidence', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'append', record: { id: crypto.randomUUID(), gateId, ...result, startedAt: now, finishedAt: new Date().toISOString(), source: 'RUNTIME_GATEWAY', hostPlatform: runtime.platform ?? 'unknown', executionConfirmed: result.state !== 'NOT_AVAILABLE' } }) })
+      if (!persisted.ok) return fail('GATE_EVIDENCE_ERROR', 'Resultado recebido, mas a persistência da evidência não foi confirmada.', 503, true)
+      return ok({ gateId, ...result })
     }
     case 'google-tasks.status': return ok(await googleStatus(env, workspaceId))
     case 'google-tasks.connect': {

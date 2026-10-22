@@ -15,6 +15,7 @@ export const VisualLibraryPane = (): React.JSX.Element => {
   const [rightsNote, setRightsNote] = useState('')
   const [status, setStatus] = useState('Carregando biblioteca visual…')
   const [busy, setBusy] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const pending = useRef(false)
   useEffect(() => {
     let active = true
@@ -23,7 +24,7 @@ export const VisualLibraryPane = (): React.JSX.Element => {
       if (items.ok) setAssets(items.value)
       if (connections.ok) setProviders(connections.value)
       setStatus(!items.ok ? items.error.message : !connections.ok ? connections.error.message : 'Catálogo carregado. Direitos são declarados pelo usuário.')
-    }).catch(() => { if (active) setStatus('Não foi possível carregar o catálogo.') })
+    }).catch(() => { if (active) setStatus('Não foi possível carregar o catálogo.') }).finally(() => { if (active) setLoaded(true) })
     return () => { active = false }
   }, [])
   const add = async (): Promise<void> => {
@@ -48,7 +49,7 @@ export const VisualLibraryPane = (): React.JSX.Element => {
   return <section className="prompt-architect-pane" aria-label="Biblioteca visual">
     <p>Registre arquivos existentes em /workspace/assets com origem e direitos. Fechar sem registrar descarta o formulário. Serviços de transformação exigem uma integração configurada; nenhum será acionado por este catálogo.</p>
     <details><summary>Conexões visuais</summary><ul>{providers.map((item) => <li key={item.id}>{item.label}: {item.state}</li>)}</ul></details>
-    <fieldset disabled={busy}><legend>Registrar referência</legend>
+    <fieldset disabled={busy || !loaded}><legend>Registrar referência</legend>
       <label>Nome visual<input aria-label="Nome visual" value={name} maxLength={200} onChange={(event) => setName(event.target.value)} /></label>
       <label>Arquivo visual<input aria-label="Arquivo visual" value={localPath} maxLength={4096} onChange={(event) => setLocalPath(event.target.value)} /></label>
       <label>URL de origem<input aria-label="URL de origem" type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} /></label>

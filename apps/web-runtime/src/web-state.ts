@@ -1,6 +1,7 @@
 import { PromptArchitect } from '../../../packages/core/src/prompt-architect'
 import { VisualIntelligenceService } from '../../../packages/core/src/visual-intelligence'
 import { visualAssetSchema, visualAssetAddInputSchema, visualAssetUseInputSchema } from '../../../packages/contracts/src/visual'
+import { toolboxGateRecordSchema } from '../../../packages/contracts/src/control-center'
 import { WorkspaceCreateService } from './workspace-create'
 import { getRemoteSandbox, type RemoteRuntimeConfig } from './remote-runtime'
 import { promptSaveInputSchema, promptCompileInputSchema, promptCompareInputSchema, promptIdInputSchema, promptLintInputSchema, promptTemplateSchema } from '../../../packages/contracts/src/prompt'
@@ -20,9 +21,27 @@ const json = (body: unknown, init: ResponseInit = {}): Response => Response.json
 export class WebState {
   private promptQueue: Promise<void> = Promise.resolve()
   private visualQueue: Promise<void> = Promise.resolve()
+  private evidenceQueue: Promise<void> = Promise.resolve()
   private readonly fileCreation: WorkspaceCreateService
   constructor(private readonly state: DurableState, private readonly env: RemoteRuntimeConfig = {}) {
     this.fileCreation = new WorkspaceCreateService(state.storage)
+  }
+
+  private async evidenceRequest(request: Request): Promise<Response> {
+    const preceding = this.evidenceQueue
+    let release = (): void => undefined
+    this.evidenceQueue = new Promise<void>((resolve) => { release = resolve })
+    await preceding
+    try {
+      const body = await request.json() as { action: string; record?: unknown }
+      const records = toolboxGateRecordSchema.array().parse(await this.state.storage.get('gate-evidence') ?? [])
+      if (body.action === 'list') return json({ ok: true, value: records })
+      if (body.action !== 'append') throw new Error('Ação inválida.')
+      const record = toolboxGateRecordSchema.parse(body.record)
+      await this.state.storage.put('gate-evidence', [record, ...records.filter((item) => item.id !== record.id)].slice(0, 100))
+      return json({ ok: true, value: record })
+    } catch { return json({ ok: false, error: { code: 'GATE_EVIDENCE_ERROR', message: 'Histórico de evidências indisponível.', retryable: false } }, { status: 400 }) }
+    finally { release() }
   }
 
   private async visualRequest(request: Request): Promise<Response> {
@@ -93,6 +112,7 @@ export class WebState {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname === '/gate-evidence' && request.method === 'POST') return this.evidenceRequest(request)
     if (url.pathname === '/visual' && request.method === 'POST') return this.visualRequest(request)
     if (url.pathname === '/workspace-create' && request.method === 'POST') {
       try {

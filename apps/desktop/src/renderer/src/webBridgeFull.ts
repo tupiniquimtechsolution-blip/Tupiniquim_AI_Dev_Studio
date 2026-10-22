@@ -13,6 +13,7 @@ import type {
   UIProfile,
   VisualAsset,
   VisualProviderStatus,
+  ToolboxGateRecord,
   WorkspaceWriteProposal
 } from '@tupiniquim/contracts'
 import type { WorkspaceCreateReview } from '../../../../../packages/contracts/src/workspace-create'
@@ -125,6 +126,7 @@ export const installWebFullOverrides = (): void => {
   window.studio.visual.use = (input) => rpc<VisualAsset>('full.visual.use', input)
 
   window.controlCenter.runToolboxGate = (input) => rpc('full.control.gate', input)
+  window.controlCenter.listToolboxEvidence = () => rpc<ToolboxGateRecord[]>('full.control.history')
   window.controlCenter.listSkills = (input) => rpc('full.control.skills', input)
   window.controlCenter.setSkillEnabled = (input) => rpc('full.control.skill-set', input)
   window.controlCenter.listAgentLoadouts = (input) => rpc('full.control.loadouts', input)

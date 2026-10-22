@@ -257,3 +257,6 @@ Bible/Backlog/Matriz reconciliados com checkpoint cloud e inventário RC1 histó
 
 ## Checkpoint certificado e biblioteca visual — 2026-10-22
 @fb74616: Cloud Quality 39778914433 e Hosted Web UI 39778914380 SUCCESS. Terminal real Linux, isolamento de duas sessões, encerramento e ausência do token no ambiente filho comprovados. Novo delta: catálogo visual Web com arquivo existente/regular sob assets, origem HTTP(S), origem USER_PROVIDED para não inventar fornecedor, direitos declarados e trava compartilhada de licença. DO serializa registros; transformações/serviços pagos continuam indisponíveis. Novo delta aguarda CI. Sem execução local.
+
+## Evidências duráveis do Runtime — 2026-10-22
+Visual @318df62 Hosted Web UI 39823528495 SUCCESS; Cloud Quality 39823528496 parou em lint do teste (Promise.all recebia um ramo não-Promise), corrigido. Novo delta persiste até 100 receipts por workspace em DO, horários do servidor, origem Runtime Gateway, estado e execução confirmada; UI consulta/exporta após reload. Nenhum cliente pode inserir receipts pela API pública de histórico. Sessão local de evidências preservada separadamente. Novos testes de concorrência/restart/limite e hosted aguardam gates.

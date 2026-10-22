@@ -84,3 +84,9 @@ Gateway subprocesses now receive the existing restricted environment allowlist r
 @fb74616: Cloud Quality 39778914433 SUCCESS; Hosted Web UI 39778914380 SUCCESS. Real Linux PTY sessions, variable isolation, actual files, close cleanup and gateway-token name absence proved. Screenshots stabilize finite animations and drawer remains opaque. No Windows/ConPTY or production claim.
 
 New visual library registers existing regular files under /workspace/assets and records source, user-declared license/attribution/rights. Durable mutations serialize; shared core refuses unknown/restricted/blank licenses and paths outside assets. USER_PROVIDED avoids false provider provenance. HTTP(S) source metadata is not fetched. No copy, image transformation, license verification by an external authority or paid integration is performed. New positive/negative/persistence/concurrency hosted tests await CI.
+
+## Visual result and durable Runtime receipts
+
+@318df62 Hosted Web UI 39823528495 SUCCESS. Cloud Quality 39823528496 failed at lint because one Promise.all test branch returned a non-Promise; corrected explicitly. No full Cloud Green for that head. Visual registration/license/persistence and prior browser scenarios passed remotely.
+
+New Runtime history persists up to 100 immutable server-constructed receipts per workspace in DO. Each includes server start/end, state, intended Runtime Gateway source, platform and executionConfirmed. Unavailable/transport outcomes never confirm execution. Persistence must be acknowledged before returning the gate outcome. Public history only reads; it accepts no client-created receipts. UI reload/export and concurrent storage/restart/cap regressions added. Session observations remain separately labeled. New delta awaits CI; no release/physical equivalence.

@@ -27,7 +27,7 @@ test('visual catalog persists actual file references and enforces declared licen
   const results = await page.evaluate(async () => {
     const base = { name: 'Unknown fixture', localPath: '/workspace/assets/visual-fixture.svg', sourceUrl: 'https://example.test/fixture', provider: 'USER_PROVIDED' as const, licenseName: null, attribution: null, rightsNote: 'Synthetic fixture registration for license gate test.' }
     const registered = await Promise.all([window.studio.visual.add({ ...base, license: 'UNKNOWN' }), window.studio.visual.add({ ...base, name: 'Restricted fixture', license: 'RESTRICTED' })])
-    const checks = await Promise.all(registered.map((result) => result.ok ? window.studio.visual.use({ assetId: result.value.id }) : result))
+    const checks = await Promise.all(registered.map((result) => result.ok ? window.studio.visual.use({ assetId: result.value.id }) : Promise.resolve(result)))
     const missing = await window.studio.visual.add({ ...base, localPath: '/workspace/assets/missing.svg', license: 'UNKNOWN' })
     const directory = await window.studio.visual.add({ ...base, localPath: '/workspace/assets', license: 'UNKNOWN' })
     const scheme = await window.studio.visual.add({ ...base, sourceUrl: 'javascript:alert(1)', license: 'UNKNOWN' })
@@ -146,6 +146,22 @@ test('Evidence UI records actual unavailable gates without claiming acceptance',
   const downloading = page.waitForEvent('download')
   await history.getByRole('button', { name: 'Exportar evidências da sessão' }).click()
   expect((await downloading).suggestedFilename()).toBe('tupiniquim-session-evidence.json')
+  const durable = page.getByRole('region', { name: 'Histórico persistido do Runtime' })
+  await expect(durable).toContainText('privacy-lgpd · NOT_AVAILABLE')
+  const exported = page.waitForEvent('download')
+  await durable.getByRole('button', { name: 'Exportar histórico do Runtime' }).click()
+  expect((await exported).suggestedFilename()).toBe('tupiniquim-runtime-evidence.json')
+  await page.reload()
+  await expect(page.locator('.web-studio')).toHaveAttribute('aria-busy', 'false')
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Control Center', exact: true }).click()
+  await page.getByRole('button', { name: 'Toolbox', exact: true }).click()
+  const restored = page.getByRole('region', { name: 'Histórico persistido do Runtime' })
+  await expect(restored).toContainText('privacy-lgpd · NOT_AVAILABLE')
+  await restored.locator('summary').click()
+  await expect(restored).toContainText('Execução confirmada: não')
+  const records = await page.evaluate(() => window.controlCenter.listToolboxEvidence?.())
+  expect(records?.ok && records.value[0]?.executionConfirmed).toBe(false)
 })
 
 test('preferences persist shortcuts and reject invalid profiles on the server', async ({ page }) => {
