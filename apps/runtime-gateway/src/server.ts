@@ -159,7 +159,7 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
   if (method === 'workspace.search') return searchWorkspace(workspaceId, stringArg(args, 'query'), numberArg(args, 'limit', 100))
   if (method === 'git.status') {
     const cwd = await workspaceRoot(workspaceId)
-    const result = await runProcess('git', ['-c', `safe.directory=${cwd}`, 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'], cwd, 15_000)
+    const result = await runProcess('git', ['-c', `safe.directory=${cwd}`, '-c', 'core.fsmonitor=false', 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'], cwd, 15_000)
     if (result.code !== 0) throw new Error('Git indisponível: abra ou inicialize um repositório real neste workspace.')
     return parseGitStatus(result.stdout)
   }
@@ -167,7 +167,7 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
     const cwd = await workspaceRoot(workspaceId)
     const relativePath = typeof args.relativePath === 'string' && args.relativePath !== '' ? args.relativePath : null
     if (relativePath !== null) await resolveWorkspacePath(workspaceId, relativePath)
-    const result = await runProcess('git', relativePath === null ? ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--'] : ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--', relativePath], cwd, 15_000)
+    const result = await runProcess('git', relativePath === null ? ['-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', '--no-color', '--'] : ['-c', 'core.fsmonitor=false', 'diff', '--no-ext-diff', '--no-textconv', '--no-color', '--', relativePath], cwd, 15_000)
     if (result.code !== 0) throw new Error(result.stderr || 'Falha no git diff.')
     return result.stdout
   }

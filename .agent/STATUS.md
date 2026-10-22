@@ -263,3 +263,6 @@ Visual @318df62 Hosted Web UI 39823528495 SUCCESS; Cloud Quality 39823528496 par
 
 ## Git real e correção de efeito React — 2026-10-22
 Novo delta: gateway não apresenta repo vazio quando Git falha. Desktop/gateway compartilham parser porcelain v2 NUL: nomes com espaços, renomeações, conflitos, upstream/ahead/behind. Diff desliga helpers externos/textconv/cores. UI exibe status real e diff não staged com erros explícitos. Commit/checkpoint/restore não implementados nesta onda. Corrigido lint do Control Center: estado remoto derivado por workspace sem setState síncrono no efeito; respostas antigas não misturam snapshots. Gate remoto de b361daa ainda não foi recertificado.
+
+## Correção do gate Git — 2026-10-22
+@216a631 Cloud Quality 39825112842 parou em lint React set-state-in-effect. Corrigido com consulta pura e atualização assíncrona. Consultas desabilitam fsmonitor, helpers externos e textconv. Regressão de hook controlado adicionada. Aguardar novo CI; sem teste local ou merge/deploy.

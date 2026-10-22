@@ -8,6 +8,17 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 
 describe('GitAdapter', () => {
+  it.skipIf(process.platform === 'win32')('does not execute repository fsmonitor hooks during a read-only status query', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'git-monitor-fixture-'))
+    try {
+      await execFileAsync('git', ['init', '--initial-branch', 'fixture'], { cwd: root })
+      const hook = path.join(root, '.git', 'controlled-fsmonitor')
+      await fs.writeFile(hook, '#!/bin/sh\nprintf invoked > fsmonitor-marker\nprintf "/\\n"\n', { mode: 0o755 })
+      await execFileAsync('git', ['config', 'core.fsmonitor', hook], { cwd: root })
+      await new GitAdapter(() => root).status()
+      await expect(fs.access(path.join(root, 'fsmonitor-marker'))).rejects.toThrow()
+    } finally { await fs.rm(root, { recursive: true, force: true }) }
+  })
   it('reads actual renamed, modified and untracked filenames containing spaces', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'git-status-fixture-'))
     const git = (args: string[]) => execFileAsync('git', args, { cwd: root, windowsHide: true })

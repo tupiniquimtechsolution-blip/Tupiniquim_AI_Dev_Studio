@@ -477,3 +477,6 @@ DO serializa histórico de até 100 resultados reais por workspace; Worker const
 
 ## 2026-10-22 — Consulta Git sem simulação
 Parser compartilhado de git status porcelain v2 -z preserva nomes brutos e consome origem das renomeações; inclui conflitos e contadores de upstream. Gateway falha explicitamente sem repo, sem branch/árvore vazia fabricadas. GitReview mostra estado+diff reais e trata rejeições; reabre ao trocar workspace. Regressões unit, repo temporário real e browser via PTY Linux adicionadas. Referência primária: https://git-scm.com/docs/git-status (formato porcelain v2). Corrigido set-state-in-effect do histórico com snapshots por workspace. Sem testes locais.
+
+## 2026-10-22 — Leitura Git sem hooks e ciclo assíncrono
+GitAdapter e gateway forçam core.fsmonitor=false nas consultas para não executar hook configurado pelo repo. Regressão Linux com hook controlado verifica ausência de execução. Cloud Quality 39825112842 encontrou chamada de estado a partir da inicialização do GitReview; consulta pura agora retorna Promise, e respostas/rejeições atualizam estado em callbacks assíncronos. Regra preservada, nenhum teste local.
