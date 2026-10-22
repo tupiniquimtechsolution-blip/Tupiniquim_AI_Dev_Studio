@@ -1,3 +1,4 @@
+import { parseGitStatus } from '../../../packages/adapters/src/git-status.ts'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -158,18 +159,15 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
   if (method === 'workspace.search') return searchWorkspace(workspaceId, stringArg(args, 'query'), numberArg(args, 'limit', 100))
   if (method === 'git.status') {
     const cwd = await workspaceRoot(workspaceId)
-    const result = await runProcess('git', ['status', '--porcelain=v1', '-b'], cwd, 15_000)
-    if (result.code !== 0) return { branch: 'remote-workspace', ahead: 0, behind: 0, entries: [] }
-    const lines = result.stdout.split(/\r?\n/).filter(Boolean)
-    const branchLine = lines.shift() ?? '## remote-workspace'
-    const branch = branchLine.replace(/^##\s*/, '').split('...')[0]?.trim() || 'remote-workspace'
-    return { branch, ahead: 0, behind: 0, entries: lines.map((line) => ({ path: line.slice(3).trim(), index: line[0] ?? ' ', worktree: line[1] ?? ' ' })) }
+    const result = await runProcess('git', ['-c', `safe.directory=${cwd}`, 'status', '--porcelain=v2', '--branch', '-z', '--untracked-files=all'], cwd, 15_000)
+    if (result.code !== 0) throw new Error('Git indisponível: abra ou inicialize um repositório real neste workspace.')
+    return parseGitStatus(result.stdout)
   }
   if (method === 'git.diff') {
     const cwd = await workspaceRoot(workspaceId)
     const relativePath = typeof args.relativePath === 'string' && args.relativePath !== '' ? args.relativePath : null
     if (relativePath !== null) await resolveWorkspacePath(workspaceId, relativePath)
-    const result = await runProcess('git', relativePath === null ? ['diff', '--'] : ['diff', '--', relativePath], cwd, 15_000)
+    const result = await runProcess('git', relativePath === null ? ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--'] : ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--', relativePath], cwd, 15_000)
     if (result.code !== 0) throw new Error(result.stderr || 'Falha no git diff.')
     return result.stdout
   }

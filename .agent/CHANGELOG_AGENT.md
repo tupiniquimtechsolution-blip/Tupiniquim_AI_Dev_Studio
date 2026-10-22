@@ -474,3 +474,6 @@ Web agora usa VisualIntelligenceService em DO, valida schemas, arquivo regular n
 
 ## 2026-10-22 — Receipts persistidos e correção do teste visual
 DO serializa histórico de até 100 resultados reais por workspace; Worker constrói receipts de execução/inatividade/erro com horários server-side e confirma persistência antes de devolver o gate. API pública de histórico só lê. Control Center exibe/exporta histórico remoto e mantém observações da sessão distintas. Hosted verifica reload/NOT_AVAILABLE sem execução confirmada; unit verifica concorrência/restart/cap. Corrigido ramo não-Promise no teste visual. Formulário visual espera carga inicial antes de registrar, evitando sobrescrever lista com resposta antiga. Sem execução local.
+
+## 2026-10-22 — Consulta Git sem simulação
+Parser compartilhado de git status porcelain v2 -z preserva nomes brutos e consome origem das renomeações; inclui conflitos e contadores de upstream. Gateway falha explicitamente sem repo, sem branch/árvore vazia fabricadas. GitReview mostra estado+diff reais e trata rejeições; reabre ao trocar workspace. Regressões unit, repo temporário real e browser via PTY Linux adicionadas. Referência primária: https://git-scm.com/docs/git-status (formato porcelain v2). Corrigido set-state-in-effect do histórico com snapshots por workspace. Sem testes locais.

@@ -260,3 +260,6 @@ Bible/Backlog/Matriz reconciliados com checkpoint cloud e inventário RC1 histó
 
 ## Evidências duráveis do Runtime — 2026-10-22
 Visual @318df62 Hosted Web UI 39823528495 SUCCESS; Cloud Quality 39823528496 parou em lint do teste (Promise.all recebia um ramo não-Promise), corrigido. Novo delta persiste até 100 receipts por workspace em DO, horários do servidor, origem Runtime Gateway, estado e execução confirmada; UI consulta/exporta após reload. Nenhum cliente pode inserir receipts pela API pública de histórico. Sessão local de evidências preservada separadamente. Novos testes de concorrência/restart/limite e hosted aguardam gates.
+
+## Git real e correção de efeito React — 2026-10-22
+Novo delta: gateway não apresenta repo vazio quando Git falha. Desktop/gateway compartilham parser porcelain v2 NUL: nomes com espaços, renomeações, conflitos, upstream/ahead/behind. Diff desliga helpers externos/textconv/cores. UI exibe status real e diff não staged com erros explícitos. Commit/checkpoint/restore não implementados nesta onda. Corrigido lint do Control Center: estado remoto derivado por workspace sem setState síncrono no efeito; respostas antigas não misturam snapshots. Gate remoto de b361daa ainda não foi recertificado.

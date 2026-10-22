@@ -90,3 +90,9 @@ New visual library registers existing regular files under /workspace/assets and 
 @318df62 Hosted Web UI 39823528495 SUCCESS. Cloud Quality 39823528496 failed at lint because one Promise.all test branch returned a non-Promise; corrected explicitly. No full Cloud Green for that head. Visual registration/license/persistence and prior browser scenarios passed remotely.
 
 New Runtime history persists up to 100 immutable server-constructed receipts per workspace in DO. Each includes server start/end, state, intended Runtime Gateway source, platform and executionConfirmed. Unavailable/transport outcomes never confirm execution. Persistence must be acknowledged before returning the gate outcome. Public history only reads; it accepts no client-created receipts. UI reload/export and concurrent storage/restart/cap regressions added. Session observations remain separately labeled. New delta awaits CI; no release/physical equivalence.
+
+## Git query and React correction
+
+New delta replaces gateway's fabricated empty Git status on failures with explicit unavailable errors. Desktop/gateway share the documented porcelain v2 NUL parser, preserving spaces/newlines, consuming rename origins and handling conflicts/upstream counters. Diff disables external helpers/textconv/color. Read-only UI shows actual staged/worktree entries and unstaged tracked diff; commit/checkpoint/restore remain separate unfinished work. Real temporary Git repo and hosted PTY initialization regressions added. Reference: https://git-scm.com/docs/git-status.
+
+Cloud Quality 39824161515 stopped at React set-state-in-effect for the initial history reset. Replaced with project-keyed snapshots updated after asynchronous responses; no synchronous effect reset and no old-workspace display. New delta requires remote gates; no local tests.

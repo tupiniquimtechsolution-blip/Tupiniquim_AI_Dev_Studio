@@ -163,7 +163,7 @@ export const StudioShell = ({ onNavigate, registerLeaveGuard }: StudioShellProps
       window.studio.git.status()
     ])
     if (tree.ok) setFiles(tree.value)
-    if (status.ok) setGit(status.value)
+    setGit(status.ok ? status.value : null)
   }
 
   useEffect(() => {
@@ -761,7 +761,7 @@ export const StudioShell = ({ onNavigate, registerLeaveGuard }: StudioShellProps
                         <TerminalPaneLazy workspaceReady={workspaceRoot !== null} platform={system?.platform ?? null} />
                       </Suspense>
                     )}
-                    {tool === 'git' && <GitReviewPane workspaceReady={workspaceRoot !== null} />}
+                    {tool === 'git' && <GitReviewPane key={workspaceRoot ?? 'no-workspace'} workspaceReady={workspaceRoot !== null} />}
                     {tool === 'activity' && <SessionActivity sessionId={sessionId} threadId={aiStatus?.activeThreadId ?? null} workspaceReady={workspaceRoot !== null} runtime={runtime} />}
                   </div>
                 )}

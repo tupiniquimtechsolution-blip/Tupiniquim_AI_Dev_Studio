@@ -1,0 +1,9 @@
+.git-review-pane { height:100%; min-width:0; overflow:auto; padding:16px; color:var(--text); }
+.git-review-pane p { font-size:13px; line-height:1.5; color:var(--muted); overflow-wrap:anywhere; }
+.git-review-pane h3 { font-size:15px; }
+.git-review-pane ul { padding-left:20px; }
+.git-review-pane li { margin-block:10px; }
+.git-review-pane code,.git-review-pane pre { font-size:13px; }
+.git-review-pane button { min-height:40px; padding:8px 12px; border:1px solid var(--line); border-radius:8px; background:var(--raised); color:var(--text); font:inherit; font-size:13px; cursor:pointer; }
+.git-review-pane button:disabled { opacity:.5; cursor:default; }
+@media(pointer:coarse) { .git-review-pane button { min-height:44px; } }

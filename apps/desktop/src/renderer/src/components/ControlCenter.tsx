@@ -74,11 +74,12 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
   const [gateResult, setGateResult] = useState<ToolboxGateView | null>(null)
   const [gateHistory, setGateHistory] = useState<Array<ToolboxGateView & { id: string; startedAt: string; finishedAt: string }>>([])
   const gatePending = useRef(false)
-  const [runtimeEvidence, setRuntimeEvidence] = useState<ToolboxGateRecord[]>([])
-  const [runtimeEvidenceStatus, setRuntimeEvidenceStatus] = useState('')
+  const [runtimeHistory, setRuntimeHistory] = useState<{ projectId: string; records: ToolboxGateRecord[]; status: string }>({ projectId: '', records: [], status: 'Carregando histórico do Runtime…' })
   const [actionResult, setActionResult] = useState('')
   const [busy, setBusy] = useState(false)
   const projectId = useMemo(() => props.workspaceRoot ?? '', [props.workspaceRoot])
+  const runtimeEvidence = runtimeHistory.projectId === projectId ? runtimeHistory.records : []
+  const runtimeEvidenceStatus = runtimeHistory.projectId === projectId ? runtimeHistory.status : 'Carregando histórico do Runtime…'
   // Web: gates bloqueados enquanto o Runtime Local não estiver READY —
   // reflete o estado ANTES do clique em vez de falhar genericamente depois.
   // Desktop (prop ausente): sem bloqueio, execução local como sempre.
@@ -110,13 +111,11 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
     if (!props.open) return
     let active = true
     if (window.controlCenter.listToolboxEvidence !== undefined) {
-      setRuntimeEvidence([])
-      setRuntimeEvidenceStatus('Carregando histórico do Runtime…')
       void window.controlCenter.listToolboxEvidence().then((result) => {
         if (!active) return
-        if (result.ok) { setRuntimeEvidence((current) => [...new Map([...current, ...result.value].map((item) => [item.id, item])).values()].slice(0, 100)); setRuntimeEvidenceStatus('Até 100 registros persistidos deste workspace; horários do servidor.') }
-        else setRuntimeEvidenceStatus(result.error.message)
-      }).catch(() => { if (active) setRuntimeEvidenceStatus('Histórico remoto indisponível.') })
+        if (result.ok) setRuntimeHistory((current) => ({ projectId, records: current.projectId === projectId ? [...new Map([...current.records, ...result.value].map((item) => [item.id, item])).values()].slice(0, 100) : result.value, status: 'Até 100 registros persistidos deste workspace; horários do servidor.' }))
+        else setRuntimeHistory({ projectId, records: [], status: result.error.message })
+      }).catch(() => { if (active) setRuntimeHistory({ projectId, records: [], status: 'Histórico remoto indisponível.' }) })
     }
     void window.controlCenter.listAgents().then((result) => {
       if (!active || !result.ok) return
@@ -153,9 +152,9 @@ export const ControlCenter = (props: ControlCenterProps): React.JSX.Element | nu
     if (window.controlCenter.listToolboxEvidence !== undefined) {
       try {
         const history = await window.controlCenter.listToolboxEvidence()
-        if (history.ok) { setRuntimeEvidence(history.value); setRuntimeEvidenceStatus('Até 100 registros persistidos deste workspace; horários do servidor.') }
-        else setRuntimeEvidenceStatus(history.error.message)
-      } catch { setRuntimeEvidenceStatus('Não foi possível confirmar o histórico remoto.') }
+        if (history.ok) setRuntimeHistory({ projectId, records: history.value, status: 'Até 100 registros persistidos deste workspace; horários do servidor.' })
+        else setRuntimeHistory({ projectId, records: [], status: history.error.message })
+      } catch { setRuntimeHistory({ projectId, records: [], status: 'Não foi possível confirmar o histórico remoto.' }) }
     }
   }
 

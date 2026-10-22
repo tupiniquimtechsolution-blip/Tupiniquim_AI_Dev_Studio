@@ -7,6 +7,17 @@ const enter = async (page: Page): Promise<void> => {
   await expect(page.getByRole('heading', { name: 'Em que vamos trabalhar?' })).toBeVisible()
 }
 
+test('Git reports an unavailable repository instead of a fabricated clean status', async ({ page }) => {
+  await enter(page)
+  const status = await page.evaluate(() => window.studio.git.status())
+  expect(status.ok).toBe(false)
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  const pane = page.getByRole('region', { name: 'Revisão Git somente leitura' })
+  await expect(pane.getByRole('status')).toContainText('Git indisponível')
+  await expect(pane).not.toContainText('Árvore de trabalho e índice sem alterações.')
+})
+
 test('visual catalog persists actual file references and enforces declared license gates', async ({ page }) => {
   await enter(page)
   const fixture = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" /></svg>'
@@ -76,6 +87,10 @@ test('terminal requires confirmation and keeps independent real PTY sessions', a
   await page.getByRole('button', { name: 'Sessão 1', exact: true }).click()
   await page.evaluate((terminalId) => window.studio.terminal.write({ terminalId, data: 'printf "%s" "$TUPINIQUIM_TEST_SESSION" > terminal-first.txt\r' }), first)
   await expect.poll(async () => page.evaluate(async () => { const result = await window.studio.workspace.read({ relativePath: 'terminal-first.txt' }); return result.ok ? result.value.content : null })).toBe('first')
+  await page.evaluate((terminalId) => window.studio.terminal.write({ terminalId, data: 'git init --initial-branch=hosted-fixture >/dev/null && printf ready > git-fixture-ready.txt\r' }), first)
+  await expect.poll(async () => page.evaluate(async () => { const result = await window.studio.workspace.read({ relativePath: 'git-fixture-ready.txt' }); return result.ok ? result.value.content : null })).toBe('ready')
+  const gitFile = await page.evaluate(() => window.studio.workspace.write({ relativePath: 'file with spaces.txt', content: 'untracked Git fixture' }))
+  expect(gitFile.ok).toBe(true)
   await page.getByRole('button', { name: 'Nova sessão', exact: true }).click()
   await page.getByRole('button', { name: 'Nova sessão', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Nova sessão', exact: true })).toBeDisabled()
@@ -84,6 +99,12 @@ test('terminal requires confirmation and keeps independent real PTY sessions', a
     const events = (window as Window & { terminalEvidence?: Array<{ terminalId: string; exited?: boolean }> }).terminalEvidence ?? []
     return new Set(events.filter((event) => event.exited).map((event) => event.terminalId)).size
   })).toBe(2)
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Git', exact: true }).click()
+  const review = page.getByRole('region', { name: 'Revisão Git somente leitura' })
+  await expect(review.getByRole('heading', { name: 'hosted-fixture', exact: true })).toBeVisible()
+  await expect(review).toContainText('file with spaces.txt')
+  await expect(review).toContainText('Índice: ? · Trabalho: ?')
 })
 
 test('gateway rejects competing stale saves and plans without persisted approval', async ({ page }) => {
