@@ -30,7 +30,7 @@ export class VisualIntelligenceService {
     const expectedRoot = path.resolve(this.dataRoot, 'assets')
     const candidate = path.resolve(input.localPath)
     const relative = path.relative(expectedRoot, candidate)
-    if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Assets visuais precisam ser copiados para o diretório de dados em F:\\CODEX.')
+    if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Assets visuais precisam estar no diretório assets autorizado.')
     const asset = visualAssetSchema.parse({ ...input, id: randomUUID(), createdAt: new Date().toISOString() })
     await this.repository.putVisualAsset(asset)
     return asset
@@ -41,7 +41,9 @@ export class VisualIntelligenceService {
   public async assertUsable(id: string): Promise<VisualAsset> {
     const asset = await this.repository.getVisualAsset(id)
     if (asset === null) throw new Error('Asset visual não encontrado.')
-    if (asset.license !== 'KNOWN' || asset.licenseName === null) throw new Error('Uso bloqueado: licença conhecida é obrigatória.')
+    const relative = path.relative(path.resolve(this.dataRoot, 'assets'), path.resolve(asset.localPath))
+    if (relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('Registro visual fora do diretório assets autorizado.')
+    if (asset.license !== 'KNOWN' || asset.licenseName === null || asset.licenseName.trim() === '') throw new Error('Uso bloqueado: licença conhecida e identificada é obrigatória.')
     return asset
   }
 }

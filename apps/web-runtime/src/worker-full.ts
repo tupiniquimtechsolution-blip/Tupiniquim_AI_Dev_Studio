@@ -447,9 +447,11 @@ const handleStateRpc = async (request: Request, env: Env, workspaceId: string, a
       const parsed = uiProfileSchema.safeParse(await stateGet<unknown>(env, workspaceId, 'ui-profile') ?? defaultProfile())
       return parsed.success ? ok(JSON.stringify(parsed.data, null, 2)) : fail('INVALID_PROFILE', 'Preferências persistidas inválidas.')
     }
-    case 'full.visual.list': return ok(await stateGet<JsonRecord[]>(env, workspaceId, 'visual-assets') ?? [])
-    case 'full.visual.add': { const items = await stateGet<JsonRecord[]>(env, workspaceId, 'visual-assets') ?? []; const asset = { ...input, id: crypto.randomUUID(), createdAt: now }; await statePut(env, workspaceId, 'visual-assets', [...items, asset]); return ok(asset) }
-    case 'full.visual.use': { const items = await stateGet<JsonRecord[]>(env, workspaceId, 'visual-assets') ?? []; const asset = items.find((item) => item.id === input.assetId); return asset === undefined ? fail('VISUAL_ASSET_NOT_FOUND', 'Asset visual não encontrado.', 404) : ok(asset) }
+    case 'full.visual.list':
+    case 'full.visual.statuses':
+    case 'full.visual.add':
+    case 'full.visual.use':
+      return stateStub(env, workspaceId).fetch('https://state.local/visual', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ workspaceId, action: action.slice('full.visual.'.length), input }) })
     case 'full.control.skills': return ok([{ id: 'tupiniquim-toolbox', name: 'Tupiniquim Toolbox', status: 'APPROVED_INTERNAL', enabled: (await stateGet<boolean>(env, workspaceId, `skill:${String(input.projectId ?? 'default')}`)) ?? true, runtimeExecutionAuthorized: false }])
     case 'full.control.skill-set': { await statePut(env, workspaceId, `skill:${String(input.projectId ?? 'default')}`, input.enabled === true); return ok({ id: 'tupiniquim-toolbox', name: 'Tupiniquim Toolbox', status: 'APPROVED_INTERNAL', enabled: input.enabled === true, runtimeExecutionAuthorized: false }) }
     case 'full.control.loadouts': return ok(await stateGet<JsonRecord[]>(env, workspaceId, `loadouts:${String(input.projectId ?? 'default')}`) ?? [])

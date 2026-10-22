@@ -12,6 +12,7 @@ import type {
   Result,
   UIProfile,
   VisualAsset,
+  VisualProviderStatus,
   WorkspaceWriteProposal
 } from '@tupiniquim/contracts'
 import type { WorkspaceCreateReview } from '../../../../../packages/contracts/src/workspace-create'
@@ -118,6 +119,7 @@ export const installWebFullOverrides = (): void => {
   window.studio.settings.export = () => rpc<string>('full.settings.export')
   window.studio.settings.import = (input) => rpc<UIProfile>('full.settings.import', input)
 
+  window.studio.visual.statuses = () => rpc<VisualProviderStatus[]>('full.visual.statuses')
   window.studio.visual.add = (input) => rpc<VisualAsset>('full.visual.add', input)
   window.studio.visual.list = () => rpc<VisualAsset[]>('full.visual.list')
   window.studio.visual.use = (input) => rpc<VisualAsset>('full.visual.use', input)

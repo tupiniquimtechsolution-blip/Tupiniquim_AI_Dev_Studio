@@ -7,6 +7,41 @@ const enter = async (page: Page): Promise<void> => {
   await expect(page.getByRole('heading', { name: 'Em que vamos trabalhar?' })).toBeVisible()
 }
 
+test('visual catalog persists actual file references and enforces declared license gates', async ({ page }) => {
+  await enter(page)
+  const fixture = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" /></svg>'
+  const created = await page.evaluate((content) => window.studio.workspace.write({ relativePath: 'assets/visual-fixture.svg', content }), fixture)
+  expect(created.ok).toBe(true)
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Biblioteca visual', exact: true }).click()
+  await page.getByLabel('Nome visual', { exact: true }).fill('Owned fixture')
+  await page.getByLabel('Arquivo visual', { exact: true }).fill('/workspace/assets/visual-fixture.svg')
+  await page.getByLabel('URL de origem', { exact: true }).fill('https://example.test/owned-fixture')
+  await page.getByLabel('Situação da licença', { exact: true }).selectOption('KNOWN')
+  await page.getByLabel('Nome da licença', { exact: true }).fill('CC0 — synthetic fixture')
+  await page.getByLabel('Direitos e condições', { exact: true }).fill('Synthetic CI file owned for this test; no external asset downloaded.')
+  await page.getByRole('button', { name: 'Registrar referência visual', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Referência visual registrada.' })).toBeVisible()
+  await page.getByRole('button', { name: 'Verificar licença de Owned fixture', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Licença declarada identificada:' })).toBeVisible()
+  const results = await page.evaluate(async () => {
+    const base = { name: 'Unknown fixture', localPath: '/workspace/assets/visual-fixture.svg', sourceUrl: 'https://example.test/fixture', provider: 'USER_PROVIDED' as const, licenseName: null, attribution: null, rightsNote: 'Synthetic fixture registration for license gate test.' }
+    const registered = await Promise.all([window.studio.visual.add({ ...base, license: 'UNKNOWN' }), window.studio.visual.add({ ...base, name: 'Restricted fixture', license: 'RESTRICTED' })])
+    const checks = await Promise.all(registered.map((result) => result.ok ? window.studio.visual.use({ assetId: result.value.id }) : result))
+    const missing = await window.studio.visual.add({ ...base, localPath: '/workspace/assets/missing.svg', license: 'UNKNOWN' })
+    const directory = await window.studio.visual.add({ ...base, localPath: '/workspace/assets', license: 'UNKNOWN' })
+    const scheme = await window.studio.visual.add({ ...base, sourceUrl: 'javascript:alert(1)', license: 'UNKNOWN' })
+    const contents = await window.studio.workspace.read({ relativePath: 'assets/visual-fixture.svg' })
+    return { registered: registered.map((item) => item.ok), checks: checks.map((item) => item.ok), missing: missing.ok, directory: directory.ok, scheme: scheme.ok, content: contents.ok && contents.value.content }
+  })
+  expect(results).toEqual({ registered: [true, true], checks: [false, false], missing: false, directory: false, scheme: false, content: fixture })
+  await page.reload()
+  await expect(page.locator('.web-studio')).toHaveAttribute('aria-busy', 'false')
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Biblioteca visual', exact: true }).click()
+  for (const name of ['Owned fixture', 'Unknown fixture', 'Restricted fixture']) await expect(page.getByRole('button', { name: `Verificar licença de ${name}`, exact: true })).toBeVisible()
+})
+
 test('terminal requires confirmation and keeps independent real PTY sessions', async ({ page }) => {
   await enter(page)
   await expect(page.locator('.web-studio')).toHaveAttribute('aria-busy', 'false')

@@ -468,3 +468,6 @@ Cloud Quality 39777878179 encontrou exactOptionalPropertyTypes no encaminhamento
 
 ## 2026-10-22 — Checkpoint documental e higiene de ambiente
 Reconciliados README/Backlog/Matriz da Bible, preservando inventário físico e pendências reais. Gateway reutiliza createRestrictedEnvironment para comandos/PTYs em vez de herdar process.env integral. Teste hosted verifica somente ausência do nome do token no shell. Drawer entra sem fade de texto; screenshots terminam animações finitas para revisão visual fiel. Sem execução local.
+
+## 2026-10-22 — Catálogo visual e licença fail-closed
+Web agora usa VisualIntelligenceService em DO, valida schemas, arquivo regular no Runtime, diretório assets e fonte HTTP(S), serializa mutações e recusa licença UNKNOWN/RESTRICTED/vazia. UI Biblioteca visual registra/lista metadados e consulta elegibilidade declarada; não copia/renderiza/transforma nem verifica licença por autoridade externa. USER_PROVIDED evita atribuição automática a fornecedor. Hosted regressions cobrem concorrência/persistência, gates de licença, arquivo ausente/diretório/URL inadequada e preservação de bytes. Sem testes locais.

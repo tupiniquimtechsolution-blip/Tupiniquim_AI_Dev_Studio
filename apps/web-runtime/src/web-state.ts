@@ -1,4 +1,6 @@
 import { PromptArchitect } from '../../../packages/core/src/prompt-architect'
+import { VisualIntelligenceService } from '../../../packages/core/src/visual-intelligence'
+import { visualAssetSchema, visualAssetAddInputSchema, visualAssetUseInputSchema } from '../../../packages/contracts/src/visual'
 import { WorkspaceCreateService } from './workspace-create'
 import { getRemoteSandbox, type RemoteRuntimeConfig } from './remote-runtime'
 import { promptSaveInputSchema, promptCompileInputSchema, promptCompareInputSchema, promptIdInputSchema, promptLintInputSchema, promptTemplateSchema } from '../../../packages/contracts/src/prompt'
@@ -17,9 +19,46 @@ const json = (body: unknown, init: ResponseInit = {}): Response => Response.json
 
 export class WebState {
   private promptQueue: Promise<void> = Promise.resolve()
+  private visualQueue: Promise<void> = Promise.resolve()
   private readonly fileCreation: WorkspaceCreateService
   constructor(private readonly state: DurableState, private readonly env: RemoteRuntimeConfig = {}) {
     this.fileCreation = new WorkspaceCreateService(state.storage)
+  }
+
+  private async visualRequest(request: Request): Promise<Response> {
+    const preceding = this.visualQueue
+    let release = (): void => undefined
+    this.visualQueue = new Promise<void>((resolve) => { release = resolve })
+    await preceding
+    try {
+      const body = await request.json() as { action: string; input: unknown; workspaceId: string }
+      if (!/^[a-zA-Z0-9_-]{8,96}$/.test(body.workspaceId)) throw new Error('Workspace inválido.')
+      const list = async () => visualAssetSchema.array().parse(await this.state.storage.get('visual-assets') ?? [])
+      const service = new VisualIntelligenceService({
+        listVisualAssets: list,
+        getVisualAsset: async (id) => (await list()).find((item) => item.id === id) ?? null,
+        putVisualAsset: async (asset) => { await this.state.storage.put('visual-assets', [...await list(), asset]) }
+      }, '/workspace')
+      let value: unknown
+      if (body.action === 'statuses') value = service.statuses({})
+      else if (body.action === 'list') value = await service.list()
+      else if (body.action === 'add') {
+        const input = visualAssetAddInputSchema.parse(body.input)
+        const url = new URL(input.sourceUrl)
+        if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Origem deve ser uma URL HTTP(S).')
+        const sandbox = getRemoteSandbox(this.env, body.workspaceId)
+        const metadata = await sandbox.fileInfo(input.localPath)
+        if (!metadata.isFile) throw new Error('Arquivo visual inexistente ou não regular.')
+        value = await service.add(input)
+      } else if (body.action === 'use') {
+        const asset = await service.assertUsable(visualAssetUseInputSchema.parse(body.input).assetId)
+        const metadata = await getRemoteSandbox(this.env, body.workspaceId).fileInfo(asset.localPath)
+        if (!metadata.isFile) throw new Error('Arquivo visual indisponível.')
+        value = asset
+      } else throw new Error('Ação visual inválida.')
+      return json({ ok: true, value })
+    } catch (cause) { return json({ ok: false, error: { code: 'VISUAL_ERROR', message: cause instanceof Error ? cause.message : 'Falha no catálogo visual.', retryable: false } }, { status: 400 }) }
+    finally { release() }
   }
 
   private async promptRequest(request: Request): Promise<Response> {
@@ -54,6 +93,7 @@ export class WebState {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
+    if (url.pathname === '/visual' && request.method === 'POST') return this.visualRequest(request)
     if (url.pathname === '/workspace-create' && request.method === 'POST') {
       try {
         const body = await request.json() as { action: string; input: unknown; workspaceId: string }

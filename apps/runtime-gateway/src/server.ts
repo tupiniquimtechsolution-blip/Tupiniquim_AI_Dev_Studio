@@ -142,6 +142,10 @@ const handleRpc = async (body: JsonRecord): Promise<unknown> => {
     return null
   }
   if (method === 'fs.read-file') return { content: await fs.readFile(await resolveWorkspacePath(workspaceId, stringArg(args, 'path')), 'utf8') }
+  if (method === 'fs.file-info') {
+    const stat = await fs.stat(await resolveWorkspacePath(workspaceId, stringArg(args, 'path')))
+    return { isFile: stat.isFile(), size: stat.size }
+  }
   if (method === 'fs.create-file') {
     await createWorkspaceFile(await workspaceRoot(workspaceId), stringArg(args, 'path'), stringArg(args, 'content'))
     return null

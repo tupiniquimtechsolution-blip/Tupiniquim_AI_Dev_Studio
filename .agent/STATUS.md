@@ -254,3 +254,6 @@ Novo delta serializa comparação+gravação no gateway: expectedHash obrigatór
 
 ## Auditoria documental e ambiente de subprocessos — 2026-10-22
 Bible/Backlog/Matriz reconciliados com checkpoint cloud e inventário RC1 histórico; implementações ainda pendentes listadas explicitamente. Notion/Miro #13 e #20 passaram para Em Andamento; #19/#24/#27/#29 receberam evidência @3e181c5, sem conclusão física. Subprocessos gateway passam a usar allowlist de ambiente existente no adapter, excluindo token do gateway e credenciais ambientais; hosted testa apenas presença/ausência sem imprimir valores. Capturas estabilizadas ao terminar animações; drawer preserva opacidade integral. Novo delta aguarda CI.
+
+## Checkpoint certificado e biblioteca visual — 2026-10-22
+@fb74616: Cloud Quality 39778914433 e Hosted Web UI 39778914380 SUCCESS. Terminal real Linux, isolamento de duas sessões, encerramento e ausência do token no ambiente filho comprovados. Novo delta: catálogo visual Web com arquivo existente/regular sob assets, origem HTTP(S), origem USER_PROVIDED para não inventar fornecedor, direitos declarados e trava compartilhada de licença. DO serializa registros; transformações/serviços pagos continuam indisponíveis. Novo delta aguarda CI. Sem execução local.

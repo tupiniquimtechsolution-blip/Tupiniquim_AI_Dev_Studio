@@ -14,7 +14,8 @@ must not be used to claim 100% of V1 or RELEASE_GREEN while any required gate la
 | Preferences | Configurable/persisted opt-in navigation shortcuts; shared schema/conflict checks; server contrast/import validation and hosted persistence regression | VALIDATED @3e181c5; scope below |
 | Evidence UI | Session history/export of actual runner results; truthful unavailable/manual gates and quiet secret scan; new hosted regression | VALIDATED @3e181c5; scope below |
 | Toolbox audit | Pinned commits + MIT licences remotely rechecked; current catalog SHA-256 recorded in SOURCE_REAUDIT_2026-10-22.md; original artifacts absent | REFERENCE AUDIT COMPLETE; original archives UNVERIFIED |
-| Terminal sessions | Four panels, explicit manual shell confirmation, gateway resource/time caps, real Linux PTY regression | IMPLEMENTED, CI PENDING |
+| Terminal sessions | Four panels, explicit manual shell confirmation, gateway resource/time caps, real Linux PTY regression | VALIDATED @fb74616; Linux scope |
+| Visual library | Existing regular files, durable metadata/provenance, declared-license gate, no external transform | IMPLEMENTED, CI PENDING |
 | Documentation/Agenor | Reconcile per-task scope and exact-SHA evidence; no unearned completion | IN PROGRESS |
 
 External dependencies (not completed): physical Windows/ConPTY/package/provider
@@ -77,3 +78,9 @@ Terminal follow-up implements up to four independent panels and explicit shell c
 Project Bible entrypoint, backlog and traceability now distinguish the historical physical RC1 inventory from the proven cloud checkpoint. Remaining implementation tasks are explicitly retained; this ledger does not declare all install-independent work completed. Notion/Miro tasks #13/#20 moved to Em Andamento; #19/#24/#27/#29 retain that state with @3e181c5 evidence. No historical completion was recertified.
 
 Gateway subprocesses now receive the existing restricted environment allowlist rather than all gateway credentials. Hosted checks only token-name presence/absence in the child shell and never prints its value. This does not sandbox all host filesystem access: manual shell confirmation and trusted Runtime host remain required. New screenshots disable finite animations; drawer opacity stays integral during entry.
+
+## Certified terminal checkpoint and visual follow-up
+
+@fb74616: Cloud Quality 39778914433 SUCCESS; Hosted Web UI 39778914380 SUCCESS. Real Linux PTY sessions, variable isolation, actual files, close cleanup and gateway-token name absence proved. Screenshots stabilize finite animations and drawer remains opaque. No Windows/ConPTY or production claim.
+
+New visual library registers existing regular files under /workspace/assets and records source, user-declared license/attribution/rights. Durable mutations serialize; shared core refuses unknown/restricted/blank licenses and paths outside assets. USER_PROVIDED avoids false provider provenance. HTTP(S) source metadata is not fetched. No copy, image transformation, license verification by an external authority or paid integration is performed. New positive/negative/persistence/concurrency hosted tests await CI.

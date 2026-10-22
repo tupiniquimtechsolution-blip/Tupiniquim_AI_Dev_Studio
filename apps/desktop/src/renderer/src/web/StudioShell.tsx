@@ -24,6 +24,7 @@ import {
 } from './experience'
 
 const CodeEditor = lazy(async () => import('./CodeEditor'))
+const VisualPane = lazy(async () => ({ default: (await import('../components/VisualLibraryPane')).VisualLibraryPane }))
 const PromptPane = lazy(async () => ({ default: (await import('../components/PromptArchitectPane')).PromptArchitectPane }))
 const TerminalPaneLazy = lazy(async () => {
   const [module] = await Promise.all([import('../components/TerminalSessions'), import('@xterm/xterm/css/xterm.css')])
@@ -35,7 +36,7 @@ const modes: Array<{ mode: Mode; label: string }> = [
   { mode: 'REVIEW', label: 'Review' }, { mode: 'DEBUG', label: 'Debug' }, { mode: 'PROMPT', label: 'Prompt' }, { mode: 'VISUAL', label: 'Visual' }
 ]
 
-type StudioTool = 'files' | 'terminal' | 'git' | 'activity' | 'prompts' | 'preferences'
+type StudioTool = 'files' | 'terminal' | 'git' | 'activity' | 'prompts' | 'preferences' | 'visual'
 
 /** Espelho sanitizado do executionRuntime do /api/health (nunca contém token). */
 export interface ExecutionRuntimeStatusPayload {
@@ -575,6 +576,7 @@ export const StudioShell = ({ onNavigate, registerLeaveGuard }: StudioShellProps
                 <button className={tool === 'terminal' ? 'active' : ''} aria-pressed={tool === 'terminal'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('terminal') }}><TerminalSquare size={16} aria-hidden="true" /><span>Terminal</span></button>
                 <button className={tool === 'git' ? 'active' : ''} aria-pressed={tool === 'git'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('git') }}><GitBranch size={16} aria-hidden="true" /><span>Git</span></button>
                 <button className={tool === 'activity' ? 'active' : ''} aria-pressed={tool === 'activity'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('activity') }}><Activity size={16} aria-hidden="true" /><span>Atividade</span></button>
+                <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('visual') }}><Boxes size={16} aria-hidden="true" /><span>Biblioteca visual</span></button>
                 <button onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('preferences') }}><Settings2 size={16} aria-hidden="true" /><span>Preferências</span></button>
                 <button className={tool === 'prompts' ? 'active' : ''} aria-pressed={tool === 'prompts'} onClick={() => { hudToolsRef.current?.removeAttribute('open'); openTool('prompts') }}><Braces size={16} aria-hidden="true" /><span>Prompt Architect</span></button>
               </nav>
@@ -701,7 +703,7 @@ export const StudioShell = ({ onNavigate, registerLeaveGuard }: StudioShellProps
             className={`ws-drawer${tool === 'terminal' ? ' wide' : ''}`}
             role="dialog"
             aria-modal="true"
-            aria-label={tool === 'files' ? 'Arquivos do workspace' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : tool === 'preferences' ? 'Preferências' : 'Atividade da sessão'}
+            aria-label={tool === 'files' ? 'Arquivos do workspace' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : tool === 'preferences' ? 'Preferências' : tool === 'visual' ? 'Biblioteca visual' : 'Atividade da sessão'}
             onCancel={(event) => { event.preventDefault(); closeTool() }}
             onClick={(event) => {
               if (event.target !== event.currentTarget) return
@@ -710,11 +712,11 @@ export const StudioShell = ({ onNavigate, registerLeaveGuard }: StudioShellProps
             }}
           >
             <header className="ws-drawer-head">
-              <strong>{tool === 'files' ? 'Arquivos' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : tool === 'preferences' ? 'Preferências' : 'Atividade'}</strong>
+              <strong>{tool === 'files' ? 'Arquivos' : tool === 'terminal' ? 'Terminal' : tool === 'git' ? 'Revisão Git' : tool === 'prompts' ? 'Prompt Architect' : tool === 'preferences' ? 'Preferências' : tool === 'visual' ? 'Biblioteca visual' : 'Atividade'}</strong>
               <span className={`ws-runtime-chip tone-${runtime.tone}`}>{runtime.label}</span>
               <button className="ws-icon-btn" autoFocus title="Fechar painel" disabled={tool === 'prompts' && promptBusy} onClick={closeTool}><X size={16} aria-hidden="true" /></button>
             </header>
-            {!runtime.osCapabilities && tool !== 'activity' && tool !== 'prompts' && tool !== 'preferences'
+            {!runtime.osCapabilities && tool !== 'activity' && tool !== 'prompts' && tool !== 'preferences' && tool !== 'visual'
               ? (
                   <div className="ws-runtime-lock" role="status">
                     <TerminalSquare size={22} aria-hidden="true" />
@@ -729,6 +731,7 @@ export const StudioShell = ({ onNavigate, registerLeaveGuard }: StudioShellProps
                 )
               : (
                   <div className="ws-drawer-body">
+                    {tool === 'visual' && <Suspense fallback={<p role="status">Carregando biblioteca visual…</p>}><VisualPane /></Suspense>}
                     {tool === 'preferences' && <ShortcutPreferences onSaved={setShortcuts} />}
                     {tool === 'prompts' && <Suspense fallback={<p role="status">Carregando Prompt Architect…</p>}><PromptPane onDirtyChange={setPromptDirty} onBusyChange={setPromptBusy} /></Suspense>}
                     {tool === 'files' && (

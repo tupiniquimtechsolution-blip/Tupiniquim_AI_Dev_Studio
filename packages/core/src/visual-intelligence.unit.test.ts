@@ -11,6 +11,14 @@ class MemoryVisuals implements VisualRepository {
 }
 
 describe('VisualIntelligenceService', () => {
+  it('rejects blank declared licenses and legacy paths outside the asset root', async () => {
+    const repository = new MemoryVisuals()
+    const service = new VisualIntelligenceService(repository, '/workspace')
+    const asset = await service.add({ name: 'Fixture', localPath: '/workspace/assets/fixture.svg', sourceUrl: 'https://example.test/fixture', provider: 'USER_PROVIDED', license: 'KNOWN', licenseName: '   ', attribution: null, rightsNote: 'Synthetic owned test fixture.' })
+    await expect(service.assertUsable(asset.id)).rejects.toThrow('licença')
+    repository.assets[0] = { ...asset, localPath: '/outside/fixture.svg', licenseName: 'CC0' }
+    await expect(service.assertUsable(asset.id)).rejects.toThrow('fora')
+  })
   it('mantém APIs sem credencial em NOT_CONFIGURED', () => {
     const service = new VisualIntelligenceService(new MemoryVisuals(), 'F:\\CODEX\\Tupiniquim-AI-Dev-Studio.data')
     expect(service.statuses({}).filter((provider) => provider.kind === 'API').every((provider) => provider.state === 'NOT_CONFIGURED')).toBe(true)

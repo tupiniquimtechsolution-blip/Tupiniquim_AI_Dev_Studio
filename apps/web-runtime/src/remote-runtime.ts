@@ -127,6 +127,7 @@ export const getRemoteSandbox = (env: RemoteRuntimeConfig, workspaceId: string) 
   const configured = (): boolean => readiness(env).state === 'CONFIGURED'
 
   return {
+    fileInfo: async (path: string): Promise<{ isFile: boolean; size: number }> => runtimeRpc(env, workspaceId, 'fs.file-info', { path }),
     createFile: async (path: string, content: string): Promise<void> => {
       await runtimeRpc<null>(env, workspaceId, 'fs.create-file', { path, content })
     },
