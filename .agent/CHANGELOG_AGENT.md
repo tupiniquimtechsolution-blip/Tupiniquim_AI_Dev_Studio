@@ -1,5 +1,13 @@
 # Changelog do Agente
 
+## 2026-10-22 — Validação de navegador hospedada
+
+- Novo Hosted Web UI: Worker, Durable Object, gateway e Chromium reais no runner,
+  com workspace efêmero e token sintético loopback. Sem deploy nem inferência paga.
+- Cobertura de HUD, teclado, responsividade e arquivos/search/diff/save reais.
+- Binding AI ausente não retorna READY nem anuncia inferência configurada.
+- Ledger de conclusão não local com aceites e dependências externas explícitas.
+
 ## 2026-10-22 — Retomada e proteção de edições
 
 - Serialização de abrir/salvar e estado somente leitura durante IO previnem

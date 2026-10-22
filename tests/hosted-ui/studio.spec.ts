@@ -1,0 +1,55 @@
+import { expect, test, type Page } from '@playwright/test'
+
+const enter = async (page: Page): Promise<void> => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Abrir Studio', exact: true }).first().click()
+  await expect(page.locator('.web-studio .brand')).toContainText('Tupiniquim')
+  await expect(page.getByRole('heading', { name: 'Em que vamos trabalhar?' })).toBeVisible()
+}
+
+test('HUD has keyboard modals and four responsive layouts', async ({ page }, info) => {
+  await enter(page)
+  const tools = page.locator('.ws-tools-menu summary')
+  await tools.click()
+  await page.getByRole('button', { name: 'Atividade', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Fechar painel' })).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Fechar painel' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(tools).toBeFocused()
+  await tools.click()
+  await page.getByRole('button', { name: 'Control Center', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Fechar Control Center' })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(tools).toBeFocused()
+  for (const width of [390, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 })
+    await expect(page.getByLabel('Mensagem ao agente')).toBeVisible()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1)
+    await page.screenshot({ path: info.outputPath(`hud-${width}.png`) })
+  }
+})
+
+test('real temporary filesystem supports search, edit, diff and save', async ({ page }) => {
+  await enter(page)
+  const created = await page.evaluate(() => window.studio.workspace.write({ relativePath: 'hosted-fixture.txt', content: 'hosted baseline\n' }))
+  expect(created.ok).toBe(true)
+  await page.locator('.ws-tools-menu summary').click()
+  await page.getByRole('button', { name: 'Arquivos', exact: true }).click()
+  await expect(page.getByLabel('Buscar no conteúdo')).toBeVisible()
+  await page.getByLabel('Buscar no conteúdo').fill('hosted baseline')
+  await page.getByRole('button', { name: 'Buscar', exact: true }).click()
+  await page.getByRole('button', { name: /hosted-fixture.txt:1/ }).click()
+  await expect(page.locator('.monaco-editor')).toBeVisible()
+  await page.locator('.monaco-editor textarea').first().focus()
+  await page.keyboard.press('Control+End')
+  await page.keyboard.insertText('edited in hosted browser\n')
+  await expect(page.getByRole('button', { name: 'Salvar', exact: true })).toBeEnabled()
+  await page.getByRole('button', { name: 'Comparar alterações', exact: true }).click()
+  await expect(page.locator('.monaco-diff-editor')).toBeVisible()
+  await page.getByRole('button', { name: 'Voltar ao editor', exact: true }).click()
+  await page.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Arquivo salvo.' })).toBeVisible()
+  const read = await page.evaluate(() => window.studio.workspace.read({ relativePath: 'hosted-fixture.txt' }))
+  expect(read.ok && read.value.content).toContain('edited in hosted browser')
+})

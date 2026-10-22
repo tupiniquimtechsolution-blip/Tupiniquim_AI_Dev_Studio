@@ -62,9 +62,17 @@ const listWorkspace = async (sandbox: ReturnType<typeof sandboxFor>, depth: numb
 
 const selectedModel = (request: Request): string => resolveWebModel(request.headers.get('x-tupiniquim-model'))
 
+const aiConfigured = (env: Env): boolean => typeof env.AI?.run === 'function'
+const providerStatus = (request: Request, env: Env, model = selectedModel(request)) => ({
+  provider: WEB_PROVIDER, runtime: WEB_RUNTIME, availableProviders: [WEB_PROVIDER], selectedModel: model,
+  state: aiConfigured(env) ? 'READY' : 'ERROR', account: 'NONE', version: 'workers-ai', activeThreadId: null, activeTurnId: null,
+  detail: aiConfigured(env) ? 'WEB_WORKERS_AI' : 'WORKERS_AI_NOT_CONFIGURED'
+})
+
 const aiText = sharedAiText
 
 const handleAgentSend = async (request: Request, env: Env, input: JsonRecord): Promise<Response> => {
+  if (!aiConfigured(env)) return fail('WORKERS_AI_NOT_CONFIGURED', 'Workers AI não está configurado nesta implantação.', 503)
   const message = typeof input.message === 'string' ? input.message.trim() : ''
   if (message === '') return fail('INVALID_MESSAGE', 'Mensagem vazia.')
   const mode = typeof input.mode === 'string' ? input.mode : 'CHAT'
@@ -182,18 +190,18 @@ const handleStudioRpc = async (request: Request, env: Env, workspaceId: string):
         return ok(await sandbox.gitDiff(relativePath === '' ? null : relativePath))
       }
       case 'agent.status':
-        return ok({ provider: WEB_PROVIDER, runtime: WEB_RUNTIME, availableProviders: [WEB_PROVIDER], selectedModel: selectedModel(request), state: 'READY', account: 'NONE', version: 'workers-ai', activeThreadId: null, activeTurnId: null, detail: 'WEB_WORKERS_AI' })
+        return ok(providerStatus(request, env))
       case 'agent.provider.select': {
         const requestedProvider = typeof input.provider === 'string' ? input.provider : WEB_PROVIDER
         if (requestedProvider !== WEB_PROVIDER) return fail('PROVIDER_NOT_AVAILABLE', 'O provider solicitado não é executável nesta edição Web.', 409)
-        return ok({ provider: WEB_PROVIDER, runtime: WEB_RUNTIME, availableProviders: [WEB_PROVIDER], selectedModel: selectedModel(request), state: 'READY', account: 'NONE', version: 'workers-ai', activeThreadId: null, activeTurnId: null, detail: 'WEB_WORKERS_AI' })
+        return ok(providerStatus(request, env))
       }
       case 'agent.local-models':
         return ok(WEB_MODELS.map((entry) => ({ name: entry.displayName, displayName: entry.displayName, model: entry.id, provider: WEB_PROVIDER, runtime: WEB_RUNTIME, execution: 'CLOUD', capabilities: [...entry.capabilities], available: true, default: entry.default, modifiedAt: null, size: null })))
       case 'agent.local-model.select': {
         const requestedModel = typeof input.model === 'string' ? input.model : selectedModel(request)
         if (!isWebModelId(requestedModel)) return fail('MODEL_NOT_AVAILABLE', 'O modelo solicitado não é executável no Workers AI desta edição Web.', 409)
-        return ok({ provider: WEB_PROVIDER, runtime: WEB_RUNTIME, availableProviders: [WEB_PROVIDER], selectedModel: requestedModel, state: 'READY', account: 'NONE', version: 'workers-ai', activeThreadId: null, activeTurnId: null, detail: 'WEB_WORKERS_AI' })
+        return ok(providerStatus(request, env, requestedModel))
       }
       case 'agent.session':
         return ok(null)
@@ -235,7 +243,7 @@ export default {
     const url = new URL(request.url)
 
     if (url.pathname === '/api/health') {
-      return Response.json({ ok: true, product: 'Tupiniquim Dev AI Web', runtime: 'cloudflare-edge', ai: 'workers-ai' })
+      return Response.json({ ok: true, product: 'Tupiniquim Dev AI Web', runtime: 'cloudflare-edge', ai: aiConfigured(env) ? 'workers-ai' : 'not-configured' })
     }
 
     if (url.pathname.startsWith('/api/') || url.pathname === '/ws/terminal') {

@@ -1,0 +1,43 @@
+name: Hosted Web UI
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hosted-web-ui-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.16.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Browser against real ephemeral Worker and Runtime Gateway
+        run: pnpm exec playwright test --config playwright.hosted-ui.config.ts
+      - name: Upload hosted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-web-ui-${{ github.event.pull_request.head.sha || github.sha }}
+          if-no-files-found: ignore
+          path: |
+            test-results/hosted-ui/**
+            playwright-report-hosted/**
+      - name: Record certification boundary
+        if: always()
+        run: echo 'Hosted ephemeral UI/FS evidence only. No real AI, OAuth, Access, production deployment, R2 backup or physical Windows certification.' >> "$GITHUB_STEP_SUMMARY"

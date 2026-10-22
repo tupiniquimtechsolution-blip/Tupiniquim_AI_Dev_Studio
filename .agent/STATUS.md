@@ -1,5 +1,13 @@
 # Status
 
+## Execução completa sem instalação local — 2026-10-22
+
+Execução contínua: `docs/RELEASE/NONLOCAL_EXECUTION_2026-10-22.md`.
+Hosted Web UI adicionado para testes reais em runner temporário GitHub:
+Worker/DO/gateway locais ao runner, sem bindings AI pagos ou produção.
+Workers AI ausente agora informa ERROR/WORKERS_AI_NOT_CONFIGURED.
+Novos gates aguardam CI; não equivalem a smoke de produção ou Windows físico.
+
 ## Retomada — 2026-10-22
 
 - Reconsulta GitHub: PR #89 OPEN/DRAFT @ `6fda702`, PR #88 OPEN, base
